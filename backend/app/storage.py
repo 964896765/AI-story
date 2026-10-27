@@ -10,7 +10,7 @@ def resolve_key(key: str, root: Path = STORAGE) -> Path:
         raise ValueError('Invalid storage key')
     return path
 
-async def save_upload(upload, key: str):
+async def save_upload(upload, key: str, max_bytes: int | None = None):
     path = resolve_key(key)
     path.parent.mkdir(parents=True, exist_ok=True)
     digest, size = hashlib.sha256(), 0
@@ -20,8 +20,8 @@ async def save_upload(upload, key: str):
             created = True
             while chunk := await upload.read(1024 * 1024):
                 size += len(chunk)
-                if size > MAX_UPLOAD:
-                    raise ValueError('文件超过 2 GiB 上限')
+                if size > (max_bytes if max_bytes is not None else MAX_UPLOAD):
+                    raise ValueError('文件超过允许的大小上限')
                 digest.update(chunk)
                 out.write(chunk)
         if not size:

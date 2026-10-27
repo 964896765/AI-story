@@ -1,0 +1,250 @@
+{
+  "project_id": "5a35d6e1-59de-422d-98f2-36447b231721",
+  "health": {
+    "ready": true,
+    "checks": {
+      "database": true,
+      "schema": true,
+      "ffmpeg": true,
+      "ffprobe": true
+    },
+    "ai_enabled": false
+  },
+  "tasks": [
+    {
+      "status": "succeeded",
+      "progress": 100.0,
+      "updated_at": "2026-10-27T16:03:17.725000+00:00",
+      "idempotency_key": "acceptance-1",
+      "cancel_requested": false,
+      "parameters": {
+        "start": 0.0,
+        "end": 2.0,
+        "duration": null,
+        "aspect": "1:1",
+        "strategy": "crop",
+        "resolution": "source",
+        "format": "mp4",
+        "crf": 18,
+        "audio_mode": "mute",
+        "audio_asset_id": null,
+        "subtitle_asset_id": null,
+        "volume": 1
+      },
+      "worker_token": null,
+      "output": {
+        "duration": 2.0,
+        "width": 360,
+        "height": 360,
+        "has_audio": false,
+        "size_bytes": 167565,
+        "storage_key": "outputs/543ca45c-919d-4325-8147-58619766b7f4/video.mp4",
+        "signature": "5d19f675049bb9e2423b9ee2d8afab86b88361aebdb26e6ea6f6a49c9468fb47",
+        "recovered": false
+      },
+      "started_at": "2026-10-27T16:03:17.127686+00:00",
+      "project_id": "5a35d6e1-59de-422d-98f2-36447b231721",
+      "attempt": 1,
+      "finished_at": "2026-10-27T16:03:17.724475+00:00",
+      "id": "543ca45c-919d-4325-8147-58619766b7f4",
+      "error": null,
+      "elapsed_seconds": 0.5780000000013388,
+      "asset_id": "cf9dd15f-8617-4413-9fd0-6d60c3299768",
+      "lease_until": null,
+      "input_snapshot": {
+        "video": {
+          "id": "cf9dd15f-8617-4413-9fd0-6d60c3299768",
+          "storage_key": "originals/cf9dd15f-8617-4413-9fd0-6d60c3299768.mp4",
+          "sha256": "04bc143627448ba43786a4ec2d6d9ac946beb978a047c467fdadce29e484c6bc"
+        }
+      },
+      "kind": "render",
+      "stage": "succeeded",
+      "created_at": "2026-10-27T16:03:15.636506+00:00"
+    },
+    {
+      "status": "succeeded",
+      "progress": 100.0,
+      "updated_at": "2026-10-27T16:03:17.108703+00:00",
+      "idempotency_key": "acceptance-0",
+      "cancel_requested": false,
+      "parameters": {
+        "start": 0.5,
+        "end": null,
+        "duration": 1.5,
+        "aspect": "9:16",
+        "strategy": "pad",
+        "resolution": "720",
+        "format": "mp4",
+        "crf": 18,
+        "audio_mode": "keep",
+        "audio_asset_id": null,
+        "subtitle_asset_id": "ae7b1be8-fcba-4438-a8e4-8fc0596ccde7",
+        "volume": 1
+      },
+      "worker_token": null,
+      "output": {
+        "duration": 1.5,
+        "width": 720,
+        "height": 1280,
+        "has_audio": true,
+        "size_bytes": 294011,
+        "storage_key": "outputs/c3e29f5d-34b6-46f4-b31a-07ef5151afa8/video.mp4",
+        "signature": "5cd35e657f80fd2bd0855d9e959915fe56c2764979a87306a25211d70715bf1c",
+        "recovered": false
+      },
+      "started_at": "2026-10-27T16:03:16.219093+00:00",
+      "project_id": "5a35d6e1-59de-422d-98f2-36447b231721",
+      "attempt": 1,
+      "finished_at": "2026-10-27T16:03:17.107627+00:00",
+      "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+      "error": null,
+      "elapsed_seconds": 0.875,
+      "asset_id": "cf9dd15f-8617-4413-9fd0-6d60c3299768",
+      "lease_until": null,
+      "input_snapshot": {
+        "video": {
+          "id": "cf9dd15f-8617-4413-9fd0-6d60c3299768",
+          "storage_key": "originals/cf9dd15f-8617-4413-9fd0-6d60c3299768.mp4",
+          "sha256": "04bc143627448ba43786a4ec2d6d9ac946beb978a047c467fdadce29e484c6bc"
+        },
+        "subtitle": {
+          "id": "ae7b1be8-fcba-4438-a8e4-8fc0596ccde7",
+          "storage_key": "originals/ae7b1be8-fcba-4438-a8e4-8fc0596ccde7.srt",
+          "sha256": "d2288c5401db976847d64ce4a14fbb0b75c14f7ddbe8b036e0a9f1081cb59d00"
+        }
+      },
+      "kind": "render",
+      "stage": "succeeded",
+      "created_at": "2026-10-27T16:03:15.513930+00:00"
+    }
+  ],
+  "observed": [
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "running",
+        "stage": "encoding",
+        "progress": 0.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "running",
+        "stage": "encoding",
+        "progress": 0.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "running",
+        "stage": "validating",
+        "progress": 99.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "running",
+        "stage": "encoding",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "succeeded",
+        "stage": "succeeded",
+        "progress": 100.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "running",
+        "stage": "encoding",
+        "progress": 0.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "succeeded",
+        "stage": "succeeded",
+        "progress": 100.0
+      }
+    ],
+    [
+      {
+        "id": "543ca45c-919d-4325-8147-58619766b7f4",
+        "status": "succeeded",
+        "stage": "succeeded",
+        "progress": 100.0
+      },
+      {
+        "id": "c3e29f5d-34b6-46f4-b31a-07ef5151afa8",
+        "status": "succeeded",
+        "stage": "succeeded",
+        "progress": 100.0
+      }
+    ]
+  ]
+}

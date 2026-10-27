@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 from uuid import uuid4
-from typing import Annotated
+from typing import Annotated, Literal
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -14,8 +14,10 @@ from .config import ORIGIN
 from .db import session
 from .models import Project, Asset, Task, TaskEvent, CostEntry
 from .storage import save_upload, resolve_key
+from .render import RenderOptions, validate_srt
+from .models import now
 
-app = FastAPI(title='AI 漫剧工厂', version='0.1.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.2.0')
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -40,6 +42,8 @@ class ProjectInput(BaseModel):
 class TaskInput(BaseModel):
     asset_id: str
     idempotency_key: str = Field(min_length=1, max_length=100)
+    kind: Literal['probe','render'] = 'probe'
+    parameters: RenderOptions | None = None
 
 def require(db, model, key):
     row = db.get(model, key)
@@ -53,7 +57,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0001'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0002'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -81,13 +85,15 @@ async def import_asset(project_id: str, db: DBDep, file: UploadFile = File(), au
         raise HTTPException(422, '必须记录素材授权来源')
     asset_id = str(uuid4())
     suffix = Path(file.filename or '').suffix.lower()
-    if suffix not in {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.wav', '.mp3'}:
+    if suffix not in {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.wav', '.mp3', '.srt'}:
         raise HTTPException(422, '不支持的媒体扩展名')
     key = f'originals/{asset_id}{suffix}'
     saved = False
     try:
-        digest, size = await save_upload(file, key)
+        digest, size = await save_upload(file, key, 2*1024**2 if suffix=='.srt' else None)
         saved = True
+        if suffix == '.srt':
+            validate_srt(resolve_key(key))
         row = Asset(id=asset_id, project_id=project_id, name=(file.filename or 'media').replace('\\', '/').split('/')[-1][:255], storage_key=key, sha256=digest, size_bytes=size, authorization=authorization)
         db.add(row)
         db.commit()
@@ -120,14 +126,29 @@ def create_task(project_id: str, body: TaskInput, db: DBDep):
     asset = require(db, Asset, body.asset_id)
     if asset.project_id != project_id:
         raise HTTPException(422, '素材不属于此项目')
+    if body.kind=='probe' and body.parameters is not None:
+        raise HTTPException(422, '解析任务不接受剪辑参数')
+    parameters = (body.parameters or RenderOptions()).model_dump() if body.kind=='render' else {}
+    inputs = {'video':{'id':asset.id,'storage_key':asset.storage_key,'sha256':asset.sha256}}
+    if body.kind=='render':
+        if Path(asset.storage_key).suffix not in {'.mp4','.mov','.mkv','.webm','.avi'}:
+            raise HTTPException(422, '剪辑输入必须为视频素材')
+        for role, key in [('audio','audio_asset_id'),('subtitle','subtitle_asset_id')]:
+            if parameters[key]:
+                row = require(db,Asset,parameters[key])
+                if row.project_id != project_id:
+                    raise HTTPException(422, '关联素材不属于此项目')
+                if (role=='subtitle') != (Path(row.storage_key).suffix=='.srt'):
+                    raise HTTPException(422, '字幕必须为 SRT，音轨必须为媒体文件')
+                inputs[role] = {'id':row.id,'storage_key':row.storage_key,'sha256':row.sha256}
     def existing():
         return db.scalar(select(Task).where(Task.project_id == project_id, Task.idempotency_key == body.idempotency_key))
     previous = existing()
     if previous:
-        if previous.asset_id != body.asset_id:
+        if previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters:
             raise HTTPException(409, '幂等键已用于其他输入')
         return previous
-    row = Task(project_id=project_id, asset_id=body.asset_id, idempotency_key=body.idempotency_key)
+    row = Task(project_id=project_id, asset_id=body.asset_id, idempotency_key=body.idempotency_key,kind=body.kind,parameters=parameters,input_snapshot=inputs)
     db.add(row)
     try:
         db.flush()
@@ -136,7 +157,7 @@ def create_task(project_id: str, body: TaskInput, db: DBDep):
     except IntegrityError:
         db.rollback()
         previous = existing()
-        if not previous or previous.asset_id != body.asset_id:
+        if not previous or previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters:
             raise HTTPException(409, '幂等键冲突')
         return previous
     return row
@@ -146,12 +167,41 @@ def retry(task_id: str, db: DBDep):
     task = db.scalar(select(Task).where(Task.id == task_id).with_for_update())
     if not task:
         raise HTTPException(404, '任务不存在')
-    if task.status != 'failed':
-        raise HTTPException(409, '仅失败任务可重试')
+    if task.status not in ('failed','cancelled'):
+        raise HTTPException(409, '仅失败或已取消任务可重试')
     task.status, task.error, task.lease_until = 'queued', None, None
+    task.cancel_requested, task.progress, task.stage = False, 0, 'queued'
+    task.worker_token, task.output, task.finished_at = None, {}, None
+    task.started_at, task.elapsed_seconds = None, 0
     db.add(TaskEvent(task_id=task.id, attempt=task.attempt, message='用户请求重试'))
     db.commit()
     return task
+
+@app.post('/api/tasks/{task_id}/cancel')
+def cancel(task_id: str, db: DBDep):
+    task = db.scalar(select(Task).where(Task.id==task_id).with_for_update())
+    if not task:
+        raise HTTPException(404,'任务不存在')
+    if task.status == 'cancelled':
+        return task
+    if task.status not in ('queued','running'):
+        raise HTTPException(409,'任务已结束')
+    task.cancel_requested = True
+    if task.status == 'queued':
+        task.status, task.stage, task.finished_at = 'cancelled','cancelled',now()
+    db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='用户请求取消；已发布成片的并发完成结果优先'))
+    db.commit()
+    return task
+
+@app.get('/api/tasks/{task_id}/output')
+def task_output(task_id: str, db: DBDep, download: bool = False):
+    task = require(db,Task,task_id)
+    if task.status != 'succeeded' or task.kind != 'render':
+        raise HTTPException(409,'任务没有已验证成片')
+    path = resolve_key(task.output['storage_key'])
+    if not path.is_file():
+        raise HTTPException(404,'成片文件缺失')
+    return FileResponse(path,filename=f'{task.id}{path.suffix}' if download else None,media_type='video/mp4' if path.suffix=='.mp4' else 'video/x-matroska')
 
 @app.get('/api/tasks/{task_id}/events')
 def events(task_id: str, db: DBDep):

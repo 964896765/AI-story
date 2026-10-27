@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, BigInteger, JSON, UniqueConstraint, CheckConstraint
+from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, BigInteger, JSON, UniqueConstraint, CheckConstraint, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -45,9 +45,17 @@ class Task(Base):
     attempt: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage: Mapped[str] = mapped_column(String(40), default='queued', server_default='queued')
+    progress: Mapped[float] = mapped_column(Float, default=0, server_default='0')
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
+    worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elapsed_seconds: Mapped[float] = mapped_column(Float, default=0, server_default='0')
+    input_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, server_default='{}')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
-    __table_args__ = (UniqueConstraint('project_id', 'idempotency_key'), CheckConstraint("status IN ('queued','running','succeeded','failed')"),)
+    __table_args__ = (UniqueConstraint('project_id', 'idempotency_key'), CheckConstraint("status IN ('queued','running','succeeded','failed','cancelled')", name='ck_task_status'), CheckConstraint('progress >= 0 AND progress <= 100', name='ck_task_progress'))
 
 class TaskEvent(Base):
     __tablename__ = 'task_events'
