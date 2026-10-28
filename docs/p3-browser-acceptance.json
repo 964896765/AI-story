@@ -1,0 +1,10 @@
+{
+  "browser": "Installed Chrome headless via CDP",
+  "task_id": "2f38daab-ef6b-4780-a24a-df738f8dc3a3",
+  "status": "succeeded",
+  "dimensions": {
+    "width": 480,
+    "height": 270
+  },
+  "javascript_errors": []
+}

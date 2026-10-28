@@ -2,7 +2,19 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $runtime = Join-Path $projectRoot 'data\runtime'
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
-if (Test-Path -LiteralPath (Join-Path $runtime 'processes.json')) { throw 'A process record exists. Check/stop existing services before restarting.' }
+if (Test-Path -LiteralPath (Join-Path $runtime 'processes.json')) {
+    $previous = Get-Content -LiteralPath (Join-Path $runtime 'processes.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $previous) {
+        $existing = Get-Process -Id $entry.pid -ErrorAction SilentlyContinue
+        if ($existing -and $entry.started_utc -and $existing.StartTime.ToUniversalTime().ToString('o') -eq $entry.started_utc) { throw 'A recorded process is still alive. Use scripts/stop.ps1 or inspect it first.' }
+        if ($existing -and -not $entry.started_utc) {
+            $info = Get-CimInstance Win32_Process -Filter "ProcessId = $($entry.pid)"
+            if ($info.ExecutablePath -eq (Join-Path $projectRoot '.venv\Scripts\python.exe')) { throw 'Legacy Python process record may still be alive; inspect manually before restarting.' }
+        }
+    }
+    $archive = Join-Path $runtime ('processes.stale.' + [guid]::NewGuid().ToString('N') + '.json')
+    Move-Item -LiteralPath (Join-Path $runtime 'processes.json') -Destination $archive
+}
 foreach ($port in 18000,15173) {
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { throw "Port $port is occupied; no existing process was changed." }
 }
@@ -11,11 +23,11 @@ $node = (Get-Command node -ErrorAction Stop).Source
 $records = @()
 try {
     $api = Start-Process -FilePath $python -ArgumentList @('-m','uvicorn','app.main:app','--host','127.0.0.1','--port','18000') -WorkingDirectory (Join-Path $projectRoot 'backend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'api.log') -RedirectStandardError (Join-Path $runtime 'api.error.log') -PassThru
-    $records += @{name='api';pid=$api.Id}
+    $records += @{name='api';pid=$api.Id;executable=$python;started_utc=$api.StartTime.ToUniversalTime().ToString('o')}
     $worker = Start-Process -FilePath $python -ArgumentList @('-m','app.worker') -WorkingDirectory (Join-Path $projectRoot 'backend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'worker.log') -RedirectStandardError (Join-Path $runtime 'worker.error.log') -PassThru
-    $records += @{name='worker';pid=$worker.Id}
+    $records += @{name='worker';pid=$worker.Id;executable=$python;started_utc=$worker.StartTime.ToUniversalTime().ToString('o')}
     $web = Start-Process -FilePath $node -ArgumentList @('node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','15173','--strictPort') -WorkingDirectory (Join-Path $projectRoot 'frontend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'web.log') -RedirectStandardError (Join-Path $runtime 'web.error.log') -PassThru
-    $records += @{name='web';pid=$web.Id}
+    $records += @{name='web';pid=$web.Id;executable=$node;started_utc=$web.StartTime.ToUniversalTime().ToString('o')}
 } finally {
     $records | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtime 'processes.json') -Encoding UTF8
 }

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import VideoEditor from './VideoEditor.vue'
+import QueuePanel from './QueuePanel.vue'
+import AttemptHistory from './AttemptHistory.vue'
 interface Project {id:string;name:string;description:string;budget_cents:number}
 interface Asset {id:string;name:string;size_bytes:number;authorization:string;sha256:string;media_info:Record<string,unknown>}
-interface Task {id:string;asset_id:string;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
+interface Task {batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
 interface Event {id:number;attempt:number;message:string;created_at:string}
 const projects=ref<Project[]>([]), assets=ref<Asset[]>([]), tasks=ref<Task[]>([]), events=ref<Event[]>([])
 const selected=ref(''), preview=ref(''), error=ref(''), health=ref('检查中'), busy=ref(false), name=ref(''), description=ref(''), authorization=ref(''), cost=ref(''), view=ref('素材资产中心'), logTask=ref('')
 const outputPreview=ref('')
 const sections=['素材资产中心','智能二创','漫剧定制','批量生产','质检与导出','运营中心']
 const labels:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败',cancelled:'已取消'}
-const stages:Record<string,string>={queued:'等待领取',recovered:'中断恢复',inspecting:'检查输入',encoding:'FFmpeg 编码',validating:'验证成片',publishing:'发布输出',succeeded:'完成',failed:'失败',cancelled:'已取消'}
+const stages:Record<string,string>={queued:'等待领取',recovered:'中断恢复',inspecting:'检查输入',encoding:'FFmpeg 编码',validating:'验证成片',publishing:'发布输出',succeeded:'完成',failed:'失败',cancelled:'已取消',retry_wait:'等待自动重试',checkpoint:'核验检查点',resuming_checkpoint:'复用编码检查点'}
 let timer:ReturnType<typeof setInterval>|undefined
 let refreshing=false
 async function api<T>(path:string, options:RequestInit={}):Promise<T>{
@@ -41,7 +43,7 @@ onUnmounted(()=>clearInterval(timer))
 
 <template>
  <div class="shell">
-  <aside><div class="brand">AI 漫剧工厂<span>LOCAL PRODUCTION STUDIO</span></div><nav aria-label="工作区"><button v-for="section in sections" :key="section" :class="{active:view===section}" @click="view=section">{{section}}</button></nav><div class="aside-note">本机工作台 · P2<br>仅处理自有或已授权素材<br>云端模型未启用</div></aside>
+  <aside><div class="brand">AI 漫剧工厂<span>LOCAL PRODUCTION STUDIO</span></div><nav aria-label="工作区"><button v-for="section in sections" :key="section" :class="{active:view===section}" @click="view=section">{{section}}</button></nav><div class="aside-note">本机工作台 · P3<br>仅处理自有或已授权素材<br>云端模型未启用</div></aside>
   <main>
    <header><div><p class="eyebrow">PRODUCTION WORKSPACE</p><h1>{{view}}</h1></div><span class="health">{{health}}</span></header>
    <p v-if="error" class="error" role="alert">{{error}} <button @click="error=''">关闭</button></p>
@@ -53,10 +55,11 @@ onUnmounted(()=>clearInterval(timer))
    </template>
    <VideoEditor v-else-if="view==='智能二创'" :project-id="selected" :assets="assets" @submitted="refresh" />
    <template v-else-if="view==='批量生产'">
+    <QueuePanel :project-id="selected" />
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>
     <p v-if="!selected" class="empty">请先选择项目。</p><p v-else-if="!tasks.length" class="empty">暂无任务。导入素材后可读取媒体信息，或在智能二创中提交剪辑任务。</p>
     <article v-for="task in tasks" :key="task.id" class="task">
-     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id}}</strong><p class="mono">{{task.kind==='render'?'视频剪辑':'媒体解析'}} · {{task.id}}</p>
+     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id}}</strong><p class="mono">{{task.kind==='render'?'视频剪辑':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
       <p>{{stages[task.stage]||task.stage}} · 本次耗时 {{task.elapsed_seconds.toFixed(1)}} 秒 · 尝试 {{task.attempt}}</p>
       <progress v-if="task.kind==='render'" :value="task.progress" max="100" :aria-label="`编码进度 ${task.progress.toFixed(1)}%`"></progress><span v-if="task.kind==='render'"> {{task.progress.toFixed(1)}}%</span>
       <details v-if="task.kind==='render'"><summary>已保存处理参数</summary><pre>{{JSON.stringify(task.parameters,null,2)}}</pre></details>
@@ -66,7 +69,7 @@ onUnmounted(()=>clearInterval(timer))
      <button @click="logs(task)">日志</button><button v-if="['queued','running'].includes(task.status)" :disabled="busy||task.cancel_requested" @click="cancel(task)">取消</button><button v-if="['failed','cancelled'].includes(task.status)" :disabled="busy" @click="retry(task)">安全重试</button>
      <button v-if="task.kind==='render'&&task.status==='succeeded'" @click="outputPreview=task.id">预览成片</button><a v-if="task.kind==='render'&&task.status==='succeeded'" :href="`/api/tasks/${task.id}/output?download=true`">下载成片</a>
     </article>
-    <section v-if="logTask"><h2>事件日志</h2><p class="mono">{{logTask}}</p><p v-for="event in events" :key="event.id" class="log">{{new Date(event.created_at).toLocaleString('zh-CN')}} · 尝试 {{event.attempt}} · {{event.message}}</p><button @click="logs(tasks.find(t=>t.id===logTask)!)">刷新日志</button></section>
+    <section v-if="logTask"><AttemptHistory :task-id="logTask" /><h2>事件日志</h2><p class="mono">{{logTask}}</p><p v-for="event in events" :key="event.id" class="log">{{new Date(event.created_at).toLocaleString('zh-CN')}} · 尝试 {{event.attempt}} · {{event.message}}</p><button @click="logs(tasks.find(t=>t.id===logTask)!)">刷新日志</button></section>
    </template>
    <template v-else-if="view==='质检与导出'">
     <h2>已验证成片</h2><p class="hint">这里只展示通过视频流、音轨、时长和分辨率技术验证的成片。黑帧、音频质量与字幕内容审核尚未实现。</p>

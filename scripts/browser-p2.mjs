@@ -4,9 +4,11 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
+const phase=process.env.QA_PHASE||'p2'
+if(!['p2','p3'].includes(phase))throw new Error('Unsupported QA phase')
 const port=19222
 try{await fetch(`http://127.0.0.1:${port}/json/version`);throw new Error('QA debugging port already occupied')}catch(e){if(e.message==='QA debugging port already occupied')throw e}
-const browser=spawn('C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu',`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1',`--user-data-dir=${path.join(root,'data/browser-p2')}`,'--no-first-run','--window-size=1440,1100','about:blank'],{windowsHide:true,stdio:'ignore'})
+const browser=spawn('C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu',`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1',`--user-data-dir=${path.join(root,`data/browser-${phase}`)}`,'--no-first-run','--window-size=1440,1100','about:blank'],{windowsHide:true,stdio:'ignore'})
 let socket
 const delay=ms=>new Promise(r=>setTimeout(r,ms))
 async function wait(fn,description,timeout=30000){const until=Date.now()+timeout;while(Date.now()<until){if(await fn())return;await delay(200)}throw new Error('Timed out: '+description)}
@@ -24,14 +26,14 @@ async function screenshot(name){const result=await command('Page.captureScreensh
 try{
  await command('Runtime.enable');await command('Page.enable');await command('Page.navigate',{url:'http://127.0.0.1:15173/'})
  await wait(()=>evaluate("document.body.innerText.includes('服务就绪')"),'App health')
- const evidence=JSON.parse(await readFile(path.join(root,'docs/p2-http-acceptance.json'),'utf8'))
+ const evidence=JSON.parse(await readFile(path.join(root,`docs/${phase}-http-acceptance.json`),'utf8'))
  await evaluate(`(()=>{const select=document.querySelector('.projectbar select');select.value='${evidence.project_id}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
  await delay(500);await nav('智能二创')
  await wait(()=>evaluate("!!document.querySelector('input[type=checkbox]')"),'Imported video selection')
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='开始新批次').click()")
  const before=await evaluate(`fetch('/api/projects/${evidence.project_id}/tasks').then(r=>r.json()).then(ts=>ts.map(t=>t.id))`)
  await evaluate("(()=>{document.querySelector('input[type=checkbox]').click();const input=document.querySelectorAll('input[type=number]')[2];input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}));})()")
- await screenshot('p2-editor.png')
+ await screenshot(`${phase}-editor.png`)
  await evaluate("document.querySelector('form').requestSubmit()")
  await wait(()=>evaluate("document.body.innerText.includes('已确认 1 项任务入队')"),'Form submission')
  let rendered
@@ -42,6 +44,21 @@ try{
  const after=await evaluate(`fetch('/api/projects/${evidence.project_id}/tasks').then(r=>r.json())`)
  if(after.length!==before.length+1)throw new Error('Browser duplicate submission created extra tasks')
  await nav('批量生产');await wait(()=>evaluate("document.body.innerText.includes('100.0%')"),'Real queue state')
+ if(phase==='p3'){
+  await wait(()=>evaluate("document.body.innerText.includes('在线')"),'Live worker panel')
+  const state=await evaluate("fetch('/api/queue').then(r=>r.json())")
+  if(state.paused)throw new Error('Queue already paused; refusing to change existing user state')
+  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='暂停队列').click()")
+  try{await wait(()=>evaluate("document.body.innerText.includes('已暂停领取新任务')"),'Persisted pause')}
+  finally{await evaluate("fetch('/api/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paused:false})})")}
+  await wait(()=>evaluate("document.body.innerText.includes('允许领取任务')"),'Resumed queue')
+  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='日志').click()")
+  await wait(()=>evaluate("!!document.querySelector('.attempt-history details summary')"),'Attempt history')
+  await evaluate("document.querySelector('.attempt-history details summary').click()")
+  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='读取此尝试的 FFmpeg 日志').click()")
+  await wait(()=>evaluate("!!document.querySelector('.log-tail')"),'Attempt log')
+  await screenshot('p3-queue.png')
+ }
  await nav('质检与导出')
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='预览成片').click()")
  await wait(()=>evaluate("document.querySelector('.output-preview video')?.videoWidth>0"),'Output video metadata')
@@ -50,10 +67,10 @@ try{
  await delay(400)
  await evaluate("document.querySelector('.output-preview video').pause()")
  const dimensions=await evaluate("({width:document.querySelector('.output-preview video').videoWidth,height:document.querySelector('.output-preview video').videoHeight})")
- await screenshot('p2-output.png')
+ await screenshot(`${phase}-output.png`)
  if(errors.length)throw new Error(JSON.stringify(errors))
- await writeFile(path.join(root,'docs/p2-browser-acceptance.json'),JSON.stringify({browser:'Installed Chrome headless via CDP',task_id:rendered.id,status:rendered.status,dimensions,javascript_errors:errors},null,2))
- console.log('Browser form -> persistent render -> output preview passed; no runtime JS exceptions.')
+ await writeFile(path.join(root,`docs/${phase}-browser-acceptance.json`),JSON.stringify({browser:'Installed Chrome headless via CDP',task_id:rendered.id,status:rendered.status,dimensions,javascript_errors:errors},null,2))
+ console.log(`${phase} browser: form -> persistent render -> output preview passed; no runtime JS exceptions.`)
 }finally{
  try{await command('Browser.close')}catch{}
  socket.close()

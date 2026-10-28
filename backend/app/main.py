@@ -6,18 +6,20 @@ from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Req
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, text, func
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session as DB
 from .config import ORIGIN
 from .db import session
-from .models import Project, Asset, Task, TaskEvent, CostEntry
+from .models import Project, Asset, Task, TaskEvent, CostEntry, Batch, QueueControl, TaskAttempt, WorkerNode
 from .storage import save_upload, resolve_key
 from .render import RenderOptions, validate_srt
 from .models import now
+from .reliability import queue_control
+from datetime import timedelta
 
-app = FastAPI(title='AI 漫剧工厂', version='0.2.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.3.0')
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -45,6 +47,20 @@ class TaskInput(BaseModel):
     kind: Literal['probe','render'] = 'probe'
     parameters: RenderOptions | None = None
 
+class BatchInput(BaseModel):
+    asset_ids: list[str] = Field(min_length=1,max_length=100)
+    idempotency_key: str = Field(min_length=1,max_length=100)
+    parameters: RenderOptions = Field(default_factory=RenderOptions)
+
+    @model_validator(mode='after')
+    def unique_assets(self):
+        if len(set(self.asset_ids))!=len(self.asset_ids):
+            raise ValueError('批次中不允许重复素材ID')
+        return self
+
+class QueueInput(BaseModel):
+    paused: bool
+
 def require(db, model, key):
     row = db.get(model, key)
     if not row:
@@ -57,7 +73,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0002'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0004'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -121,8 +137,7 @@ def tasks(project_id: str, db: DBDep):
     require(db, Project, project_id)
     return db.scalars(select(Task).where(Task.project_id == project_id).order_by(Task.created_at.desc())).all()
 
-@app.post('/api/projects/{project_id}/tasks', status_code=201)
-def create_task(project_id: str, body: TaskInput, db: DBDep):
+def prepare_task(project_id: str, body: TaskInput, db):
     asset = require(db, Asset, body.asset_id)
     if asset.project_id != project_id:
         raise HTTPException(422, '素材不属于此项目')
@@ -141,6 +156,11 @@ def create_task(project_id: str, body: TaskInput, db: DBDep):
                 if (role=='subtitle') != (Path(row.storage_key).suffix=='.srt'):
                     raise HTTPException(422, '字幕必须为 SRT，音轨必须为媒体文件')
                 inputs[role] = {'id':row.id,'storage_key':row.storage_key,'sha256':row.sha256}
+    return parameters,inputs
+
+@app.post('/api/projects/{project_id}/tasks', status_code=201)
+def create_task(project_id: str, body: TaskInput, db: DBDep):
+    parameters,inputs=prepare_task(project_id,body,db)
     def existing():
         return db.scalar(select(Task).where(Task.project_id == project_id, Task.idempotency_key == body.idempotency_key))
     previous = existing()
@@ -173,6 +193,7 @@ def retry(task_id: str, db: DBDep):
     task.cancel_requested, task.progress, task.stage = False, 0, 'queued'
     task.worker_token, task.output, task.finished_at = None, {}, None
     task.started_at, task.elapsed_seconds = None, 0
+    task.next_run_at,task.error_code=now(),None
     db.add(TaskEvent(task_id=task.id, attempt=task.attempt, message='用户请求重试'))
     db.commit()
     return task
@@ -211,5 +232,77 @@ def events(task_id: str, db: DBDep):
 @app.get('/api/projects/{project_id}/costs')
 def costs(project_id: str, db: DBDep):
     project = require(db, Project, project_id)
-    amount = db.scalar(select(func.coalesce(func.sum(CostEntry.amount_cents), 0)).where(CostEntry.project_id == project_id))
-    return {'recorded_cents': amount, 'currency': 'CNY', 'budget_cents': project.budget_cents, 'note': '仅统计已入账 API 费用；当前未接入付费模型，不含电费和硬件成本'}
+    totals=dict(db.execute(select(CostEntry.currency,func.sum(CostEntry.amount_cents)).where(CostEntry.project_id==project_id).group_by(CostEntry.currency)).all())
+    return {'recorded_cents':totals.get('CNY',0),'recorded_by_currency':totals,'currency':'CNY','budget_cents':project.budget_cents,'note':'金额为已入账人民币 API 费用；其他币种单列且不换算。当前未接入付费模型，不含电费和硬件成本'}
+
+@app.post('/api/projects/{project_id}/batches',status_code=201)
+def create_batch(project_id: str, body: BatchInput, db: DBDep):
+    require(db,Project,project_id)
+    request=body.model_dump(exclude={'idempotency_key'})
+    def existing():
+        row=db.scalar(select(Batch).where(Batch.project_id==project_id,Batch.idempotency_key==body.idempotency_key))
+        if row and row.request!=request:raise HTTPException(409,'批次幂等键已用于不同输入或参数')
+        return row
+    def result(row):
+        return {'batch':row,'tasks':db.scalars(select(Task).where(Task.batch_id==row.id).order_by(Task.created_at,Task.id)).all()}
+    previous=existing()
+    if previous:return result(previous)
+    prepared=[]
+    for asset_id in body.asset_ids:
+        options=TaskInput(asset_id=asset_id,idempotency_key='internal',kind='render',parameters=body.parameters)
+        parameters,inputs=prepare_task(project_id,options,db)
+        prepared.append((asset_id,parameters,inputs))
+    batch=Batch(project_id=project_id,idempotency_key=body.idempotency_key,request=request)
+    try:
+        db.add(batch);db.flush()
+        for index,(asset_id,parameters,inputs) in enumerate(prepared):
+            row=Task(project_id=project_id,asset_id=asset_id,batch_id=batch.id,kind='render',idempotency_key=f'batch:{batch.id}:{index}',parameters=parameters,input_snapshot=inputs)
+            db.add(row);db.flush()
+            db.add(TaskEvent(task_id=row.id,attempt=0,message='原子批次已入队：'+batch.id))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        previous=existing()
+        if previous:return result(previous)
+        raise HTTPException(409,'批次创建冲突，未提交任何新任务')
+    return result(batch)
+
+@app.get('/api/queue')
+def queue_state(db: DBDep):
+    row=db.get(QueueControl,'local')
+    workers=db.scalars(select(WorkerNode).order_by(WorkerNode.last_seen.desc()).limit(20)).all()
+    return {'paused':row.paused,'concurrency':1,'workers':[{'id':w.id,'pid':w.pid,'hostname':w.hostname,'state':w.state,'task_id':w.task_id,'last_seen':w.last_seen,'online':w.state!='offline' and w.last_seen>now()-timedelta(seconds=15),'error':w.error} for w in workers]}
+
+@app.post('/api/queue')
+def set_queue(body: QueueInput, db: DBDep):
+    row=queue_control(db)
+    row.paused=body.paused
+    db.commit()
+    return {'paused':row.paused,'note':'暂停仅停止领取新任务，正在运行的任务继续；中断恢复与取消仍可处理'}
+
+@app.get('/api/tasks/{task_id}/attempts')
+def task_attempts(task_id: str, db: DBDep):
+    require(db,Task,task_id)
+    return db.scalars(select(TaskAttempt).where(TaskAttempt.task_id==task_id).order_by(TaskAttempt.number)).all()
+
+@app.get('/api/tasks/{task_id}/attempts/{number}/logs')
+def attempt_logs(task_id: str,number: int,db: DBDep):
+    require(db,Task,task_id)
+    record=db.scalar(select(TaskAttempt).where(TaskAttempt.task_id==task_id,TaskAttempt.number==number))
+    if not record:raise HTTPException(404,'尝试记录不存在（P2历史不会伪造补录）')
+    path=resolve_key(f'tmp/{task_id}/{record.number}/ffmpeg.log')
+    if not path.is_file():return {'available':False,'text':'此尝试没有 FFmpeg 日志（可能是解析任务或编码前失败）','truncated':False}
+    with path.open('rb') as file:
+        size=path.stat().st_size
+        file.seek(max(0,size-65536))
+        content=file.read(65536).decode('utf-8',errors='replace')
+    return {'available':True,'text':content,'truncated':size>65536}
+
+@app.get('/api/projects/{project_id}/production-summary')
+def production_summary(project_id: str,db: DBDep):
+    project=require(db,Project,project_id)
+    counts=dict(db.execute(select(Task.status,func.count()).where(Task.project_id==project_id).group_by(Task.status)).all())
+    attempts=db.execute(select(TaskAttempt.task_id,func.count(),func.sum(TaskAttempt.elapsed_seconds)).join(Task,Task.id==TaskAttempt.task_id).where(Task.project_id==project_id).group_by(TaskAttempt.task_id)).all()
+    charges=dict(db.execute(select(CostEntry.task_id,func.sum(CostEntry.amount_cents)).where(CostEntry.project_id==project_id,CostEntry.currency=='CNY').group_by(CostEntry.task_id)).all())
+    totals=dict(db.execute(select(CostEntry.currency,func.sum(CostEntry.amount_cents)).where(CostEntry.project_id==project_id).group_by(CostEntry.currency)).all())
+    return {'counts':counts,'recorded_cents':totals.get('CNY',0),'recorded_by_currency':totals,'currency':'CNY','budget_cents':project.budget_cents,'attempts':sum(a[1] for a in attempts),'observed_processing_seconds':sum(a[2] for a in attempts),'by_task':[{'task_id':tid,'attempts':count,'observed_processing_seconds':elapsed,'recorded_cents':charges.get(tid,0)} for tid,count,elapsed in attempts],'note':'耗时为P3尝试中已观测处理时间；中断可能少计，P2历史不补造。费用仅为实际入账人民币API费用，其他币种单列不混加；不含硬件与电费，当前没有付费模型调用。'}

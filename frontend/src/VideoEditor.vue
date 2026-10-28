@@ -9,24 +9,22 @@ const keys=new Map<string,string>()
 const videos=computed(()=>props.assets.filter(a=>/\.(mp4|mov|mkv|webm|avi)$/i.test(a.name)))
 const subtitles=computed(()=>props.assets.filter(a=>/\.srt$/i.test(a.name)))
 const audioAssets=computed(()=>props.assets.filter(a=>!/\.srt$/i.test(a.name)))
-const storageKey=()=>`ai-story:p2:batch-keys:${props.projectId}`
+const storageKey=()=>`ai-story:p3:batch-keys:${props.projectId}`
 function newBatch(){keys.clear();sessionStorage.removeItem(storageKey());message.value='已开始新批次；下次提交将新建任务。'}
 watch(()=>props.projectId,()=>{chosen.value=[];audio.value='';subtitle.value='';keys.clear();message.value='';error.value='';try{for(const [signature,key] of Object.entries(JSON.parse(sessionStorage.getItem(storageKey())||'{}')))if(typeof key==='string')keys.set(signature,key)}catch{}},{immediate:true})
 async function submit(){
  busy.value=true;message.value='';error.value=''
  const project=props.projectId
  const parameters={start:start.value,end:end.value===''?null:end.value,duration:duration.value===''?null:duration.value,aspect:aspect.value,strategy:strategy.value,resolution:resolution.value,format:format.value,crf:crf.value,audio_mode:audioMode.value,audio_asset_id:audioMode.value==='replace'?audio.value||null:null,subtitle_asset_id:subtitle.value||null,volume:volume.value}
- let count=0
  try{
-  for(const assetId of chosen.value){
-   const signature=JSON.stringify({project,assetId,parameters})
-   if(!keys.has(signature)){keys.set(signature,crypto.randomUUID());sessionStorage.setItem(storageKey(),JSON.stringify(Object.fromEntries(keys)))}
-   const response=await fetch(`/api/projects/${project}/tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_id:assetId,kind:'render',parameters,idempotency_key:keys.get(signature)})})
-   if(!response.ok){const data=await response.json();throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail))}
-   count++
-  }
-  message.value=`已确认 ${count} 项任务入队（同一批次重复提交会复用任务）。`
- }catch(e){error.value=`已提交 ${count} 项；${String(e)}。可修正后再次提交，已接收的相同任务不会重复创建。`}
+  const assetIds=[...chosen.value].sort()
+  const signature=JSON.stringify({project,assetIds,parameters})
+  if(!keys.has(signature)){keys.set(signature,crypto.randomUUID());sessionStorage.setItem(storageKey(),JSON.stringify(Object.fromEntries(keys)))}
+  const response=await fetch(`/api/projects/${project}/batches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_ids:assetIds,parameters,idempotency_key:keys.get(signature)})})
+  const data=await response.json()
+  if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail))
+  message.value=`已确认 ${data.tasks.length} 项任务入队，批次 ${data.batch.id}（同一批次重复提交会复用任务）。`
+ }catch(e){error.value=`${String(e)}。批次为原子提交；如果响应丢失，保留当前批次重试可安全查询原提交结果。`}
  finally{busy.value=false;emit('submitted')}
 }
 </script>

@@ -16,6 +16,21 @@ from .media import probe
 from .storage import resolve_key
 from .process_guard import attach
 
+def file_hash(path: Path, update=None) -> str:
+    digest=hashlib.sha256()
+    with path.open('rb') as source:
+        for chunk in iter(lambda:source.read(1024*1024),b''):
+            digest.update(chunk)
+            if update:update('checkpoint',99)
+    return digest.hexdigest()
+
+def write_manifest(path: Path, data: dict):
+    staging=path.with_suffix('.writing')
+    with staging.open('w',encoding='utf-8') as file:
+        json.dump(data,file,ensure_ascii=False)
+        file.flush();os.fsync(file.fileno())
+    os.replace(staging,path)
+
 class Cancelled(Exception):
     pass
 
@@ -220,6 +235,9 @@ def render(task_id: str, attempt: int, parameters: dict, inputs: dict, update: C
         previous = target.parent/'manifest.json'
         if not previous.exists() or json.loads(previous.read_text())['signature'] != signature:
             raise ValueError('成片路径已有无法确认归属的文件，拒绝覆盖')
+        saved=json.loads(previous.read_text(encoding='utf-8'))
+        if saved.get('sha256') and saved['sha256']!=file_hash(target,update):
+            raise ValueError('已发布成片哈希不符，拒绝将改变的文件视为成功')
         metadata = validate_output(target,expected)
         return {**metadata,'storage_key':target_key,'signature':signature,'recovered':True}
     if shutil.disk_usage(work).free < max(256*1024**2, source.stat().st_size*2):
@@ -244,11 +262,29 @@ def render(task_id: str, attempt: int, parameters: dict, inputs: dict, update: C
     if options.format=='mp4': args += ['-movflags','+faststart']
     args.append(str(temporary))
     (work/'command.json').write_text(json.dumps(args,ensure_ascii=False,indent=2),encoding='utf-8')
+    candidate=None
+    for number in range(attempt-1,0,-1):
+        prior=resolve_key(f'tmp/{task_id}/{number}')
+        checkpoint=prior/'manifest.json'
+        partial=prior/f'partial.{options.format}'
+        if checkpoint.is_file() and partial.is_file():
+            try:saved=json.loads(checkpoint.read_text(encoding='utf-8'))
+            except (ValueError,OSError):continue
+            if saved.get('signature')==signature and saved.get('sha256')==file_hash(partial,update):
+                try:validate_output(partial,expected)
+                except (ValueError,OSError):continue
+                candidate=(partial,number);break
     try:
-        execute_ffmpeg(args,work,duration,update)
+        if candidate:
+            update('resuming_checkpoint',99)
+            temporary=candidate[0]
+        else:
+            execute_ffmpeg(args,work,duration,update)
+            write_manifest(manifest,{'signature':signature,'expected':expected,'sha256':file_hash(temporary,update)})
         update('validating',99)
         metadata = validate_output(temporary,expected)
-        manifest.write_text(json.dumps({'signature':signature,'expected':expected,'metadata':metadata},ensure_ascii=False),encoding='utf-8')
+        payload={'signature':signature,'expected':expected,'metadata':metadata,'sha256':file_hash(temporary,update)}
+        write_manifest(manifest,payload)
         update('publishing',99)
         target.parent.mkdir(parents=True,exist_ok=True)
         # Manifest first enables crash recovery if publication succeeds before DB commit.
@@ -256,12 +292,15 @@ def render(task_id: str, attempt: int, parameters: dict, inputs: dict, update: C
         if manifest_target.exists():
             if json.loads(manifest_target.read_text())['signature'] != signature:
                 raise ValueError('输出清单冲突，拒绝覆盖')
+            write_manifest(manifest_target,payload)
         else:
-            with manifest_target.open('x',encoding='utf-8') as file:
-                file.write(manifest.read_text(encoding='utf-8'))
+            staging=work/'publish-manifest.json'
+            write_manifest(staging,payload)
+            os.link(staging,manifest_target)
         # Windows rename fails if target exists. os.link is also no-clobber on other OSes.
         os.link(temporary,target)
         temporary.unlink()
-        return {**metadata,'storage_key':target_key,'signature':signature,'recovered':False}
+        return {**metadata,'storage_key':target_key,'signature':signature,'recovered':False,'resumed_from_attempt':candidate[1] if candidate else None}
     finally:
-        temporary.unlink(missing_ok=True)
+        # Valid encoded checkpoints survive interruption/cancellation for safe retry.
+        if not manifest.is_file():temporary.unlink(missing_ok=True)
