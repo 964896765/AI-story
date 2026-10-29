@@ -12,14 +12,17 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session as DB
 from .config import ORIGIN
 from .db import session
-from .models import Project, Asset, Task, TaskEvent, CostEntry, Batch, QueueControl, TaskAttempt, WorkerNode
+from .models import Project, Asset, Task, TaskEvent, CostEntry, Batch, QueueControl, TaskAttempt, WorkerNode,StoryVersion,StoryEntity
 from .storage import save_upload, resolve_key
 from .render import RenderOptions, validate_srt
 from .models import now
 from .reliability import queue_control
 from datetime import timedelta
+from .asset_validation import validate_extra_asset,IMAGE_SUFFIXES
+from .creative import router as creative_router
 
-app = FastAPI(title='AI 漫剧工厂', version='0.3.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.4.0')
+app.include_router(creative_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -46,11 +49,13 @@ class TaskInput(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=100)
     kind: Literal['probe','render'] = 'probe'
     parameters: RenderOptions | None = None
+    story_version_id: str | None = None
 
 class BatchInput(BaseModel):
     asset_ids: list[str] = Field(min_length=1,max_length=100)
     idempotency_key: str = Field(min_length=1,max_length=100)
     parameters: RenderOptions = Field(default_factory=RenderOptions)
+    story_version_id: str | None = None
 
     @model_validator(mode='after')
     def unique_assets(self):
@@ -73,7 +78,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0004'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0005'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -101,15 +106,17 @@ async def import_asset(project_id: str, db: DBDep, file: UploadFile = File(), au
         raise HTTPException(422, '必须记录素材授权来源')
     asset_id = str(uuid4())
     suffix = Path(file.filename or '').suffix.lower()
-    if suffix not in {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.wav', '.mp3', '.srt'}:
+    if suffix not in {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.wav', '.mp3', '.srt','.txt',*IMAGE_SUFFIXES}:
         raise HTTPException(422, '不支持的媒体扩展名')
     key = f'originals/{asset_id}{suffix}'
     saved = False
     try:
-        digest, size = await save_upload(file, key, 2*1024**2 if suffix=='.srt' else None)
+        maximum=2*1024**2 if suffix in ('.srt','.txt') else 20*1024**2 if suffix in IMAGE_SUFFIXES else None
+        digest, size = await save_upload(file, key,maximum)
         saved = True
         if suffix == '.srt':
             validate_srt(resolve_key(key))
+        validate_extra_asset(resolve_key(key),suffix)
         row = Asset(id=asset_id, project_id=project_id, name=(file.filename or 'media').replace('\\', '/').split('/')[-1][:255], storage_key=key, sha256=digest, size_bytes=size, authorization=authorization)
         db.add(row)
         db.commit()
@@ -130,7 +137,7 @@ def media(asset_id: str, db: DBDep):
     path = resolve_key(row.storage_key)
     if not path.is_file():
         raise HTTPException(404, '素材文件缺失')
-    return FileResponse(path)
+    return FileResponse(path,headers={'X-Content-Type-Options':'nosniff'})
 
 @app.get('/api/projects/{project_id}/tasks')
 def tasks(project_id: str, db: DBDep):
@@ -141,6 +148,11 @@ def prepare_task(project_id: str, body: TaskInput, db):
     asset = require(db, Asset, body.asset_id)
     if asset.project_id != project_id:
         raise HTTPException(422, '素材不属于此项目')
+    if body.story_version_id:
+        version=require(db,StoryVersion,body.story_version_id)
+        entity=require(db,StoryEntity,version.entity_id)
+        if entity.project_id!=project_id or entity.kind not in ('script','episode','storyboard'):
+            raise HTTPException(422,'生产引用必须为同项目的剧本、分集或分镜版本')
     if body.kind=='probe' and body.parameters is not None:
         raise HTTPException(422, '解析任务不接受剪辑参数')
     parameters = (body.parameters or RenderOptions()).model_dump() if body.kind=='render' else {}
@@ -165,10 +177,10 @@ def create_task(project_id: str, body: TaskInput, db: DBDep):
         return db.scalar(select(Task).where(Task.project_id == project_id, Task.idempotency_key == body.idempotency_key))
     previous = existing()
     if previous:
-        if previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters:
+        if previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters or previous.story_version_id!=body.story_version_id:
             raise HTTPException(409, '幂等键已用于其他输入')
         return previous
-    row = Task(project_id=project_id, asset_id=body.asset_id, idempotency_key=body.idempotency_key,kind=body.kind,parameters=parameters,input_snapshot=inputs)
+    row = Task(project_id=project_id, asset_id=body.asset_id, idempotency_key=body.idempotency_key,kind=body.kind,parameters=parameters,input_snapshot=inputs,story_version_id=body.story_version_id)
     db.add(row)
     try:
         db.flush()
@@ -177,7 +189,7 @@ def create_task(project_id: str, body: TaskInput, db: DBDep):
     except IntegrityError:
         db.rollback()
         previous = existing()
-        if not previous or previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters:
+        if not previous or previous.asset_id != body.asset_id or previous.kind != body.kind or previous.parameters != parameters or previous.story_version_id!=body.story_version_id:
             raise HTTPException(409, '幂等键冲突')
         return previous
     return row
@@ -239,6 +251,7 @@ def costs(project_id: str, db: DBDep):
 def create_batch(project_id: str, body: BatchInput, db: DBDep):
     require(db,Project,project_id)
     request=body.model_dump(exclude={'idempotency_key'})
+    if not body.story_version_id:request.pop('story_version_id',None)  # Keep P3 batch retries compatible.
     def existing():
         row=db.scalar(select(Batch).where(Batch.project_id==project_id,Batch.idempotency_key==body.idempotency_key))
         if row and row.request!=request:raise HTTPException(409,'批次幂等键已用于不同输入或参数')
@@ -249,14 +262,14 @@ def create_batch(project_id: str, body: BatchInput, db: DBDep):
     if previous:return result(previous)
     prepared=[]
     for asset_id in body.asset_ids:
-        options=TaskInput(asset_id=asset_id,idempotency_key='internal',kind='render',parameters=body.parameters)
+        options=TaskInput(asset_id=asset_id,idempotency_key='internal',kind='render',parameters=body.parameters,story_version_id=body.story_version_id)
         parameters,inputs=prepare_task(project_id,options,db)
         prepared.append((asset_id,parameters,inputs))
     batch=Batch(project_id=project_id,idempotency_key=body.idempotency_key,request=request)
     try:
         db.add(batch);db.flush()
         for index,(asset_id,parameters,inputs) in enumerate(prepared):
-            row=Task(project_id=project_id,asset_id=asset_id,batch_id=batch.id,kind='render',idempotency_key=f'batch:{batch.id}:{index}',parameters=parameters,input_snapshot=inputs)
+            row=Task(project_id=project_id,asset_id=asset_id,batch_id=batch.id,kind='render',idempotency_key=f'batch:{batch.id}:{index}',parameters=parameters,input_snapshot=inputs,story_version_id=body.story_version_id)
             db.add(row);db.flush()
             db.add(TaskEvent(task_id=row.id,attempt=0,message='原子批次已入队：'+batch.id))
         db.commit()

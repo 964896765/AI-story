@@ -1,0 +1,8 @@
+{
+  "restored_to": "story_p4_restore_check",
+  "revision": "0004",
+  "projects": 5,
+  "source_assets_hash_verified": 9,
+  "production_database_changed": false,
+  "note": "Pre-P4 database restored separately; original media checked in place, not a full copied file backup."
+}

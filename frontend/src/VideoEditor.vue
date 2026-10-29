@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];storyVersionId?:string}>()
 const emit=defineEmits<{submitted:[]}>()
 const chosen=ref<string[]>([]),start=ref(0),end=ref<number|''>(''),duration=ref<number|''>('')
 const aspect=ref('original'),strategy=ref('pad'),resolution=ref('source'),format=ref('mp4'),crf=ref(18)
@@ -18,9 +18,10 @@ async function submit(){
  const parameters={start:start.value,end:end.value===''?null:end.value,duration:duration.value===''?null:duration.value,aspect:aspect.value,strategy:strategy.value,resolution:resolution.value,format:format.value,crf:crf.value,audio_mode:audioMode.value,audio_asset_id:audioMode.value==='replace'?audio.value||null:null,subtitle_asset_id:subtitle.value||null,volume:volume.value}
  try{
   const assetIds=[...chosen.value].sort()
-  const signature=JSON.stringify({project,assetIds,parameters})
+  const story=props.storyVersionId?{story_version_id:props.storyVersionId}:{}
+  const signature=JSON.stringify({project,assetIds,parameters,...story})
   if(!keys.has(signature)){keys.set(signature,crypto.randomUUID());sessionStorage.setItem(storageKey(),JSON.stringify(Object.fromEntries(keys)))}
-  const response=await fetch(`/api/projects/${project}/batches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_ids:assetIds,parameters,idempotency_key:keys.get(signature)})})
+  const response=await fetch(`/api/projects/${project}/batches`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({asset_ids:assetIds,parameters,idempotency_key:keys.get(signature),...story})})
   const data=await response.json()
   if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail))
   message.value=`已确认 ${data.tasks.length} 项任务入队，批次 ${data.batch.id}（同一批次重复提交会复用任务）。`
@@ -32,6 +33,7 @@ async function submit(){
 <template>
  <section>
   <h2>批量剪辑与成片输出</h2>
+  <p v-if="storyVersionId" class="hint">本批次固定引用创作版本 {{storyVersionId}}。镜头与对白仍按已有视频及下列参数处理，不自动生成画面。</p>
   <p class="hint">选择授权视频并统一设置参数。字幕时间以裁剪后的片段 00:00 为起点；替换音轨从音频开头使用，过短补静音、过长截断。</p>
   <p v-if="!projectId" class="empty">请先选择项目。</p>
   <form v-else @submit.prevent="submit">

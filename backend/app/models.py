@@ -39,6 +39,7 @@ class Task(Base):
     asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id'))
     kind: Mapped[str] = mapped_column(String(40), default='probe')
     batch_id: Mapped[str | None] = mapped_column(ForeignKey('batches.id', ondelete='SET NULL'), nullable=True, index=True)
+    story_version_id: Mapped[str | None] = mapped_column(ForeignKey('story_versions.id'),nullable=True,index=True)
     error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, server_default=text('now()'))
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default='3')
@@ -124,3 +125,46 @@ class TaskAttempt(Base):
     error: Mapped[str | None] = mapped_column(Text,nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(40),nullable=True)
     __table_args__ = (UniqueConstraint('task_id','number'),)
+
+class StoryEntity(Base):
+    __tablename__='story_entities'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id',ondelete='CASCADE'),index=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    current_version: Mapped[int] = mapped_column(Integer,default=1)
+    creation_key: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('project_id','creation_key'),CheckConstraint("kind IN ('novel','script','character','scene','relationship','episode','storyboard','generation_plan')",name='ck_story_kind'),)
+
+class StoryVersion(Base):
+    __tablename__='story_versions'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    entity_id: Mapped[str] = mapped_column(ForeignKey('story_entities.id',ondelete='CASCADE'),index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    title: Mapped[str] = mapped_column(String(200))
+    content: Mapped[dict] = mapped_column(JSON)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(Text,default='')
+    provenance: Mapped[dict] = mapped_column(JSON,default=dict)
+    request_key: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('entity_id','number'),UniqueConstraint('entity_id','request_key'),)
+
+class StoryReference(Base):
+    __tablename__='story_references'
+    id: Mapped[int] = mapped_column(Integer,primary_key=True,autoincrement=True)
+    from_version_id: Mapped[str] = mapped_column(ForeignKey('story_versions.id',ondelete='CASCADE'),index=True)
+    target_version_id: Mapped[str | None] = mapped_column(ForeignKey('story_versions.id',ondelete='CASCADE'),nullable=True)
+    asset_id: Mapped[str | None] = mapped_column(ForeignKey('assets.id'),nullable=True)
+    role: Mapped[str] = mapped_column(String(40))
+    __table_args__=(CheckConstraint('(target_version_id IS NOT NULL AND asset_id IS NULL) OR (target_version_id IS NULL AND asset_id IS NOT NULL)',name='ck_story_reference_target'),)
+
+class StoryOperation(Base):
+    __tablename__='story_operations'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id',ondelete='CASCADE'),index=True)
+    request_key: Mapped[str] = mapped_column(String(100))
+    request: Mapped[dict] = mapped_column(JSON)
+    result_version_ids: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('project_id','request_key'),)

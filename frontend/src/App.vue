@@ -3,13 +3,16 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import VideoEditor from './VideoEditor.vue'
 import QueuePanel from './QueuePanel.vue'
 import AttemptHistory from './AttemptHistory.vue'
+import StoryStudio from './StoryStudio.vue'
 interface Project {id:string;name:string;description:string;budget_cents:number}
 interface Asset {id:string;name:string;size_bytes:number;authorization:string;sha256:string;media_info:Record<string,unknown>}
-interface Task {batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
+interface Task {story_version_id:string|null;batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
 interface Event {id:number;attempt:number;message:string;created_at:string}
 const projects=ref<Project[]>([]), assets=ref<Asset[]>([]), tasks=ref<Task[]>([]), events=ref<Event[]>([])
 const selected=ref(''), preview=ref(''), error=ref(''), health=ref('检查中'), busy=ref(false), name=ref(''), description=ref(''), authorization=ref(''), cost=ref(''), view=ref('素材资产中心'), logTask=ref('')
 const outputPreview=ref('')
+const productionStory=ref<{version_id:string;title:string;version:number}|null>(null)
+function useStory(version:{version_id:string;title:string;version:number}){productionStory.value=version;view.value='智能二创'}
 const sections=['素材资产中心','智能二创','漫剧定制','批量生产','质检与导出','运营中心']
 const labels:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败',cancelled:'已取消'}
 const stages:Record<string,string>={queued:'等待领取',recovered:'中断恢复',inspecting:'检查输入',encoding:'FFmpeg 编码',validating:'验证成片',publishing:'发布输出',succeeded:'完成',failed:'失败',cancelled:'已取消',retry_wait:'等待自动重试',checkpoint:'核验检查点',resuming_checkpoint:'复用编码检查点'}
@@ -29,7 +32,7 @@ async function refresh(){
   assets.value=a;tasks.value=t;cost.value=`¥${(c.recorded_cents/100).toFixed(2)} · ${c.note}`
  }catch(e){error.value=String(e)}finally{refreshing=false}
 }
-async function changeProject(){assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
+async function changeProject(){assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';productionStory.value=null;events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
 async function action(fn:()=>Promise<void>){busy.value=true;error.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
 async function create(){await action(async()=>{const p=await api<Project>('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.value,description:description.value})});projects.value.unshift(p);selected.value=p.id;name.value='';description.value='';await changeProject()})}
 async function upload(event:globalThis.Event){const input=event.target as HTMLInputElement;const files=Array.from(input.files??[]);await action(async()=>{if(!authorization.value.trim())throw new Error('请先填写授权来源');for(const file of files){const form=new FormData();form.append('file',file);form.append('authorization',authorization.value);await api(`/projects/${selected.value}/assets`,{method:'POST',body:form})}await refresh()});input.value=''}
@@ -43,23 +46,24 @@ onUnmounted(()=>clearInterval(timer))
 
 <template>
  <div class="shell">
-  <aside><div class="brand">AI 漫剧工厂<span>LOCAL PRODUCTION STUDIO</span></div><nav aria-label="工作区"><button v-for="section in sections" :key="section" :class="{active:view===section}" @click="view=section">{{section}}</button></nav><div class="aside-note">本机工作台 · P3<br>仅处理自有或已授权素材<br>云端模型未启用</div></aside>
+  <aside><div class="brand">AI 漫剧工厂<span>LOCAL PRODUCTION STUDIO</span></div><nav aria-label="工作区"><button v-for="section in sections" :key="section" :class="{active:view===section}" @click="view=section">{{section}}</button></nav><div class="aside-note">本机工作台 · P4<br>仅处理自有或已授权素材<br>云端模型未启用</div></aside>
   <main>
    <header><div><p class="eyebrow">PRODUCTION WORKSPACE</p><h1>{{view}}</h1></div><span class="health">{{health}}</span></header>
    <p v-if="error" class="error" role="alert">{{error}} <button @click="error=''">关闭</button></p>
    <div class="projectbar"><label>当前项目 <select v-model="selected" @change="changeProject"><option value="">选择项目</option><option v-for="p in projects" :key="p.id" :value="p.id">{{p.name}}</option></select></label><span v-if="busy" role="status">正在提交真实请求…</span><button :disabled="!selected||busy" @click="refresh">刷新状态</button></div>
    <template v-if="view==='素材资产中心'">
     <details :open="!projects.length"><summary>新建项目</summary><form class="create" @submit.prevent="create"><label>项目名称<input v-model="name" required maxlength="200" placeholder="输入项目名称"></label><label>项目说明<textarea v-model="description" maxlength="20000" placeholder="故事方向、授权范围或制作要求"></textarea></label><button class="primary" :disabled="busy||!name.trim()">创建项目</button></form></details>
-    <div v-if="selected" class="workspace"><section><h2>原始素材 <span>{{assets.length}} 个</span></h2><label>授权来源<textarea v-model="authorization" maxlength="10000" placeholder="记录自有素材声明或授权方、协议编号及使用范围"></textarea></label><label class="upload">批量导入视频 / 音频 / SRT<input type="file" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.wav,.mp3,.srt" :disabled="busy||!authorization.trim()" @change="upload"></label><p class="hint">每文件上限 2 GiB。复制至原始素材区，处理流程不覆盖源文件。</p><div v-if="!assets.length" class="empty">尚无素材。填写授权来源后导入文件。</div><article v-for="asset in assets" :key="asset.id" class="asset"><div><strong>{{asset.name}}</strong><p>{{(asset.size_bytes/1024/1024).toFixed(2)}} MB · {{Object.keys(asset.media_info).length?'已解析':'待解析'}}</p><p>{{asset.authorization}}</p></div><div class="actions"><button @click="preview=asset.id">预览</button><button :disabled="busy" @click="probe(asset)">读取媒体信息</button></div></article></section><section class="preview"><h2>素材预览</h2><video v-if="preview" :key="preview" controls preload="metadata" :src="`/api/assets/${preview}/media`"></video><div v-else class="empty screen">选择素材开始预览</div><p class="hint">浏览器无法播放的编码可在智能二创中转为 MP4。SRT 仅用于烧录，不支持视频预览。</p><h2>已记录费用</h2><p class="cost">{{cost||'等待读取'}}</p></section></div>
+    <div v-if="selected" class="workspace"><section><h2>原始素材 <span>{{assets.length}} 个</span></h2><label>授权来源<textarea v-model="authorization" maxlength="10000" placeholder="记录自有素材声明或授权方、协议编号及使用范围"></textarea></label><label class="upload">导入视频 / 音频 / 字幕 / 文本 / 图片<input type="file" multiple accept=".mp4,.mov,.mkv,.webm,.avi,.wav,.mp3,.srt,.txt,.png,.jpg,.jpeg,.webp" :disabled="busy||!authorization.trim()" @change="upload"></label><p class="hint">媒体每文件上限 2 GiB；SRT/TXT 2 MiB，参考图片 20 MiB。处理不覆盖原始素材。</p><div v-if="!assets.length" class="empty">尚无素材。填写授权来源后导入文件。</div><article v-for="asset in assets" :key="asset.id" class="asset"><div><strong>{{asset.name}}</strong><p>{{(asset.size_bytes/1024/1024).toFixed(2)}} MB · {{Object.keys(asset.media_info).length?'已解析':'待解析'}}</p><p>{{asset.authorization}}</p></div><div class="actions"><button :disabled="/\.(srt|txt)$/i.test(asset.name)" @click="preview=asset.id">预览</button><button :disabled="busy||/\.(srt|txt|png|jpe?g|webp)$/i.test(asset.name)" @click="probe(asset)">读取媒体信息</button></div></article></section><section class="preview"><h2>素材预览</h2><img v-if="preview&&/\.(png|jpe?g|webp)$/i.test(assets.find(a=>a.id===preview)?.name||'')" class="reference-preview" :src="`/api/assets/${preview}/media`" alt="授权参考素材"><video v-else-if="preview" :key="preview" controls preload="metadata" :src="`/api/assets/${preview}/media`"></video><div v-else class="empty screen">选择素材开始预览</div><p class="hint">浏览器无法播放的编码可在智能二创中转为 MP4。SRT 仅用于烧录，不支持视频预览。</p><h2>已记录费用</h2><p class="cost">{{cost||'等待读取'}}</p></section></div>
     <div v-else class="empty">创建一个项目，开始管理授权素材。</div>
    </template>
-   <VideoEditor v-else-if="view==='智能二创'" :project-id="selected" :assets="assets" @submitted="refresh" />
+   <template v-else-if="view==='智能二创'"><p v-if="productionStory" class="hint">生产依据：{{productionStory.title}} · v{{productionStory.version}} <button @click="productionStory=null">清除引用</button></p><VideoEditor :project-id="selected" :assets="assets" :story-version-id="productionStory?.version_id" @submitted="refresh" /></template>
+   <StoryStudio :key="selected" v-else-if="view==='漫剧定制'" :project-id="selected" :assets="assets" @assets-changed="refresh" @production="useStory" />
    <template v-else-if="view==='批量生产'">
     <QueuePanel :project-id="selected" />
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>
     <p v-if="!selected" class="empty">请先选择项目。</p><p v-else-if="!tasks.length" class="empty">暂无任务。导入素材后可读取媒体信息，或在智能二创中提交剪辑任务。</p>
     <article v-for="task in tasks" :key="task.id" class="task">
-     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id}}</strong><p class="mono">{{task.kind==='render'?'视频剪辑':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
+     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id}}</strong><p class="mono">{{task.kind==='render'?'视频剪辑':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.story_version_id" class="mono">创作版本 {{task.story_version_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
       <p>{{stages[task.stage]||task.stage}} · 本次耗时 {{task.elapsed_seconds.toFixed(1)}} 秒 · 尝试 {{task.attempt}}</p>
       <progress v-if="task.kind==='render'" :value="task.progress" max="100" :aria-label="`编码进度 ${task.progress.toFixed(1)}%`"></progress><span v-if="task.kind==='render'"> {{task.progress.toFixed(1)}}%</span>
       <details v-if="task.kind==='render'"><summary>已保存处理参数</summary><pre>{{JSON.stringify(task.parameters,null,2)}}</pre></details>

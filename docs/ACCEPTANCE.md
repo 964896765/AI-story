@@ -4,7 +4,9 @@
 
 P0 初始化完成；P1 业务基础按本记录范围通过自动化与真实 HTTP 验收。以下为 P1 历史记录；本轮 P2 实施、测试和回滚见 [P2_ACCEPTANCE.md](P2_ACCEPTANCE.md)，下文的未完成项以 P1 当时状态为准。
 
-P3批量可靠性与当前验收见 [P3_ACCEPTANCE.md](P3_ACCEPTANCE.md)，数据库当前0004。历史未完成项以各阶段记录为准。
+P3批量可靠性验收见 [P3_ACCEPTANCE.md](P3_ACCEPTANCE.md)，当时数据库为0004。历史未完成项以各阶段记录为准。
+
+P4本轮创作资产基础与当前验收见 [P4_ACCEPTANCE.md](P4_ACCEPTANCE.md)，数据库当前0005；实际AI生成与配音仍未启用。
 
 ## P0 实际交付
 

@@ -1,0 +1,86 @@
+{
+  "project_id": "2887dda4-1f70-4752-a012-e7f7fa04a330",
+  "novel_id": "d4a817bc-d17e-4e07-87b9-af2ebf13e407",
+  "character_id": "59e07379-86f9-4d01-8a14-e72d98c55111",
+  "script_id": "a68ee0b2-6187-45ce-b905-62c028d62f3e",
+  "script_version_id": "b98abf9a-b216-4536-9426-402b2c29b6cc",
+  "storyboard_id": "37893c1e-d307-4cb9-9ae9-067193a38a69",
+  "storyboard_version_id": "832e3fb3-b60b-4385-9bbd-d96edc8db855",
+  "plan_id": "8af48d56-bbb4-4064-b010-86d23235647e",
+  "task": {
+    "id": "f2554e61-c43c-4121-89dd-13a980b6a492",
+    "error_code": null,
+    "error": null,
+    "finished_at": "2026-10-29T03:59:00.020293+00:00",
+    "next_run_at": "2026-10-29T03:58:59.345952+00:00",
+    "lease_until": null,
+    "elapsed_seconds": 0.28199999999196734,
+    "max_attempts": 3,
+    "stage": "succeeded",
+    "input_snapshot": {
+      "video": {
+        "id": "f7efbdd7-82db-4cc5-8ff6-954972c334b5",
+        "storage_key": "originals/f7efbdd7-82db-4cc5-8ff6-954972c334b5.mp4",
+        "sha256": "090c6e2d8ea0d70197e9d26c1b76b55b008541b767760dd66e3b52ea34a799df"
+      }
+    },
+    "project_id": "2887dda4-1f70-4752-a012-e7f7fa04a330",
+    "status": "succeeded",
+    "progress": 100.0,
+    "created_at": "2026-10-29T03:58:59.345952+00:00",
+    "asset_id": "f7efbdd7-82db-4cc5-8ff6-954972c334b5",
+    "idempotency_key": "batch:dfaf850b-87c5-48e2-b5ef-24fe1dfb53ae:0",
+    "cancel_requested": false,
+    "kind": "render",
+    "parameters": {
+      "start": 0,
+      "end": null,
+      "duration": 1.0,
+      "aspect": "1:1",
+      "strategy": "pad",
+      "resolution": "source",
+      "format": "mp4",
+      "crf": 18,
+      "audio_mode": "keep",
+      "audio_asset_id": null,
+      "subtitle_asset_id": null,
+      "volume": 1
+    },
+    "worker_token": null,
+    "updated_at": "2026-10-29T03:59:00.020829+00:00",
+    "batch_id": "dfaf850b-87c5-48e2-b5ef-24fe1dfb53ae",
+    "output": {
+      "duration": 1.0,
+      "width": 270,
+      "height": 270,
+      "has_audio": false,
+      "size_bytes": 40086,
+      "storage_key": "outputs/f2554e61-c43c-4121-89dd-13a980b6a492/video.mp4",
+      "signature": "857ffd02a32f39c56c2e181a3b921763d57790a51856e94cafe71cfff375078d",
+      "recovered": false,
+      "resumed_from_attempt": null
+    },
+    "started_at": "2026-10-29T03:58:59.715601+00:00",
+    "story_version_id": "832e3fb3-b60b-4385-9bbd-d96edc8db855",
+    "attempt": 1
+  },
+  "model_estimate": {
+    "available": false,
+    "estimated_cost_minor": null,
+    "currency": null,
+    "reason": "尚未配置且未获授权的模型调用；未知费用不记为零"
+  },
+  "export_version_ids": [
+    "719c1984-d9a9-4a45-94be-f4e615325e3d",
+    "7606d17f-a311-4f28-9df6-4306ac2dad18",
+    "832e3fb3-b60b-4385-9bbd-d96edc8db855",
+    "8cc4e1b2-8d5b-46e0-84c0-52a4dc9bb857",
+    "a028cf52-c815-4b34-ba5c-2b689fc06bb5",
+    "a32e5155-0987-472b-9bc1-34d9ab0ec009",
+    "b98abf9a-b216-4536-9426-402b2c29b6cc",
+    "d4fdba87-9e94-49bd-9a8c-e6b6b7ae397b",
+    "f86a900d-0d23-4dce-bbc5-c43e3a4b05ba",
+    "fc8fbc9e-b6e1-4fe6-bce6-9bf29372292b"
+  ],
+  "rule_episodes_ai_generated": false
+}
