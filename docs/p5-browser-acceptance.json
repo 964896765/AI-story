@@ -1,0 +1,20 @@
+{
+  "browser": "Installed Chrome headless",
+  "project_id": "abb45151-8ef6-49db-bc64-d2647269409e",
+  "source_version_id": "ab29a46c-be06-43b8-a2bc-f5e39e82db56",
+  "checked_at": "2026-11-18T17:10:07.416Z",
+  "real_external_model_requests": 0,
+  "real_spent_micros": 0,
+  "duplicate_submission_same_call": true,
+  "ffprobe_verified": true,
+  "draft_revision": 2,
+  "simulated": true,
+  "compiled_version": "9f4e05e5-5c44-4d8c-87c5-2f06b567e079",
+  "keyboard_review": true,
+  "render_task": "3b715d1a-3432-4558-8c2d-3c7272a9b618",
+  "status": "succeeded",
+  "range": 206,
+  "render_duration": 1,
+  "actual_cost_micros": null,
+  "javascript_errors": []
+}

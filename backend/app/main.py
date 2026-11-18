@@ -20,9 +20,12 @@ from .reliability import queue_control
 from datetime import timedelta
 from .asset_validation import validate_extra_asset,IMAGE_SUFFIXES
 from .creative import router as creative_router
+from .text_routes import router as text_router
+from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(title='AI 漫剧工厂', version='0.4.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.5.0')
 app.include_router(creative_router)
+app.include_router(text_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -38,6 +41,11 @@ async def local_only(request: Request, call_next):
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, exc):
     return JSONResponse(status_code=503, content={'detail': '数据库不可用或结构未迁移，请检查 PostgreSQL 和 Alembic'})
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request,exc):
+    # Never echo rejected provider input (including accidentally pasted secrets).
+    return JSONResponse(status_code=422,content={'detail':[{'loc':e['loc'],'msg':e['msg'],'type':e['type']} for e in exc.errors()]})
 
 class ProjectInput(BaseModel):
     name: str = Field(min_length=1, max_length=200, pattern=r'.*\S.*')
@@ -78,7 +86,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0005'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0006'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -199,6 +207,7 @@ def retry(task_id: str, db: DBDep):
     task = db.scalar(select(Task).where(Task.id == task_id).with_for_update())
     if not task:
         raise HTTPException(404, '任务不存在')
+    if task.kind=='adapt':raise HTTPException(409,'模型任务不得通过通用重试重发；请在模型调用记录中核对费用并显式创建新调用')
     if task.status not in ('failed','cancelled'):
         raise HTTPException(409, '仅失败或已取消任务可重试')
     task.status, task.error, task.lease_until = 'queued', None, None
@@ -215,6 +224,9 @@ def cancel(task_id: str, db: DBDep):
     task = db.scalar(select(Task).where(Task.id==task_id).with_for_update())
     if not task:
         raise HTTPException(404,'任务不存在')
+    if task.kind=='adapt':
+        from .text_service import cancel_locked
+        result=cancel_locked(db,task);db.commit();return task
     if task.status == 'cancelled':
         return task
     if task.status not in ('queued','running'):

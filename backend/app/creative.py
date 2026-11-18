@@ -218,7 +218,8 @@ def derive(project_id:str,body:DeriveInput,db=Depends(session)):
 
 @router.get('/model-capabilities')
 def capabilities():
-    return {'enabled':False,'capabilities':['text','speech','image','video'],'providers':[],'note':'仅提供适配契约，尚未接入任何模型或收费接口'}
+    return {'enabled':False,'capabilities':['text','speech','image','video'],'providers':[],
+        'text_governance':'/api/text/status','note':'默认模型仍禁用；文本模拟与可配置兼容接口见剧情改编，真实调用须单独授权；语音、图片、视频未接入'}
 
 @router.get('/story/entities/{entity_id}/model-estimate')
 def model_estimate(entity_id:str,version:int|None=None,db=Depends(session)):

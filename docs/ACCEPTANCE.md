@@ -6,7 +6,9 @@ P0 初始化完成；P1 业务基础按本记录范围通过自动化与真实 H
 
 P3批量可靠性验收见 [P3_ACCEPTANCE.md](P3_ACCEPTANCE.md)，当时数据库为0004。历史未完成项以各阶段记录为准。
 
-P4本轮创作资产基础与当前验收见 [P4_ACCEPTANCE.md](P4_ACCEPTANCE.md)，数据库当前0005；实际AI生成与配音仍未启用。
+P4创作资产基础历史验收见 [P4_ACCEPTANCE.md](P4_ACCEPTANCE.md)，当时数据库0005。
+
+P5-A/B文本治理与模拟剧情工作流见 [P5_ACCEPTANCE.md](P5_ACCEPTANCE.md)，当前数据库0006。真实API未授权、预算0，真实AI质量验收未执行；图片、视频、TTS模型未接入。
 
 ## P0 实际交付
 

@@ -36,7 +36,7 @@ class Task(Base):
     __tablename__ = 'tasks'
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'), index=True)
-    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id'))
+    asset_id: Mapped[str | None] = mapped_column(ForeignKey('assets.id'),nullable=True)
     kind: Mapped[str] = mapped_column(String(40), default='probe')
     batch_id: Mapped[str | None] = mapped_column(ForeignKey('batches.id', ondelete='SET NULL'), nullable=True, index=True)
     story_version_id: Mapped[str | None] = mapped_column(ForeignKey('story_versions.id'),nullable=True,index=True)
@@ -168,3 +168,79 @@ class StoryOperation(Base):
     result_version_ids: Mapped[list] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
     __table_args__=(UniqueConstraint('project_id','request_key'),)
+
+class TextProvider(Base):
+    __tablename__='text_providers'
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    label: Mapped[str]=mapped_column(String(120))
+    kind: Mapped[str]=mapped_column(String(30))
+    enabled: Mapped[bool]=mapped_column(Boolean,default=False)
+    settings: Mapped[dict]=mapped_column(JSON)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+class ModelBudget(Base):
+    __tablename__='model_budgets'
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str]=mapped_column(ForeignKey('projects.id',ondelete='CASCADE'),index=True)
+    mode: Mapped[str]=mapped_column(String(10))
+    currency: Mapped[str]=mapped_column(String(3))
+    limit_micros: Mapped[int]=mapped_column(BigInteger,default=0)
+    reserved_micros: Mapped[int]=mapped_column(BigInteger,default=0)
+    spent_micros: Mapped[int]=mapped_column(BigInteger,default=0)
+    halted: Mapped[bool]=mapped_column(Boolean,default=False)
+    authorization_id: Mapped[str]=mapped_column(String(200),default='')
+    __table_args__=(UniqueConstraint('project_id','mode','currency'),CheckConstraint("mode IN ('mock','live')",name='ck_budget_mode'),CheckConstraint('limit_micros >= 0 AND reserved_micros >= 0 AND spent_micros >= 0',name='ck_budget_nonnegative'))
+
+class ModelCall(Base):
+    __tablename__='model_calls'
+    id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str]=mapped_column(ForeignKey('projects.id'),index=True)
+    task_id: Mapped[str]=mapped_column(ForeignKey('tasks.id'),unique=True)
+    provider_id: Mapped[str]=mapped_column(ForeignKey('text_providers.id'))
+    budget_id: Mapped[str]=mapped_column(ForeignKey('model_budgets.id'))
+    source_version_id: Mapped[str]=mapped_column(ForeignKey('story_versions.id'))
+    accepted_version_id: Mapped[str | None]=mapped_column(ForeignKey('story_versions.id'),nullable=True)
+    request_key: Mapped[str]=mapped_column(String(100))
+    request_hash: Mapped[str]=mapped_column(String(64))
+    request: Mapped[dict]=mapped_column(JSON)
+    provider_snapshot: Mapped[dict]=mapped_column(JSON)
+    prompt_version: Mapped[str]=mapped_column(String(50))
+    prompt: Mapped[str]=mapped_column(Text)
+    simulated: Mapped[bool]=mapped_column(Boolean)
+    status: Mapped[str]=mapped_column(String(30),default='queued',index=True)
+    budget_status: Mapped[str]=mapped_column(String(30),default='reserved')
+    reserved_micros: Mapped[int]=mapped_column(BigInteger)
+    calculated_cost_micros: Mapped[int | None]=mapped_column(BigInteger,nullable=True)
+    actual_cost_micros: Mapped[int | None]=mapped_column(BigInteger,nullable=True)
+    usage: Mapped[dict | None]=mapped_column(JSON,nullable=True)
+    receipt: Mapped[dict | None]=mapped_column(JSON,nullable=True)
+    draft: Mapped[dict | None]=mapped_column(JSON,nullable=True)
+    draft_revision: Mapped[int]=mapped_column(Integer,default=0)
+    review: Mapped[dict | None]=mapped_column(JSON,nullable=True)
+    provider_call_id: Mapped[str | None]=mapped_column(String(200),nullable=True)
+    error_code: Mapped[str | None]=mapped_column(String(60),nullable=True)
+    sent_at: Mapped[datetime | None]=mapped_column(DateTime(timezone=True),nullable=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('project_id','request_key'),CheckConstraint('reserved_micros >= 0',name='ck_call_reserve_nonnegative'))
+
+class ModelLedger(Base):
+    __tablename__='model_ledger'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True,autoincrement=True)
+    budget_id: Mapped[str]=mapped_column(ForeignKey('model_budgets.id'),index=True)
+    call_id: Mapped[str | None]=mapped_column(ForeignKey('model_calls.id'),nullable=True,index=True)
+    kind: Mapped[str]=mapped_column(String(30))
+    amount_micros: Mapped[int]=mapped_column(BigInteger)
+    reference: Mapped[str]=mapped_column(String(200),unique=True)
+    note: Mapped[str]=mapped_column(Text,default='')
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+
+class ModelDraft(Base):
+    __tablename__='model_drafts'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True,autoincrement=True)
+    call_id: Mapped[str]=mapped_column(ForeignKey('model_calls.id'),index=True)
+    number: Mapped[int]=mapped_column(Integer)
+    payload: Mapped[dict]=mapped_column(JSON)
+    origin: Mapped[str]=mapped_column(String(20))
+    request_key: Mapped[str]=mapped_column(String(100))
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
+    __table_args__=(UniqueConstraint('call_id','number'),UniqueConstraint('call_id','request_key'))

@@ -26,6 +26,11 @@ def recover_expired(db):
             previous.error_code,previous.error='WORKER_LOST','Worker lease expired'
             previous.elapsed_seconds=task.elapsed_seconds
         task.error_code='WORKER_LOST'
+        if task.kind=='adapt':
+            from .text_service import recover_adapt_task
+            recover_adapt_task(db,task)
+            event(db,task,'文本调用中断已核对，未自动重发请求')
+            continue
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
@@ -42,6 +47,8 @@ def _run_once(heartbeat):
     with Session.begin() as db:
         control=queue_control(db)
         recover_expired(db)
+        from .text_service import recover_detached_calls
+        recover_detached_calls(db)
         # A live lease is a second concurrency fence if the advisory connection was lost.
         if control.paused or db.scalar(select(Task.id).where(Task.status=='running').limit(1)):
             return False
@@ -98,6 +105,9 @@ def _run_once(heartbeat):
             with Session.begin() as db:
                 db.get(Task,task_id).lease_until = now()+timedelta(seconds=120)
             output = probe(resolve_key(inputs['video']['storage_key']))
+        elif kind=='adapt':
+            from .text_service import execute_text_task
+            output=execute_text_task(task_id,Session)
         else:
             raise ValueError('未知任务类型：'+kind)
     except Cancelled as exc:
@@ -106,10 +116,17 @@ def _run_once(heartbeat):
     except Exception as exc:
         error = str(exc)[-4000:]
         code,retryable=classify_error(exc)
+        if kind=='adapt':code=getattr(exc,'code','MODEL_PROCESSING_INTERRUPTED');retryable=False
     with Session.begin() as db:
         task = db.scalar(select(Task).where(Task.id == task_id).with_for_update())
         if task.status != 'running' or task.worker_token != token:
             return True
+        if kind=='adapt':
+            from .text_service import require_call_by_task
+            call=require_call_by_task(db,task.id)
+            output={'model_call_id':call.id,'status':call.status,'simulated':call.simulated,'review_required':call.status=='awaiting_review','accepted_version_id':call.accepted_version_id}
+            if call.status in ('awaiting_review','accepted','rejected'):error=None;code=None;cancelled=False
+            elif call.status=='cancelled':cancelled=True
         # Publication wins a cancellation racing the final atomic publish.
         if task.cancel_requested and not (kind=='render' and output):
             cancelled = True
@@ -122,15 +139,17 @@ def _run_once(heartbeat):
         if task.status == 'succeeded':
             task.progress = 100
             if kind == 'probe': db.get(Asset,task.asset_id).media_info = output
+            if kind=='adapt':task.stage={'awaiting_review':'awaiting_review','accepted':'approved','rejected':'rejected'}.get(output.get('status'),'succeeded')
         record=attempt_record(db,task)
         record.status,record.stage=task.status,task.stage
         record.finished_at,record.elapsed_seconds=task.finished_at,task.elapsed_seconds
         record.error,record.error_code,record.output=error,code,output
         record.checkpoints=[*record.checkpoints,{'stage':task.status,'at':now().isoformat()}]
-        if task.status=='failed' and retryable and task.attempt<task.max_attempts:
+        if kind!='adapt' and task.status=='failed' and retryable and task.attempt<task.max_attempts:
             schedule_retry(task)
             event(db,task,'可恢复错误，已安排延迟重试：'+code)
-        event(db,task,error or ('执行完成，输出已验证' if kind=='render' else '媒体信息读取完成'))
+        success_message={'render':'执行完成，输出已验证','probe':'媒体信息读取完成','adapt':'文本调用已记录处理结果'}
+        event(db,task,error or success_message[kind])
     return True
 
 def run_once(heartbeat=None):

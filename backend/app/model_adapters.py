@@ -1,5 +1,5 @@
-"""No network implementations are registered. Plans are preparation, not generation."""
-from dataclasses import dataclass
+"""Shared adapter contract; the default stays disabled. Governed text lives separately."""
+from dataclasses import dataclass,field
 from typing import Protocol,Literal
 
 Capability=Literal['text','speech','image','video']
@@ -14,6 +14,7 @@ class ModelRequest:
     capability: Capability
     prompt: str
     input_versions: tuple[str,...]
+    parameters: dict=field(default_factory=dict)
 
 @dataclass(frozen=True)
 class ModelResult:
@@ -21,6 +22,9 @@ class ModelResult:
     output: dict
     recorded_cost_minor: int | None
     currency: str | None
+    usage: dict | None=None
+    finish_reason: str | None=None
+    request_id: str | None=None
 
 class ModelAdapter(Protocol):
     def estimate(self,request:ModelRequest) -> dict: ...

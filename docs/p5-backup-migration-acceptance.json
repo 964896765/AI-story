@@ -1,0 +1,30 @@
+{
+  "database_only_backup": true,
+  "original_files_copied": false,
+  "restores": [
+    {
+      "backup": "data\\backups\\p5-before\\database.dump",
+      "revision": "0005",
+      "projects": 7,
+      "original_asset_hashes_checked": 13,
+      "ledger_rows": null,
+      "dump_sha256": "4260a2be1e8b583f5a001490094228119fa9b96a182af57a68c32ed87c7a207c",
+      "restored_in_separate_database": true
+    },
+    {
+      "backup": "data\\backups\\p5-verified-8481292d1a9e\\database.dump",
+      "revision": "0006",
+      "projects": 7,
+      "original_asset_hashes_checked": 13,
+      "ledger_rows": 0,
+      "dump_sha256": "e7f5c1ca3f490e0548d1334528a2c68da4670830edab029cad776ee4e441c77b",
+      "restored_in_separate_database": true
+    }
+  ],
+  "empty_database_migration": [
+    "upgrade 0006",
+    "downgrade 0005",
+    "upgrade 0006",
+    "schema check passed"
+  ]
+}
