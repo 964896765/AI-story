@@ -10,12 +10,12 @@ foreach ($entry in $records) {
     $process = Get-Process -Id $entry.pid -ErrorAction SilentlyContinue
     if (-not $process) { continue }
     $info = Get-CimInstance Win32_Process -Filter "ProcessId = $($entry.pid)"
-    if (-not $entry.started_utc -or -not $entry.executable -or $process.StartTime.ToUniversalTime().ToString('o') -ne $entry.started_utc -or $info.ExecutablePath -ne $entry.executable) { throw "Identity mismatch for recorded PID $($entry.pid); nothing was stopped. Inspect stale records manually." }
+    if (-not $entry.started_utc -or -not $entry.executable -or $process.StartTime.ToUniversalTime() -ne ([DateTimeOffset]$entry.started_utc).UtcDateTime -or $info.ExecutablePath -ne $entry.executable) { throw "Identity mismatch for recorded PID $($entry.pid); nothing was stopped. Inspect stale records manually." }
 }
 foreach ($entry in $records) {
     $process = Get-Process -Id $entry.pid -ErrorAction SilentlyContinue
     if ($process -and $PSCmdlet.ShouldProcess("$($entry.name) PID $($entry.pid)",'Stop verified project process tree')) {
-        if ($process.StartTime.ToUniversalTime().ToString('o') -ne $entry.started_utc) { throw 'Process identity changed; refusing stop' }
+        if ($process.StartTime.ToUniversalTime() -ne ([DateTimeOffset]$entry.started_utc).UtcDateTime) { throw 'Process identity changed; refusing stop' }
         taskkill /PID $entry.pid /T /F
         if ($LASTEXITCODE -ne 0) { throw 'Could not stop process; record retained' }
     }

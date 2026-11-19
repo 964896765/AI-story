@@ -24,3 +24,11 @@
 P1 历史依赖漏洞审计的时间和范围见 [阶段记录](ACCEPTANCE.md)。本轮运行了 `pip check`。商业分发前仍需核对实际 FFmpeg 构建、容器与二进制依赖、字体及模型许可。 [依赖许可证记录](LICENSE_REVIEW.md)
 
 证据：[基线测试 XML](v2-baseline-tests.xml)、[P4 HTTP](p4-http-acceptance.json)、[P4 浏览器](p4-browser-acceptance.json)、[P4 历史迁移](p4-migration-acceptance.json)、[P4 历史恢复](p4-backup-acceptance.json)。
+
+## 阶段增量
+
+|模块|最新实现与证据|待办|
+|---|---|---|
+|03 智能解析|P6-A 本地流清单、分轨、转封装、代理、抽帧、切镜、字幕、波形接入异步 Worker。P6-B 增加版本化人工审核、证据对齐和正式创作采纳。见 [本地分析引擎](../backend/app/analysis_engine.py)、[审核契约](../backend/app/analysis_review.py)|接入并单独验证 ASR、OCR、说话人、音源分离与多模态；扩展超长片、异常封装与色彩|
+|04 深度二创|P5-B 模拟改编、草稿历史、人工批准、版本固定生产已通过。P6 人工确认的解析剧本可直接进入 P5。见 [P5 验收](P5_ACCEPTANCE.md)、[解析工作区](../frontend/src/MediaAnalysis.vue)|真实文本模型质量、跨集剧情策略、局部再编|
+|07 AI 生成 / 11 模型算力|P5-A 兼容文本契约、费用闸门、项目与跨项目真实上限、未知状态、离线模拟、人工账单与退款。见 [P5 模型契约](P5_MODEL_CONTRACT.md)|真实供应商报价和授权后的样片、更多预算层级、账单自动对账、图片/视频/语音/远程算力|

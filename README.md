@@ -1,6 +1,6 @@
 # AI 漫剧工厂
 
-面向 Windows 的本机生产工作台。独立编写，未复制第三方漫剧项目源码。已有 P1 基础、P2 真实视频剪辑导出、P3 持久批次与恢复、P4 创作版本与生产引用。本轮 P5-A/B 增加文本供应商配置、预算预留与对账、离线模拟改编和人工审核；真实文本调用保持禁用，授权预算为0，未通过真实 AI 创作验收。阶段记录见 [验收入口](docs/ACCEPTANCE.md) 和 [P5 验收](docs/P5_ACCEPTANCE.md)。
+面向 Windows 的本机生产工作台。已有原始素材管理、真实视频剪辑导出、持久化任务与恢复、创作版本及固定生产引用。P5 提供文本模型预算、人工对账和离线改编审核。P6 提供本地多媒体解析、证据审核和创作采纳。真实模型调用默认关闭，真实预算为 0。 [阶段验收](docs/ACCEPTANCE.md) · [能力矩阵](docs/CAPABILITY_MATRIX.md)
 
 ## 本地启动
 
@@ -61,7 +61,7 @@ PostgreSQL 集成测试需独立测试数据库，先以其 `DATABASE_URL` 执�
 
 已配置完成时，也可在根目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start.ps1` 隐藏启动三个进程。日志和 PID 存于 `data/runtime`；如需关闭，先核对记录 PID 的实际命令行再停止对应进程。脚本遇到端口占用会退出，不终止其他服务。P3 记录进程启动时间和可执行文件，过期记录由启动脚本归档；`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -WhatIf` 可检查将停止的本项目进程，再去掉 `-WhatIf` 实际停止。身份不匹配就拒绝操作，不按端口或复用 PID 杀进程。停止前建议等待任务结束或取消；强制停止的任务通过租约恢复。
 
-升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P5 为 0006），再重新启动两者。不要让旧版本 Worker 领取新版本任务。前端重新执行 `npm run build` 或保持 Vite 开发服务热更新。
+升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P6 为 0007），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P6 恢复步骤](docs/P6_ACCEPTANCE.md)
 
 P2 实机验证脚本：服务运行后根目录执行 `.\.venv\Scripts\python scripts/p2_smoke.py`，会创建明确标识的验收项目与自有测试视频，并生成两条真实成片。浏览器验证使用本机 Chrome：`node --experimental-websocket scripts/browser-p2.mjs`，独立临时浏览器配置，不下载浏览器或模型；会再创建一条真实任务。
 
@@ -105,4 +105,10 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 
 本阶段真实请求0、实际支出0；单次真实改编预计费用仍未知，待选定供应商、费率和上限后计算。配置、错误策略和未来授权步骤见 [P5模型契约](docs/P5_MODEL_CONTRACT.md)。未接入图片、视频或TTS模型。
 
-隔离完整验收：根目录 `.\.venv\Scripts\python scripts/isolated_regression.py --junitxml docs/p5-backend-tests.xml --browser`。创建并最终删除独立测试库和临时素材目录，不清空项目库；浏览器测试要求15173/18000空闲，只启动和停止它自己的服务。已有工作台运行时先用项目stop脚本正常停止。数据库恢复演练：`.\.venv\Scripts\python scripts/p5_recovery_check.py`，只在新临时库恢复已保存的P5前备份与当前数据库快照，核验原素材哈希，不覆盖项目库。该演练只备份数据库，完整灾备仍需复制并校验全部data文件。
+隔离回归使用 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser`。脚本创建独立数据库与素材目录，浏览器服务使用备用端口 15179/18006。P5 的数据库恢复脚本对应历史 0006 基线。 [P5 验收](docs/P5_ACCEPTANCE.md)
+
+## P6 本地解析
+
+在素材资产中心进入音视频的“智能解析”，选择需要的步骤并提交。解析记录可查看参数、产物、阶段和日志，切镜或字幕时间可定位至预览播放头。审核快照保存选定解析证据、人工切点和标注，审核稿可以保存为剧本后进入 P5 剧情改编。
+
+模型感知在设置与接口中显示接入状态。当前可使用软字幕抽取、真实波形和人工标注。浏览器复验使用 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser-phase p6 --browser-only`，默认把新证据写到 `data/tmp`。 [P6 验收](docs/P6_ACCEPTANCE.md)

@@ -6,7 +6,7 @@ if (Test-Path -LiteralPath (Join-Path $runtime 'processes.json')) {
     $previous = Get-Content -LiteralPath (Join-Path $runtime 'processes.json') -Raw | ConvertFrom-Json
     foreach ($entry in $previous) {
         $existing = Get-Process -Id $entry.pid -ErrorAction SilentlyContinue
-        if ($existing -and $entry.started_utc -and $existing.StartTime.ToUniversalTime().ToString('o') -eq $entry.started_utc) { throw 'A recorded process is still alive. Use scripts/stop.ps1 or inspect it first.' }
+        if ($existing -and $entry.started_utc -and $existing.StartTime.ToUniversalTime() -eq ([DateTimeOffset]$entry.started_utc).UtcDateTime) { throw 'A recorded process is still alive. Use scripts/stop.ps1 or inspect it first.' }
         if ($existing -and -not $entry.started_utc) {
             $info = Get-CimInstance Win32_Process -Filter "ProcessId = $($entry.pid)"
             if ($info.ExecutablePath -eq (Join-Path $projectRoot '.venv\Scripts\python.exe')) { throw 'Legacy Python process record may still be alive; inspect manually before restarting.' }

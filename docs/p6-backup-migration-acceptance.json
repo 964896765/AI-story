@@ -1,0 +1,19 @@
+{
+  "before_revision": "0006",
+  "tested_revision": "0007",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 115,
+  "dump_sha256": "81e404ad61d8659773d407447b33083cc5b06f35f0c5607c23bc26c9be210c25",
+  "empty_analysis_history_roundtrip": [
+    "upgrade 0007",
+    "schema check",
+    "downgrade 0006",
+    "upgrade 0007",
+    "schema check"
+  ],
+  "backup_directory": "data/backups/p6-before-339b1bb1693b",
+  "local_database_revision": "0007"
+}

@@ -4,7 +4,7 @@ from datetime import timedelta
 from uuid import uuid4
 from sqlalchemy import select, text
 from .db import Session
-from .models import Task, TaskEvent, Asset, TaskAttempt, now
+from .models import Task, TaskEvent, Asset, TaskAttempt, MediaAnalysis, now
 from .storage import resolve_key
 from .media import probe
 from .render import render, Cancelled
@@ -34,7 +34,7 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind == 'render' and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
@@ -98,6 +98,7 @@ def _run_once(heartbeat):
         previous_stage = stage
 
     output, error, cancelled,code,retryable = {}, None, False,None,False
+    analysis_result = None
     try:
         if kind == 'render':
             output = render(task_id,attempt,parameters,inputs,update)
@@ -108,6 +109,12 @@ def _run_once(heartbeat):
         elif kind=='adapt':
             from .text_service import execute_text_task
             output=execute_text_task(task_id,Session)
+        elif kind == 'analyze':
+            from .analysis_service import execute_analysis
+            analysis_result = execute_analysis(task_id, attempt, parameters, inputs, update, Session)
+            _, payload = analysis_result
+            output = {'operation': payload['operation'], 'artifact_count': len(payload['artifacts']),
+                      'reused_from_task_id': payload.get('reused_from_task_id')}
         else:
             raise ValueError('未知任务类型：'+kind)
     except Cancelled as exc:
@@ -130,6 +137,8 @@ def _run_once(heartbeat):
         # Publication wins a cancellation racing the final atomic publish.
         if task.cancel_requested and not (kind=='render' and output):
             cancelled = True
+            if kind == 'analyze':
+                output = {}
         task.status = 'cancelled' if cancelled else ('failed' if error else 'succeeded')
         task.stage = task.status
         task.output, task.error = output, error
@@ -140,6 +149,9 @@ def _run_once(heartbeat):
             task.progress = 100
             if kind == 'probe': db.get(Asset,task.asset_id).media_info = output
             if kind=='adapt':task.stage={'awaiting_review':'awaiting_review','accepted':'approved','rejected':'rejected'}.get(output.get('status'),'succeeded')
+            if kind == 'analyze':
+                signature, payload = analysis_result
+                db.add(MediaAnalysis(task_id=task.id, signature=signature, payload=payload))
         record=attempt_record(db,task)
         record.status,record.stage=task.status,task.stage
         record.finished_at,record.elapsed_seconds=task.finished_at,task.elapsed_seconds
@@ -148,7 +160,8 @@ def _run_once(heartbeat):
         if kind!='adapt' and task.status=='failed' and retryable and task.attempt<task.max_attempts:
             schedule_retry(task)
             event(db,task,'可恢复错误，已安排延迟重试：'+code)
-        success_message={'render':'执行完成，输出已验证','probe':'媒体信息读取完成','adapt':'文本调用已记录处理结果'}
+        success_message={'render':'执行完成，输出已验证','probe':'媒体信息读取完成','adapt':'文本调用已记录处理结果',
+                         'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
 

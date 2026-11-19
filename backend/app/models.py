@@ -244,3 +244,24 @@ class ModelDraft(Base):
     request_key: Mapped[str]=mapped_column(String(100))
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
     __table_args__=(UniqueConstraint('call_id','number'),UniqueConstraint('call_id','request_key'))
+
+
+class MediaAnalysis(Base):
+    __tablename__ = 'media_analyses'
+    task_id: Mapped[str] = mapped_column(ForeignKey('tasks.id'), primary_key=True)
+    signature: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AnalysisRevision(Base):
+    __tablename__ = 'analysis_revisions'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    request_key: Mapped[str] = mapped_column(String(100))
+    input_hash: Mapped[str] = mapped_column(String(64))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('asset_id', 'number'), UniqueConstraint('asset_id', 'request_key'))

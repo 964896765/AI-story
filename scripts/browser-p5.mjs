@@ -1,28 +1,9 @@
-import { spawn, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { writeFile, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
+import { api, base, evidenceDir, openChrome, post, qaRoot, wait } from './chrome-qa.mjs'
 
-const base = 'http://127.0.0.1:15173'
-const qaRoot = process.env.AI_STORY_QA_ROOT
-if (!qaRoot) throw new Error('Run through scripts/isolated_regression.py --browser-only')
-
-async function wait(check, label, timeout = 20000) {
-  const end = Date.now() + timeout
-  while (Date.now() < end) {
-    if (await check()) return
-    await new Promise(resolve => setTimeout(resolve, 150))
-  }
-  throw new Error('Timed out: ' + label)
-}
-async function api(path, options) {
-  const response = await fetch(base + '/api' + path, options)
-  if (!response.ok) throw new Error(response.status + ' ' + await response.text())
-  return response.json()
-}
-const post = (path, body) => api(path, {
-  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-})
 await wait(async () => {
   try { return (await api('/health')).ready && (await api('/queue')).workers.some(worker => worker.online) } catch { return false }
 }, 'isolated API, Vite proxy and worker')
@@ -40,75 +21,8 @@ upload.set('file', new Blob([await readFile(fixture)], {type:'video/mp4'}), 'own
 upload.set('authorization', '自行生成的色彩图案，用于本机验收')
 await api(projectPath + '/assets', { method:'POST', body:upload })
 
-const port = 19225
-const cdp = 'http://127.0.0.1:' + port
-try { await fetch(cdp + '/json/version'); throw new Error('Chrome debug port in use') } catch(error) {
-  if (error.message === 'Chrome debug port in use') throw error
-}
-const browser = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', [
-  '--headless=new','--disable-gpu','--no-first-run', '--window-size=1440,1050',
-  '--remote-debugging-port='+port, '--remote-debugging-address=127.0.0.1',
-  '--user-data-dir='+join(qaRoot,'chrome'), 'about:blank',
-], {windowsHide:true,stdio:'ignore'})
-let socket
-const pending = new Map(), errors = []
-let next = 0
-function command(method, params = {}) {
-  return new Promise((resolve,reject) => {
-    const id = ++next
-    pending.set(id, {resolve,reject})
-    socket.send(JSON.stringify({id, method, params}))
-  })
-}
-async function evaluate(expression) {
-  const data = await command('Runtime.evaluate', {expression, returnByValue:true, awaitPromise:true})
-  if (data.exceptionDetails) throw new Error(JSON.stringify(data.exceptionDetails))
-  return data.result.value
-}
-const lit = JSON.stringify
-const contains = text => evaluate('document.body.innerText.includes(' + lit(text) + ')')
-async function click(text) {
-  await wait(() => evaluate(`(() => {
-    const button = Array.from(document.querySelectorAll('button')).find(item => item.textContent.trim() === ${lit(text)} && !item.disabled)
-    if (!button) return false
-    button.click()
-    return true
-  })()`), 'enabled button: ' + text)
-}
-async function setField(label, value) {
-  assert(await evaluate(`(() => {
-    const field = Array.from(document.querySelectorAll('label')).find(item => item.childNodes[0]?.textContent.trim() === ${lit(label)})?.querySelector('input, textarea, select')
-    if (!field) return false
-    field.value = ${lit(value)}
-    field.dispatchEvent(new Event(field.tagName === 'SELECT' ? 'change' : 'input', {bubbles:true}))
-    return true
-  })()`), label)
-}
-async function screenshot(filename) {
-  const result = await command('Page.captureScreenshot', {format:'png'})
-  await writeFile('docs/' + filename, Buffer.from(result.data, 'base64'))
-}
+const {command, evaluate, contains, click, setField, screenshot, errors, close} = await openChrome(19225)
 try {
-  let tab
-  await wait(async () => {
-    try { tab = (await (await fetch(cdp + '/json')).json()).find(item => item.type === 'page'); return !!tab } catch { return false }
-  }, 'Chrome startup')
-  socket = new WebSocket(tab.webSocketDebuggerUrl)
-  await new Promise((resolve,reject) => { socket.onopen=resolve; socket.onerror=reject })
-  socket.onmessage = ({data}) => {
-    const message = JSON.parse(data)
-    const call = pending.get(message.id)
-    if (call) {
-      pending.delete(message.id)
-      if (message.error) call.reject(new Error(JSON.stringify(message.error)))
-      else call.resolve(message.result)
-    } else if (message.method === 'Runtime.exceptionThrown') {
-      errors.push(message.params.exceptionDetails)
-    }
-  }
-  await command('Runtime.enable')
-  await command('Page.enable')
-  await command('Page.navigate',{url:base})
   await wait(() => contains('服务就绪'), 'workbench ready')
   await setField('当前项目', project.id)
   await click('漫剧定制')
@@ -153,9 +67,7 @@ try {
   await click('引用已审核剧本创建剪辑批次')
   await wait(() => contains('生产依据'), 'editor has accepted version')
   await evaluate("document.querySelector('input[type=checkbox]').click()")
-  await setField('持续秒数', '1').catch(async () => {
-    await evaluate("const input=document.querySelectorAll('input[type=number]')[2];input.value='1';input.dispatchEvent(new Event('input',{bubbles:true}))")
-  })
+  await setField('裁剪时长（可空）', '1')
   await evaluate("document.querySelector('form').requestSubmit()")
   await wait(() => contains('已确认 1 项任务入队'), 'render task submitted')
   let render
@@ -173,7 +85,7 @@ try {
   assert.equal((await response.arrayBuffer()).byteLength, 100)
   assert.equal(call.actual_cost_micros, null)
   assert.deepEqual(errors,[])
-  await writeFile('docs/p5-browser-acceptance.json',JSON.stringify({
+  await writeFile(join(evidenceDir,'p5-browser-acceptance.json'),JSON.stringify({
     browser:'Installed Chrome headless', project_id:project.id, source_version_id:source.version_id,
     checked_at:new Date().toISOString(), real_external_model_requests:0, real_spent_micros:0,
     duplicate_submission_same_call:firstCall.id === call.id, ffprobe_verified:true,
@@ -187,11 +99,5 @@ try {
   console.error(await evaluate('document.body.innerText.slice(-8000)'))
   throw error
 } finally {
-  if (socket?.readyState === WebSocket.OPEN) await command('Browser.close').catch(() => {})
-  socket?.close()
-  await new Promise(resolve => {
-    if (browser.exitCode !== null) return resolve()
-    browser.once('exit', resolve)
-    setTimeout(() => { browser.kill(); resolve() }, 3000).unref()
-  })
+  await close()
 }

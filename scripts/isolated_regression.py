@@ -18,8 +18,9 @@ from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
 
-def run_browser(env, path):
-    for port in (15173, 18000):
+def run_browser(env, path, phase):
+    api_port, browser_port = 18006, 15179
+    for port in (api_port, browser_port):
         with socket.socket() as listener:
             if listener.connect_ex(("127.0.0.1", port)) == 0:
                 raise RuntimeError(f"QA requires a free loopback port: {port}")
@@ -28,10 +29,12 @@ def run_browser(env, path):
         # The Windows venv launcher spawns a child that can outlive terminate().
         executable = sys._base_executable
         env = {**env, "PYTHONPATH": sysconfig.get_path("purelib")}
+    env = {**env, "AI_STORY_QA_API_PORT":str(api_port), "AI_STORY_QA_WEB_PORT":str(browser_port),
+           "FRONTEND_ORIGIN":f"http://127.0.0.1:{browser_port}"}
     jobs = [
-        ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "18000"], "backend"),
+        ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", "--strictPort"], "frontend"),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:
         for label, command, directory in jobs:
@@ -39,7 +42,7 @@ def run_browser(env, path):
             process = subprocess.Popen(command, cwd=ROOT / directory, env=env, stdout=log, stderr=subprocess.STDOUT)
             stack.callback(process.wait, 15)
             stack.callback(process.terminate)
-        subprocess.run(["node", "--experimental-websocket", "scripts/browser-p5.mjs"], cwd=ROOT,
+        subprocess.run(["node", "--experimental-websocket", f"scripts/browser-{phase}.mjs"], cwd=ROOT,
                        env=env, check=True, timeout=110)
 
 
@@ -48,6 +51,9 @@ def main():
     parser.add_argument("--junitxml", type=Path)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--browser-only", action="store_true")
+    parser.add_argument("--browser-phase", choices=["p5", "p6"], default="p5")
+    parser.add_argument("--browser-evidence", type=Path, default=ROOT / "data" / "tmp")
+    parser.add_argument("--test-file", help="Optional pytest path or node ID relative to backend")
     args = parser.parse_args()
     source = make_url(os.getenv("DATABASE_URL") or dotenv_values(ROOT / ".env")["DATABASE_URL"])
     if source.host not in ("127.0.0.1", "localhost", "::1"):
@@ -75,11 +81,14 @@ def main():
             run("alembic", "check")
             options = ("--junitxml", str(args.junitxml.resolve())) if args.junitxml else ()
             if not args.browser_only:
-                run("pytest", "-q", *options)
+                run("pytest", "-q", *options, *([args.test_file] if args.test_file else []))
             if args.browser or args.browser_only:
                 (ROOT / "data" / "tmp").mkdir(parents=True, exist_ok=True)
+                evidence = args.browser_evidence.resolve()
+                evidence.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(prefix="browser-qa-", dir=ROOT / "data" / "tmp", ignore_cleanup_errors=True) as folder:
-                    run_browser({**env, "STORAGE_ROOT": folder, "AI_STORY_QA_ROOT": folder}, Path(folder))
+                    run_browser({**env, "STORAGE_ROOT": folder, "AI_STORY_QA_ROOT": folder,
+                                 "AI_STORY_QA_EVIDENCE": str(evidence)}, Path(folder), args.browser_phase)
         finally:
             connection.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(db_name)))
 

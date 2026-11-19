@@ -1,0 +1,39 @@
+{
+  "checked_at": "2026-11-19T01:25:13.805Z",
+  "browser": "Installed Chrome headless",
+  "operations": [
+    "waveform",
+    "subtitles",
+    "scenes",
+    "frames",
+    "transcode",
+    "remux",
+    "split",
+    "inspect"
+  ],
+  "streams": 4,
+  "split_files": 4,
+  "proxy_metadata_decoded": true,
+  "range_status": 206,
+  "shots": [
+    {
+      "start_us": 0,
+      "end_us": 1000000,
+      "score": null,
+      "artifact": 0
+    },
+    {
+      "start_us": 1000000,
+      "end_us": 2000000,
+      "score": 1,
+      "artifact": 1
+    }
+  ],
+  "source_sha256": "fd275ed0f58db796897d0f4cafb561447330bde19dc84278f6293afba1e3e2a9",
+  "source_hash_verified": true,
+  "review_revision_id": "7a69a35c-eeff-413b-8de0-5c97cd3a9e3b",
+  "reviewed_script_version": "f5aef5ec-dcd1-47bb-876c-95d7bbf313ef",
+  "keyboard_adoption": true,
+  "real_external_calls": 0,
+  "js_errors": []
+}
