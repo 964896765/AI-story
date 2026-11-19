@@ -101,6 +101,9 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     __table_args__ = (UniqueConstraint('project_id', 'idempotency_key'), CheckConstraint("status IN ('queued','running','succeeded','failed','cancelled')", name='ck_task_status'), CheckConstraint('progress >= 0 AND progress <= 100', name='ck_task_progress'))
 
+Index('ix_tasks_project_recent',Task.project_id,Task.created_at.desc(),Task.id)
+Index('ix_tasks_dispatch_ready',Task.status,Task.next_run_at,Task.created_at,Task.id)
+
 class ProductionRun(Base):
     __tablename__ = 'production_runs'
     id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)

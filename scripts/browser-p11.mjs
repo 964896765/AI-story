@@ -43,6 +43,7 @@ try{
   await wait(()=>contains('服务就绪'),'app ready')
   await setField('当前项目',project.id)
   await click('批量生产')
+  await wait(()=>evaluate("document.querySelector('.production summary')!==null"),'production workbench loaded')
   await evaluate("document.querySelector('.production summary').click()")
   await wait(()=>evaluate(`document.querySelector('.production option[value="${approved.version_id}"]')!==null`),'approved plan loaded')
   await setField('已批准制作计划',approved.version_id)

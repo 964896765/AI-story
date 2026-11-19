@@ -1,0 +1,196 @@
+{
+  "command": "scripts/isolated_regression.py --browser-only --all-browsers",
+  "build": "Vite production preview",
+  "database": "isolated PostgreSQL 0013",
+  "passed_paths": 10,
+  "phases": {
+    "p5": {
+      "browser": "Installed Chrome headless",
+      "project_id": "5a8a337e-49b8-4594-8baa-e018950392b3",
+      "source_version_id": "a6d98a08-8725-4e2d-8575-2b8131523180",
+      "checked_at": "2026-11-19T11:59:47.286Z",
+      "real_external_model_requests": 0,
+      "real_spent_micros": 0,
+      "duplicate_submission_same_call": true,
+      "ffprobe_verified": true,
+      "draft_revision": 2,
+      "simulated": true,
+      "compiled_version": "5991486e-b98b-4f9b-9e20-30ac57a1c163",
+      "keyboard_review": true,
+      "render_task": "e79c4f0f-6e48-44d2-85dc-4bc401829ae1",
+      "status": "succeeded",
+      "range": 206,
+      "render_duration": 1,
+      "actual_cost_micros": null,
+      "javascript_errors": []
+    },
+    "p6": {
+      "checked_at": "2026-11-19T11:59:59.54Z",
+      "browser": "Installed Chrome headless",
+      "operations": [
+        "waveform",
+        "subtitles",
+        "scenes",
+        "frames",
+        "transcode",
+        "remux",
+        "split",
+        "inspect"
+      ],
+      "streams": 4,
+      "split_files": 4,
+      "proxy_metadata_decoded": true,
+      "range_status": 206,
+      "shots": [
+        {
+          "start_us": 0,
+          "end_us": 1000000,
+          "score": null,
+          "artifact": 0
+        },
+        {
+          "start_us": 1000000,
+          "end_us": 2000000,
+          "score": 1,
+          "artifact": 1
+        }
+      ],
+      "source_sha256": "effe53999acd42b8794976491a425aac7f3bc95eb7c05287b26257316ed3c619",
+      "source_hash_verified": true,
+      "review_revision_id": "09ec5ab2-cbb8-461a-861b-ac29a5ee50bc",
+      "reviewed_script_version": "c801e40a-1908-4f62-b067-3c295648fee1",
+      "keyboard_adoption": true,
+      "real_external_calls": 0,
+      "js_errors": []
+    },
+    "p7": {
+      "checked_at": "2026-11-19T12:00:04.314Z",
+      "browser": "Installed Chrome headless",
+      "approved_version_id": "db3359c3-28a0-4390-ad70-7d81a5762703",
+      "episode_count": 3,
+      "stable_shot_ids": [
+        "paper-lamp-1",
+        "paper-lamp-2",
+        "paper-lamp-3"
+      ],
+      "test_plan_durations_ms": [
+        3000,
+        3000,
+        3000
+      ],
+      "keyboard_approval": true,
+      "real_external_calls": 0,
+      "javascript_errors": []
+    },
+    "p8": {
+      "checked_at": "2026-11-19T12:00:10.285Z",
+      "browser": "Installed Chrome headless",
+      "actual_candidates": 2,
+      "selected_asset_id": "7ee9892c-651a-4828-b672-a3585bbc5c85",
+      "selected_task_id": "f8f15021-3be9-4f9d-b8c4-2bf92aad0e04",
+      "sha256": "983c491e7534f31e6fe2cde55cec01408a376f5478aae5b0b0f51e16a1246591",
+      "browser_metadata_decoded": true,
+      "range_status": 206,
+      "downstream_asset_selectable": true,
+      "external_cost_micros": 0,
+      "physical_resource": "local_cpu",
+      "keyboard_adoption": true,
+      "javascript_errors": []
+    },
+    "p9": {
+      "checked_at": "2026-11-19T12:00:20.082Z",
+      "browser": "Installed Chrome headless",
+      "native_voice_locales": [
+        "zh-CN",
+        "en-US"
+      ],
+      "verified_task": "2d2a7de2-ac8e-429a-970f-3f1b6cbe9f68",
+      "storyboard_version_id": "296db380-80fd-47f2-814b-f476dbfd2fe2",
+      "cues": [
+        [
+          0,
+          2345
+        ],
+        [
+          5000,
+          6450
+        ]
+      ],
+      "wav_range_status": 206,
+      "adopted_assets": [
+        "晚安港口配音.srt",
+        "晚安港口配音.wav"
+      ],
+      "keyboard_adoption": true,
+      "external_cost_micros": 0,
+      "javascript_errors": []
+    },
+    "p10": {
+      "checked_at": "2026-11-19T12:00:26.938Z",
+      "browser": "Installed Chrome headless",
+      "real_render_task": "24089e3b-6b97-4023-b84e-1ff398e8c8bd",
+      "source_version_id": "6956cb73-5e46-46c3-bd57-a0e54b9faf0b",
+      "restored_version_id": "3f70c224-91f6-4930-a0fb-ccdaa9be7be9",
+      "restored_version": 3,
+      "output_sha256": "59dd3de8ace9a92219d2b42a5bf650856dc25626c43564d56b8bb48c36676a96",
+      "output_frames": 48,
+      "real_browser_preview": true,
+      "range_status": 206,
+      "tracks": [
+        "main",
+        "dialogue",
+        "caption"
+      ],
+      "javascript_errors": []
+    },
+    "p11": {
+      "checked_at": "2026-11-19T12:00:37.503Z",
+      "browser": "Installed Chrome headless",
+      "initial_run": "8f6c5d38-7915-42ed-a8f0-2719eb51c35a",
+      "fixed_run": "8399a1f5-5ab8-4883-b97b-e256d2f25f65",
+      "detection": "missing_audio",
+      "actual_rerender": true,
+      "verified_preview": true,
+      "checks_after_fix": 0,
+      "javascript_errors": []
+    },
+    "p12": {
+      "checked_at": "2026-11-19T12:00:48.05Z",
+      "browser": "Installed Chrome headless",
+      "checked_run": "28977647-057a-437d-9558-ec0da40f8beb",
+      "package_task": "c057f52d-5d01-47be-b44b-979885ce8af0",
+      "missing_rights_blocked": true,
+      "recorded_rights_then_downloaded": true,
+      "zip_sha256_verified": true,
+      "zip_bytes": 146204,
+      "javascript_errors": []
+    },
+    "p13": {
+      "checked_at": "2026-11-19T12:00:58.069Z",
+      "browser": "Installed Chrome headless",
+      "distribution_mode": "manual_record",
+      "recorded_status": "planned",
+      "promo_zip_downloaded": true,
+      "settlements_inserted": 2,
+      "duplicates_skipped": 2,
+      "fixture_cash_micros": 30000000,
+      "fixture_ad_credits_micros": 100000000,
+      "actual_external_publishes": 0,
+      "javascript_errors": []
+    },
+    "p14": {
+      "checked_at": "2026-11-19T12:00:59.981Z",
+      "browser": "Installed Chrome headless",
+      "build": "Vite production preview",
+      "keyboard_navigation": true,
+      "first_load_script_count": 1,
+      "dynamic_diagnostics_script_loaded": true,
+      "logical_cpus": 16,
+      "db_revision": "0013",
+      "disk_free_bytes": 139656777728,
+      "cross_site_write_blocked": true,
+      "request_id_attached": true,
+      "javascript_errors": []
+    }
+  }
+}

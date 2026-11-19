@@ -1,5 +1,17 @@
+[CmdletBinding()]
+param([switch]$Production)
+
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$webRoot = Join-Path $projectRoot 'frontend'
+$webArguments = @('node_modules/vite/bin/vite.js')
+if ($Production) {
+    if (-not (Test-Path -LiteralPath (Join-Path $webRoot 'dist/index.html') -PathType Leaf)) {
+        throw 'Build the frontend before starting in production mode.'
+    }
+    $webArguments += 'preview'
+}
+$webArguments += @('--host','127.0.0.1','--port','15173','--strictPort')
 $runtime = Join-Path $projectRoot 'data\runtime'
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 if (Test-Path -LiteralPath (Join-Path $runtime 'processes.json')) {
@@ -18,6 +30,15 @@ if (Test-Path -LiteralPath (Join-Path $runtime 'processes.json')) {
 foreach ($port in 18000,15173) {
     if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) { throw "Port $port is occupied; no existing process was changed." }
 }
+$priorLogs = @('api.log','api.error.log','worker.log','worker.error.log','web.log','web.error.log')
+$datedArchive = Join-Path $runtime ('logs-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0,8))
+foreach ($fileName in $priorLogs) {
+    $priorLog = Join-Path $runtime $fileName
+    if (Test-Path -LiteralPath $priorLog -PathType Leaf) {
+        New-Item -ItemType Directory -Path $datedArchive -Force | Out-Null
+        Move-Item -LiteralPath $priorLog -Destination (Join-Path $datedArchive $fileName)
+    }
+}
 $python = Join-Path $projectRoot '.venv\Scripts\python.exe'
 $node = (Get-Command node -ErrorAction Stop).Source
 $records = @()
@@ -26,7 +47,7 @@ try {
     $records += @{name='api';pid=$api.Id;executable=$python;started_utc=$api.StartTime.ToUniversalTime().ToString('o')}
     $worker = Start-Process -FilePath $python -ArgumentList @('-m','app.worker') -WorkingDirectory (Join-Path $projectRoot 'backend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'worker.log') -RedirectStandardError (Join-Path $runtime 'worker.error.log') -PassThru
     $records += @{name='worker';pid=$worker.Id;executable=$python;started_utc=$worker.StartTime.ToUniversalTime().ToString('o')}
-    $web = Start-Process -FilePath $node -ArgumentList @('node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','15173','--strictPort') -WorkingDirectory (Join-Path $projectRoot 'frontend') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'web.log') -RedirectStandardError (Join-Path $runtime 'web.error.log') -PassThru
+    $web = Start-Process -FilePath $node -ArgumentList $webArguments -WorkingDirectory $webRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $runtime 'web.log') -RedirectStandardError (Join-Path $runtime 'web.error.log') -PassThru
     $records += @{name='web';pid=$web.Id;executable=$node;started_utc=$web.StartTime.ToUniversalTime().ToString('o')}
 } finally {
     $records | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtime 'processes.json') -Encoding UTF8

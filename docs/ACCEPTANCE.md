@@ -1,6 +1,8 @@
-# 阶段验收记录（2026-10-27，Asia/Shanghai）
+# 阶段验收记录
 
 ## 状态
+
+P14 本机 V2.0 发布检查、系统诊断、三集 30 秒交付实测及 0013 完整恢复见 [P14 验收](P14_ACCEPTANCE.md)。各工作区的通过范围与待办见 [能力矩阵](CAPABILITY_MATRIX.md)。真实模型预算为 0，发行操作仍由用户在授权平台完成。
 
 P13 渠道、发行登记、推广与结算见 [P13 验收](P13_ACCEPTANCE.md)。实际平台发布未接入。
 
@@ -24,7 +26,7 @@ P3批量可靠性验收见 [P3_ACCEPTANCE.md](P3_ACCEPTANCE.md)，当时数据�
 
 P4创作资产基础历史验收见 [P4_ACCEPTANCE.md](P4_ACCEPTANCE.md)，当时数据库0005。
 
-P5-A/B文本治理与模拟剧情工作流见 [P5_ACCEPTANCE.md](P5_ACCEPTANCE.md)，当前数据库0006。真实API未授权、预算0，真实AI质量验收未执行；图片、视频、TTS模型未接入。
+P5-A/B 文本治理与模拟剧情工作流见 [P5 验收](P5_ACCEPTANCE.md)，当时数据库 0006。真实文本模型质量仍待授权验收。P9 已验收 Windows 本机配音。
 
 ## P0 实际交付
 

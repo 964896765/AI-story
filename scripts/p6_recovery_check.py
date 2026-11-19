@@ -1,4 +1,4 @@
-"""Back up the local 0006 database and referenced files, then rehearse 0007."""
+"""Back up the local database and production files, then rehearse the requested migration."""
 import argparse
 import hashlib
 import json
@@ -40,7 +40,7 @@ def safe_child(root, key):
     return child
 
 
-def manifest(connection, storage, revision):
+def manifest(connection, storage, revision, complete=False):
     assets = dict(connection.execute('SELECT storage_key, sha256 FROM assets'))
     tasks = connection.execute('SELECT id, output FROM tasks ORDER BY id').fetchall()
     files = dict(assets)
@@ -53,16 +53,51 @@ def manifest(connection, storage, revision):
                         continue
                     verified = safe_child(storage, entry.relative_to(storage))
                     files.setdefault(verified.relative_to(storage).as_posix(), None)
-        if (key := (output or {}).get('storage_key')) and key not in files:
-            raise RuntimeError(f'Published output missing: {task_id}')
-    if revision in ('0007','0008','0009','0010','0011'):
+        output = output or {}
+        if (key := output.get('storage_key')):
+            if key not in files and not safe_child(storage,key).is_file():
+                raise RuntimeError(f'Published output missing: {task_id}')
+            files[key] = output.get('sha256') or files.get(key)
+        if output.get('caption_storage_key'):
+            files[output['caption_storage_key']] = output.get('caption_sha256')
+        for item in output.get('files', {}).values() if isinstance(output.get('files'), dict) else ():
+            files[item['storage_key']] = item['sha256']
+    if revision in ('0007','0008','0009','0010','0011','0012','0013'):
         for (payload,) in connection.execute('SELECT payload FROM media_analyses'):
             for artifact in payload['artifacts']:
                 files[artifact['storage_key']] = artifact['sha256']
+    if complete:
+        for root in ('originals', 'outputs', 'analysis'):
+            for entry in (storage/root).rglob('*'):
+                if entry.is_file():
+                    location = safe_child(storage,entry.relative_to(storage)).relative_to(storage).as_posix()
+                    files.setdefault(location,None)
     return files, len(assets)
 
+def verify_restored_api(url,path,projects,assets):
+    env={**os.environ,'DATABASE_URL':url.render_as_string(hide_password=False),
+         'STORAGE_ROOT':str(path),'AI_STORY_ENABLE_PAID_TEXT':'0'}
+    command = """
+from fastapi.testclient import TestClient
+from app.main import app
+import json
+with TestClient(app) as client:
+    assert client.get('/api/health').status_code == 200
+    projects = client.get('/api/projects').json()
+    assets = [asset for project in projects for asset in client.get('/api/projects/'+project['id']+'/assets').json()]
+    media = next((asset for asset in assets if asset['name'].lower().endswith(('.mp4','.mkv','.mov','.wav'))),None)
+    partial = client.get('/api/assets/'+media['id']+'/media',headers={'Range':'bytes=0-15'}) if media else None
+    assert partial is None or (partial.status_code == 206 and len(partial.content) == 16)
+    print(json.dumps({'projects':len(projects),'assets':len(assets),'range':partial.status_code if partial else None}))
+"""
+    result=subprocess.check_output([sys.executable,'-c',command],cwd=ROOT/'backend',env=env,text=True,timeout=35)
+    verified=json.loads(result)
+    if (verified['projects'],verified['assets'])!=(projects,assets):
+        raise RuntimeError('Restored API inventory differs from the recovered database')
+    return verified
 
-def snapshot_and_verify(source, storage, container, directory, before, target):
+
+def snapshot_and_verify(source, storage, container, directory, before, target, complete=False):
     dump = directory / 'database.dump'
     with dump.open('wb') as output:
         subprocess.run(['docker','exec',container,'pg_dump','-U',source.username,'-d',source.database,'-Fc'],
@@ -81,7 +116,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target):
                 if original_revision != before:
                     raise RuntimeError(f'Expected a pre-upgrade snapshot at {before}')
                 projects = db.execute('SELECT count(*) FROM projects').fetchone()[0]
-                files, assets = manifest(db, storage, before)
+                files, assets = manifest(db, storage, before, complete)
             snapshot_store = directory / 'storage'
             snapshot_store.mkdir()
             copied = {}
@@ -102,9 +137,11 @@ def snapshot_and_verify(source, storage, container, directory, before, target):
                 for key, digest in copied.items():
                     if sha256(safe_child(restored_store,key)) != digest:
                         raise RuntimeError('Restored file hash differs: ' + key)
+                api = verify_restored_api(restored,restored_store,projects,assets) if complete else None
             return {'before_revision':before,'tested_revision':target,'restored_separate_database':True,
                     'restored_separate_storage':True,'projects_verified':projects,'assets_verified':assets,
                     'files_verified':len(copied),'dump_sha256':sha256(dump),
+                    'restored_api':api,'complete_production_storage':complete,
                     'migration_roundtrip':[f'upgrade {target}','schema check',f'downgrade {before}',f'upgrade {target}','schema check']}
         finally:
             connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(db_name)))
@@ -113,7 +150,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
-    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13'], default='p6')
+    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14'], default='p6')
     args = parser.parse_args()
     if args.upgrade:
         for port in (18000, 15173):
@@ -136,11 +173,11 @@ def main():
         raise SystemExit('Project PostgreSQL is not running')
     before, target = {
         'p6':('0006','0007'),'p7':('0007','0008'),'p10':('0008','0009'),'p11':('0009','0010'),
-        'p12':('0010','0011'),'p13':('0011','0012')
+        'p12':('0010','0011'),'p13':('0011','0012'),'p14':('0012','0013')
     }[args.stage]
     directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
-    report = snapshot_and_verify(source, storage, container, directory, before, target)
+    report = snapshot_and_verify(source, storage, container, directory, before, target, complete=args.stage=='p14')
     report['backup_directory'] = directory.relative_to(ROOT).as_posix()
     if args.upgrade:
         run_alembic(source,'upgrade',target)

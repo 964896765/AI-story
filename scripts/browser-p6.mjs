@@ -69,6 +69,7 @@ try {
   await evaluate("Array.from(document.querySelectorAll('h2')).find(n=>n.textContent==='代理预览').scrollIntoView({block:'center'})")
   await screenshot('p6-analysis.png')
 
+  await wait(() => contains('快照证据 · 8 项'), 'browser synchronized all eight results')
   await setField('审核说明','浏览器验收，人工确认镜头时间和字幕归属。')
   await click('保存审核快照')
   await wait(() => contains('已保存审核快照 v1'), 'review snapshot persisted')

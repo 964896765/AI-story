@@ -1,6 +1,6 @@
-# AI 漫剧工厂
+# AI 漫剧工厂 V2.0
 
-面向 Windows 的本机生产工作台。已有原始素材管理、真实视频剪辑导出、持久化任务与恢复、创作版本及固定生产引用。P5 提供文本模型预算、人工对账和离线改编审核。P6 提供本地多媒体解析、证据审核和创作采纳。真实模型调用默认关闭，真实预算为 0。 [阶段验收](docs/ACCEPTANCE.md) · [能力矩阵](docs/CAPABILITY_MATRIX.md)
+面向 Windows 的本机生产工作台。支持授权媒体解析、改编审核、故事圣经与分镜、本机配音、多轨合成、整剧技术质检及分集返工、授权交付、人工发行登记和结算导入。对外付费模型调用默认关闭，真实预算为 0。 [阶段验收](docs/ACCEPTANCE.md) · [能力矩阵](docs/CAPABILITY_MATRIX.md)
 
 ## 本地启动
 
@@ -61,7 +61,7 @@ PostgreSQL 集成测试需独立测试数据库，先以其 `DATABASE_URL` 执�
 
 已配置完成时，也可在根目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start.ps1` 隐藏启动三个进程。日志和 PID 存于 `data/runtime`；如需关闭，先核对记录 PID 的实际命令行再停止对应进程。脚本遇到端口占用会退出，不终止其他服务。P3 记录进程启动时间和可执行文件，过期记录由启动脚本归档；`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -WhatIf` 可检查将停止的本项目进程，再去掉 `-WhatIf` 实际停止。身份不匹配就拒绝操作，不按端口或复用 PID 杀进程。停止前建议等待任务结束或取消；强制停止的任务通过租约恢复。
 
-升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P13 为 0012），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P13 恢复步骤](docs/P13_ACCEPTANCE.md)
+升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（V2.0 为 0013），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [独立恢复与发布](docs/PRODUCTION_RUNBOOK.md)
 
 P2 实机验证脚本：服务运行后根目录执行 `.\.venv\Scripts\python scripts/p2_smoke.py`，会创建明确标识的验收项目与自有测试视频，并生成两条真实成片。浏览器验证使用本机 Chrome：`node --experimental-websocket scripts/browser-p2.mjs`，独立临时浏览器配置，不下载浏览器或模型；会再创建一条真实任务。
 
@@ -140,3 +140,7 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 ## P13 运营中心
 
 登记渠道规则与人工发行状态，使用已授权成片生成待审推广包。按页面列定义导入实际结算 CSV，分别查看现金、广告金、费用、估算与未知项。 [P13 验收](docs/P13_ACCEPTANCE.md)
+
+## P14 本机验收与诊断
+
+“运行诊断”展示实时数据库版本、Worker 心跳、项目和任务计数以及本机磁盘空间。发布检查覆盖锁文件、生产构建、真实媒体、Chrome、迁移与独立恢复。 [P14 验收](docs/P14_ACCEPTANCE.md) · [完整能力与边界](docs/CAPABILITY_MATRIX.md)

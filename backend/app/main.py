@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 from typing import Annotated, Literal
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session as DB
 from .config import ORIGIN
 from .db import session
 from .models import Project, Asset, Task, TaskEvent, CostEntry, Batch, QueueControl, TaskAttempt, WorkerNode,StoryVersion,StoryEntity
-from .storage import save_upload, resolve_key
+from .storage import MAX_UPLOAD, save_upload, resolve_key
 from .render import RenderOptions, validate_srt
 from .models import now
 from .reliability import queue_control
@@ -32,9 +32,10 @@ from .library import router as library_router
 from .delivery import router as delivery_router
 from .distribution import router as distribution_router
 from .accounting import router as accounting_router
+from .system_console import router as system_router
 from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(title='AI 漫剧工厂', version='0.13.0')
+app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
 app.include_router(creative_router)
 app.include_router(text_router)
 app.include_router(analysis_router)
@@ -48,17 +49,34 @@ app.include_router(library_router)
 app.include_router(delivery_router)
 app.include_router(distribution_router)
 app.include_router(accounting_router)
+app.include_router(system_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
 
 @app.middleware('http')
 async def local_only(request: Request, call_next):
+    request_id = str(uuid4())
+    def reject(status,detail):
+        return JSONResponse(status_code=status,content={'detail':detail},headers={'X-Request-ID':request_id})
+
     if request.client and request.client.host not in ('127.0.0.1', '::1', 'testclient'):
-        return JSONResponse(status_code=403, content={'detail': '仅允许本机访问'})
-    if request.method != 'GET' and request.headers.get('origin') not in (None, ORIGIN):
-        return JSONResponse(status_code=403, content={'detail': '不允许的请求来源'})
-    return await call_next(request)
+        return reject(403,'仅允许本机访问')
+    if request.method not in ('GET','HEAD','OPTIONS') and (
+        request.headers.get('origin') not in (None,ORIGIN) or request.headers.get('sec-fetch-site')=='cross-site'
+    ):
+        return reject(403,'不允许的请求来源')
+    length = request.headers.get('content-length')
+    upload = request.method=='POST' and request.url.path.endswith('/assets')
+    maximum = (MAX_UPLOAD+16*1024**2) if upload else 12*1024**2
+    if length is not None:
+        if len(length)>12 or not length.isascii() or not length.isdecimal():
+            return reject(400,'请求长度无效')
+        if int(length)>maximum:
+            return reject(413,'请求超过工作台大小限制')
+    response = await call_next(request)
+    response.headers['X-Request-ID'] = request_id
+    return response
 
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, exc):
@@ -108,7 +126,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0012'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0013'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -170,9 +188,10 @@ def media(asset_id: str, db: DBDep):
     return FileResponse(path,headers={'X-Content-Type-Options':'nosniff'})
 
 @app.get('/api/projects/{project_id}/tasks')
-def tasks(project_id: str, db: DBDep):
+def tasks(project_id: str, db: DBDep, offset: int = Query(0,ge=0), limit: int | None = Query(None,ge=1,le=200)):
     require(db, Project, project_id)
-    return db.scalars(select(Task).where(Task.project_id == project_id).order_by(Task.created_at.desc())).all()
+    result = select(Task).where(Task.project_id==project_id).order_by(Task.created_at.desc(),Task.id).offset(offset)
+    return db.scalars(result.limit(limit) if limit is not None else result).all()
 
 def prepare_task(project_id: str, body: TaskInput, db):
     asset = require(db, Asset, body.asset_id)

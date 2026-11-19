@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-19T12:03:48.2783403Z",
+  "api_ready": true,
+  "health_checks": {
+    "database": true,
+    "schema": true,
+    "ffmpeg": true,
+    "ffprobe": true
+  },
+  "worker_online_count": 2,
+  "web_http": 200,
+  "web_is_built": true,
+  "database_revision": "0013",
+  "projects": 7,
+  "assets": 13,
+  "live_authorized": false,
+  "default_live_budget_micros": 0,
+  "production_workbench": "http://127.0.0.1:15173"
+}
