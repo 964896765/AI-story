@@ -61,7 +61,7 @@ PostgreSQL 集成测试需独立测试数据库，先以其 `DATABASE_URL` 执�
 
 已配置完成时，也可在根目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start.ps1` 隐藏启动三个进程。日志和 PID 存于 `data/runtime`；如需关闭，先核对记录 PID 的实际命令行再停止对应进程。脚本遇到端口占用会退出，不终止其他服务。P3 记录进程启动时间和可执行文件，过期记录由启动脚本归档；`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -WhatIf` 可检查将停止的本项目进程，再去掉 `-WhatIf` 实际停止。身份不匹配就拒绝操作，不按端口或复用 PID 杀进程。停止前建议等待任务结束或取消；强制停止的任务通过租约恢复。
 
-升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P7 为 0008），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P7 恢复步骤](docs/P7_ACCEPTANCE.md)
+升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P10 为 0009），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P10 恢复步骤](docs/P10_ACCEPTANCE.md)
 
 P2 实机验证脚本：服务运行后根目录执行 `.\.venv\Scripts\python scripts/p2_smoke.py`，会创建明确标识的验收项目与自有测试视频，并生成两条真实成片。浏览器验证使用本机 Chrome：`node --experimental-websocket scripts/browser-p2.mjs`，独立临时浏览器配置，不下载浏览器或模型；会再创建一条真实任务。
 
@@ -124,3 +124,7 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 ## P9 本机配音与字幕
 
 在分镜里固定对白说话者后，进入“配音与字幕”绑定已安装的离线系统音色。验证通过后试听 WAV，导出 SRT/VTT，或把语音和 SRT 采纳为项目素材。 [P9 验收](docs/P9_ACCEPTANCE.md)
+
+## P10 多轨时间轴
+
+在“多轨时间轴”保存画面、叠画、字幕和音轨的片段位置。也可以从已批准制作计划和已采纳镜头自动装配。对已保存版本提交本地渲染，预览实际 MP4 或导出内部工程 JSON。 [P10 验收](docs/P10_ACCEPTANCE.md)

@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-11-19T02:09:39.135Z",
+  "browser": "Installed Chrome headless",
+  "real_render_task": "85f181e0-2394-4fbe-a7a4-1fcf92d16864",
+  "source_version_id": "5736e062-576e-4aab-82e9-4ff8d812f045",
+  "restored_version_id": "ce7950cd-c174-4ffe-a4d5-afa407826436",
+  "restored_version": 3,
+  "output_sha256": "59dd3de8ace9a92219d2b42a5bf650856dc25626c43564d56b8bb48c36676a96",
+  "output_frames": 48,
+  "real_browser_preview": true,
+  "range_status": 206,
+  "tracks": [
+    "main",
+    "dialogue",
+    "caption"
+  ],
+  "javascript_errors": []
+}

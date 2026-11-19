@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel,ConfigDict,Field,model_validator
 
-Kind=Literal['novel','script','character','scene','relationship','episode','storyboard','generation_plan','story_bible']
+Kind=Literal['novel','script','character','scene','relationship','episode','storyboard','generation_plan','story_bible','timeline']
 
 class Strict(BaseModel):
     model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
@@ -126,7 +126,53 @@ class StoryBible(Strict):
     episodes: list[SeriesEpisode]=Field(min_length=1,max_length=60)
     threads: list[StoryThread]=Field(default_factory=list,max_length=100)
 
-CONTENT_MODELS={'novel':Novel,'script':Script,'character':Character,'scene':Scene,'relationship':Relationships,'episode':Episode,'storyboard':Storyboard,'generation_plan':GenerationPlan,'story_bible':StoryBible}
+class TimelineClip(Strict):
+    id: str=Field(pattern=r'^[a-zA-Z0-9_-]{1,48}$')
+    asset_id: str=Field(min_length=1,max_length=36)
+    at: int=Field(ge=0,lt=14400)
+    source_in: int=Field(default=0,ge=0,le=2_073_600)
+    frames: int=Field(ge=1,le=14400)
+    still_motion: Literal['none','push_in']='none'
+    fade_in: int=Field(default=0,ge=0,le=240)
+    fade_out: int=Field(default=0,ge=0,le=240)
+
+    @model_validator(mode='after')
+    def fades_fit(self):
+        if self.fade_in+self.fade_out>self.frames:raise ValueError('淡入淡出合计不能超过片段时长')
+        return self
+
+class TimelineTrack(Strict):
+    id: str=Field(pattern=r'^[a-zA-Z0-9_-]{1,48}$')
+    role: Literal['main','overlay','dialogue','music','sfx','caption']
+    enabled: bool=True
+    locked: bool=False
+    volume: float=Field(default=1,ge=0,le=4)
+    clips: list[TimelineClip]=Field(default_factory=list,max_length=40)
+
+class Timeline(Strict):
+    source_version_id: str | None=Field(default=None,min_length=1,max_length=36)
+    frame_rate: Literal[24]=24
+    profile: Literal['portrait','landscape','square']='portrait'
+    frames: int=Field(ge=12,le=14400)
+    tracks: list[TimelineTrack]=Field(min_length=1,max_length=10)
+
+    @model_validator(mode='after')
+    def structure(self):
+        if len({track.id for track in self.tracks})!=len(self.tracks):raise ValueError('轨道 ID 不能重复')
+        if sum(track.role=='main' for track in self.tracks)!=1:raise ValueError('需要一条主画面轨道')
+        if sum(track.role=='caption' for track in self.tracks)>1:raise ValueError('最多一条字幕轨道')
+        clips=[clip for track in self.tracks for clip in track.clips]
+        if len(clips)>50 or len({clip.id for clip in clips})!=len(clips):
+            raise ValueError('时间轴最多 50 个片段，且片段 ID 必须唯一')
+        for track in self.tracks:
+            end=0
+            for clip in sorted(track.clips,key=lambda item:item.at):
+                if clip.at<end or clip.at+clip.frames>self.frames:
+                    raise ValueError('同轨片段不可重叠或超出时间轴')
+                end=clip.at+clip.frames
+        return self
+
+CONTENT_MODELS={'novel':Novel,'script':Script,'character':Character,'scene':Scene,'relationship':Relationships,'episode':Episode,'storyboard':Storyboard,'generation_plan':GenerationPlan,'story_bible':StoryBible,'timeline':Timeline}
 
 class EntityInput(Strict):
     kind: Kind

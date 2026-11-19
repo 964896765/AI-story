@@ -1,0 +1,267 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { request, statusLabels } from './analysisApi'
+
+type Role='main'|'overlay'|'dialogue'|'music'|'sfx'|'caption'
+type Profile='portrait'|'landscape'|'square'
+interface Clip {
+  id:string; asset_id:string; at:number; source_in:number; frames:number
+  still_motion:'none'|'push_in'; fade_in:number; fade_out:number
+}
+interface Track { id:string;role:Role;enabled:boolean;locked:boolean;volume:number;clips:Clip[] }
+interface Timeline {
+  source_version_id:string|null;frame_rate:24;profile:Profile;frames:number;tracks:Track[]
+}
+interface Version {id:string;version_id:string;title:string;version:number;current_version:number;content:Timeline|null}
+interface Job {
+  id:string;status:string;stage:string;progress:number;error:string|null;story_version_id:string;cancel_requested:boolean
+  output:{frames?:number;duration?:number;has_audio?:boolean;sha256?:string}
+}
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+const labels:Record<Role,string>={main:'主画面',overlay:'叠画',dialogue:'对白',music:'音乐',sfx:'音效',caption:'字幕'}
+const profiles:Record<Profile,string>={portrait:'9:16',landscape:'16:9',square:'1:1'}
+const stack=ref<Version[]>([]), editions=ref<Version[]>([]), active=ref<Version|null>(null), jobs=ref<Job[]>([])
+const title=ref(''), message=ref(''), error=ref(''), saved=ref(''), busy=ref(false)
+const trackRole=ref<Role>('overlay'), currentClip=ref(''), preview=ref('')
+const planVersion=ref(''), planEpisode=ref(1), autoTitle=ref('')
+const keys=new Map<string,string>()
+const entityPath=`/projects/${props.projectId}/story/entities`
+const base=`/timeline/projects/${props.projectId}`
+let timer:ReturnType<typeof setInterval>|undefined
+function track(role:Role):Track {return {id:crypto.randomUUID(),role,enabled:true,locked:false,volume:1,clips:[]}}
+const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,tracks:[track('main')]})
+const timeline=reactive(freshContent())
+const dirty=computed(()=>JSON.stringify([title.value,timeline])!==saved.value)
+const selection=computed(()=>{
+  for(const lane of timeline.tracks){
+    const clip=lane.clips.find(item=>item.id===currentClip.value)
+    if(clip)return {lane,clip}
+  }
+  return null
+})
+function possible(lane:Track){
+  const visual=lane.role==='main'||lane.role==='overlay'
+  const ext=lane.role==='caption'?/\.srt$/i:visual?/\.(mp4|mov|mkv|webm|avi|png|jpe?g|webp)$/i:/\.(mp4|mov|mkv|webm|avi|wav|mp3)$/i
+  return props.assets.filter(asset=>ext.test(asset.name))
+}
+function name(assetId:string){return props.assets.find(item=>item.id===assetId)?.name||'待选素材'}
+function requestKey(body:object){
+  const signature=JSON.stringify(body)
+  if(!keys.has(signature))keys.set(signature,crypto.randomUUID())
+  return keys.get(signature)!
+}
+async function run(action:()=>Promise<void>){
+  busy.value=true
+  error.value=''
+  message.value=''
+  try{await action()}catch(failure){error.value=String(failure)}finally{busy.value=false}
+}
+async function refresh(){
+  if(!props.projectId)return
+  jobs.value=await request<Job[]>(base+'/renders')
+}
+async function list(){
+  if(!props.projectId)return
+  stack.value=(await request<{items:Version[]}>(entityPath+'?kind=timeline')).items
+}
+async function open(item:Version){
+  const version= item.content?item:await request<Version>('/story/versions/'+item.version_id)
+  active.value=version
+  title.value=version.title
+  Object.assign(timeline,version.content)
+  saved.value=JSON.stringify([title.value,timeline])
+  editions.value=await request<Version[]>('/story/entities/'+version.id+'/versions')
+  currentClip.value=''
+}
+function fresh(){
+  Object.assign(timeline,freshContent())
+  active.value=null
+  editions.value=[]
+  title.value=''
+  currentClip.value=''
+  saved.value=''
+}
+function addClip(lane:Track){
+  const at=Math.max(0,...lane.clips.map(item=>item.at+item.frames))
+  if(at>=timeline.frames)return
+  const item:Clip={id:crypto.randomUUID(),asset_id:'',at,source_in:0,frames:timeline.frames-at,
+    still_motion:'none',fade_in:0,fade_out:0}
+  lane.clips.push(item)
+  currentClip.value=item.id
+}
+function moveTrack(index:number,direction:number){
+  const newIndex=index+direction
+  if(newIndex<0||newIndex>=timeline.tracks.length)return
+  const [moved]=timeline.tracks.splice(index,1)
+  timeline.tracks.splice(newIndex,0,moved)
+}
+async function save(){
+  await run(async()=>{
+    const editing=active.value
+    const body={title:title.value,content:timeline,...(editing?{expected_version:editing.current_version}:{kind:'timeline'})}
+    const next=await request<Version>(editing?'/story/entities/'+editing.id+'/versions':entityPath,
+      {...body,idempotency_key:requestKey(body)})
+    await list()
+    await open(next)
+    message.value=`时间轴 v${next.version} 已保存`
+  })
+}
+async function restore(){
+  const version=active.value
+  if(!version)return
+  await run(async()=>{
+    const body={version:version.version,expected_version:version.current_version}
+    const result=await request<Version>('/story/entities/'+version.id+'/restore',{...body,idempotency_key:requestKey({...body,id:version.id})})
+    await list()
+    await open(result)
+    message.value=`已追加恢复时间轴 v${result.version}`
+  })
+}
+async function assemble(){
+  await run(async()=>{
+    const body={series_version_id:planVersion.value.trim(),episode:planEpisode.value,title:autoTitle.value,profile:timeline.profile}
+    const result=await request<Version>(base+'/assemble',{...body,idempotency_key:requestKey(body)})
+    await list()
+    await open(result)
+    message.value='已按固定分镜和采纳候选装配时间轴'
+  })
+}
+async function render(){
+  const version=active.value
+  if(!version || dirty.value)return
+  await run(async()=>{
+    const body={version_id:version.version_id}
+    await request(base+'/renders',{...body,idempotency_key:requestKey(body)})
+    await refresh()
+    message.value='已提交固定版本多轨渲染'
+  })
+}
+async function control(job:Job,action:'cancel'|'retry'){
+  await run(async()=>{await request('/tasks/'+job.id+'/'+action,{}); await refresh()})
+}
+onMounted(()=>{
+  void run(async()=>{await list();await refresh()})
+  timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3000)
+})
+onUnmounted(()=>clearInterval(timer))
+</script>
+
+<template>
+  <p v-if="!projectId" class="empty">选择项目以编辑多轨时间轴。</p>
+  <div v-else class="timeline-workbench">
+    <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="message" role="status">{{ message }}</p>
+    <div class="story-layout">
+      <section class="story-library">
+        <h2>时间轴版本</h2>
+        <button :disabled="busy" @click="fresh">新建时间轴</button>
+        <button v-for="item in stack" :key="item.id" :disabled="busy" :aria-pressed="active?.id===item.id"
+          @click="run(()=>open(item))">{{ item.title }} · v{{ item.version }}</button>
+        <details v-if="editions.length">
+          <summary>历史版本</summary>
+          <div class="version-list">
+            <button v-for="item in editions" :key="item.version_id" :disabled="busy" @click="run(()=>open(item))">v{{ item.version }}</button>
+          </div>
+          <button v-if="active && active.version<active.current_version" :disabled="busy" @click="restore">追加恢复此版</button>
+        </details>
+        <details>
+          <summary>按计划自动剪辑</summary>
+          <form class="form-grid" @submit.prevent="assemble">
+            <label>已审核制作计划版本 ID<input v-model="planVersion" required maxlength="36"></label>
+            <label>分集序号<input v-model.number="planEpisode" required type="number" min="1" max="60"></label>
+            <label>时间轴名称<input v-model="autoTitle" required maxlength="200"></label>
+            <button :disabled="busy">按已采纳候选装配</button>
+          </form>
+        </details>
+      </section>
+      <section class="timeline-session">
+        <form class="form-grid" @submit.prevent="save">
+          <div class="editor-grid">
+            <label>时间轴标题<input v-model="title" required maxlength="200"></label>
+            <label>输出画幅<select v-model="timeline.profile"><option v-for="(label,key) in profiles" :key="key" :value="key">{{ label }}</option></select></label>
+            <label>总帧数（24 fps）<input v-model.number="timeline.frames" required type="number" min="12" max="14400"></label>
+          </div>
+          <div class="tracks" aria-label="多轨片段">
+            <article v-for="(lane,index) in timeline.tracks" :key="lane.id" class="lane">
+              <div class="actions lane-controls">
+                <strong>{{ labels[lane.role] }}</strong>
+                <label class="check"><input v-model="lane.enabled" type="checkbox">启用</label>
+                <label class="check"><input v-model="lane.locked" type="checkbox">锁定</label>
+                <label v-if="['dialogue','music','sfx'].includes(lane.role)">音量<input v-model.number="lane.volume" :disabled="lane.locked" type="number" min="0" max="4" step="0.05"></label>
+                <button type="button" :disabled="lane.locked || index===0" @click="moveTrack(index,-1)">上移</button>
+                <button type="button" :disabled="lane.locked || index===timeline.tracks.length-1" @click="moveTrack(index,1)">下移</button>
+                <button type="button" :disabled="lane.locked || lane.clips.length>=40" @click="addClip(lane)">添加片段</button>
+                <button v-if="lane.role!=='main'" type="button" :disabled="lane.locked" @click="timeline.tracks.splice(index,1)">移除</button>
+              </div>
+              <div class="rail" :class="{muted:!lane.enabled}">
+                <button v-for="clip in lane.clips" :key="clip.id" class="clip" type="button" :aria-pressed="clip.id===currentClip"
+                  :title="name(clip.asset_id)" :style="{left:(clip.at/Math.max(1,timeline.frames)*100)+'%',width:(clip.frames/Math.max(1,timeline.frames)*100)+'%'}"
+                  @click="currentClip=clip.id">{{ name(clip.asset_id) }}</button>
+              </div>
+            </article>
+          </div>
+          <div class="actions">
+            <label>附加轨道<select v-model="trackRole"><option v-for="role in (['overlay','dialogue','music','sfx','caption'] as Role[])"
+              :key="role" :value="role">{{ labels[role] }}</option></select></label>
+            <button type="button" :disabled="timeline.tracks.length>=10 || (trackRole==='caption' && timeline.tracks.some(lane=>lane.role==='caption'))"
+              @click="timeline.tracks.push(track(trackRole))">添加轨道</button>
+          </div>
+          <fieldset v-if="selection" :disabled="selection.lane.locked">
+            <legend>{{ labels[selection.lane.role] }}片段</legend>
+            <label>片段素材<select v-model="selection.clip.asset_id" required>
+              <option value="">选择项目素材</option><option v-for="asset in possible(selection.lane)" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
+            </select></label>
+            <div class="editor-grid">
+              <label>时间轴位置（帧）<input v-model.number="selection.clip.at" type="number" required min="0" max="14399"></label>
+              <label>源入点（帧）<input v-model.number="selection.clip.source_in" type="number" required min="0"></label>
+              <label>时长（帧）<input v-model.number="selection.clip.frames" type="number" required min="1" max="14400"></label>
+              <label v-if="/\.(png|jpe?g|webp)$/i.test(name(selection.clip.asset_id))">静图运镜<select v-model="selection.clip.still_motion">
+                <option value="none">固定</option><option value="push_in">推进</option>
+              </select></label>
+              <template v-if="selection.lane.role!=='caption'">
+                <label>淡入帧数<input v-model.number="selection.clip.fade_in" type="number" required min="0" max="240"></label>
+                <label>淡出帧数<input v-model.number="selection.clip.fade_out" type="number" required min="0" max="240"></label>
+              </template>
+            </div>
+            <button type="button" @click="selection.lane.clips.splice(selection.lane.clips.indexOf(selection.clip),1);currentClip=''">移除片段</button>
+          </fieldset>
+          <div class="actions">
+            <button class="primary" :disabled="busy || !title.trim() || !dirty">保存时间轴版本</button>
+            <button type="button" :disabled="busy || !active || dirty" @click="render">渲染已保存版本</button>
+            <a v-if="active" :href="`/api/timeline/versions/${active.version_id}/manifest`" download="timeline.json">工程 JSON</a>
+          </div>
+        </form>
+      </section>
+    </div>
+    <section>
+      <h2>多轨成片</h2>
+      <video v-if="preview" :key="preview" controls :src="`/api/tasks/${preview}/output`"></video>
+      <p v-if="!jobs.length" class="hint">已保存的版本可以提交本地渲染。</p>
+      <article v-for="job in jobs" :key="job.id" class="task">
+        <div><p>{{ statusLabels[job.status] || job.status }} · {{ statusLabels[job.stage] || job.stage }}</p>
+          <p class="mono">时间轴版本 {{ job.story_version_id }}</p><p v-if="job.error" class="error">{{ job.error }}</p>
+          <progress v-if="job.status==='running'" :value="job.progress" max="100" aria-label="已处理成片进度"></progress>
+        </div>
+        <button v-if="job.status==='succeeded'" @click="preview=job.id">预览多轨成片</button>
+        <a v-if="job.status==='succeeded'" :href="`/api/tasks/${job.id}/output?download=true`">下载 MP4</a>
+        <button v-if="['queued','running'].includes(job.status)" :disabled="busy || job.cancel_requested" @click="control(job,'cancel')">取消</button>
+        <button v-if="['failed','cancelled'].includes(job.status)" :disabled="busy" @click="control(job,'retry')">重试</button>
+      </article>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.timeline-workbench,.form-grid { display:grid; gap:16px }
+.timeline-workbench section { min-width:0 }
+.timeline-workbench details,.timeline-workbench fieldset { margin:0 }
+.timeline-workbench fieldset label { margin:8px 0 }
+.lane { margin-bottom:12px }
+.lane-controls { min-height:42px; gap:8px }
+.lane-controls label input[type=number] { width:74px }
+.rail { height:42px; position:relative; overflow:hidden; border:1px solid #394655; border-radius:4px; background:#0f141c }
+.muted { opacity:.5 }
+.clip { display:block; height:38px; min-width:9px; position:absolute; padding:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:#253d5b }
+.clip[aria-pressed="true"] { border-color:#95c9ff; z-index:1 }
+.timeline-workbench video { max-height:60vh }
+</style>

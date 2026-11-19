@@ -16,6 +16,7 @@ from .model_adapters import adapter_for,ModelRequest
 
 router=APIRouter(prefix='/api',tags=['creative'])
 IMAGES={'.png','.jpg','.jpeg','.webp'}
+VIDEO={'.mp4','.mov','.mkv','.webm','.avi'}
 MAX_EXPORT_BYTES=20*1024**2
 
 def require(db,model,key):
@@ -78,6 +79,14 @@ def validate_content(db,project_id,kind,content):
             for state in block['opener']+block['closer']:
                 version(f'series:{index}:character',state['character_version_id'],{'character'})
                 version(f'series:{index}:scene',state['scene_version_id'],{'scene'})
+    if kind=='timeline':
+        version('timeline_source',normalized['source_version_id'],{'storyboard','story_bible'})
+        for track in normalized['tracks']:
+            role=track['role']
+            suffixes=(VIDEO | IMAGES if role in ('main','overlay') else
+                      {'.srt'} if role=='caption' else VIDEO | {'.wav','.mp3'})
+            for clip in track['clips']:
+                asset('timeline:'+role,clip['asset_id'],suffixes)
     if kind=='generation_plan':
         for key in normalized['input_version_ids']:version('generation_input',key)
     refs=list(dict.fromkeys(refs))

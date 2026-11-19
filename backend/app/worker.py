@@ -34,7 +34,7 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice') and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
@@ -121,6 +121,9 @@ def _run_once(heartbeat):
         elif kind == 'local_voice':
             from .voice import render_voice
             output = render_voice(task_id,attempt,parameters,inputs,update)
+        elif kind == 'timeline_render':
+            from .timeline_render import timeline_render
+            output = timeline_render(task_id,attempt,parameters,inputs,update)
         else:
             raise ValueError('未知任务类型：'+kind)
     except Cancelled as exc:
@@ -141,7 +144,7 @@ def _run_once(heartbeat):
             if call.status in ('awaiting_review','accepted','rejected'):error=None;code=None;cancelled=False
             elif call.status=='cancelled':cancelled=True
         # Publication wins a cancellation racing the final atomic publish.
-        if task.cancel_requested and not (kind in ('render','still_motion','local_voice') and output):
+        if task.cancel_requested and not (kind in ('render','still_motion','local_voice','timeline_render') and output):
             cancelled = True
             if kind == 'analyze':
                 output = {}
@@ -169,6 +172,7 @@ def _run_once(heartbeat):
         success_message={'render':'执行完成，输出已验证','probe':'媒体信息读取完成','adapt':'文本调用已记录处理结果',
                          'still_motion':'运镜候选已验证',
                          'local_voice':'配音、时间与字幕已验证',
+                         'timeline_render':'多轨成片已解码验证',
                          'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
