@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-11-19T12:19:10.177Z",
+  "browser": "Installed Chrome headless",
+  "real_render_task": "1b38779e-a35c-4ebe-87f6-79e8107b7bd2",
+  "source_version_id": "9f39eaf9-7136-464b-b91e-8e540f539a76",
+  "restored_version_id": "c5574222-3983-4953-8555-e8367d2ca178",
+  "restored_version": 3,
+  "output_sha256": "19af7587b281ef872ac42fcc164f36bc1e58d53c19f164cd513a8246304fb2c9",
+  "output_frames": 48,
+  "real_browser_preview": true,
+  "range_status": 206,
+  "snapped_position": 6,
+  "keyboard_nudge_verified": true,
+  "locked_track_verified": true,
+  "overlap_blocked": true,
+  "edited_caption_frames": [
+    10,
+    4,
+    36
+  ],
+  "edited_output_sha256": "57afbe1f8c9ed51c22188065f4f829fdcf163e13873e8dd5f9f4da24652b10f6",
+  "tracks": [
+    "main",
+    "dialogue",
+    "caption"
+  ],
+  "javascript_errors": []
+}

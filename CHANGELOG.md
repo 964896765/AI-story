@@ -7,3 +7,4 @@
 - 新增多轨自动装配、整剧生产、技术质检、分集返工、权利与整剧交付、人工发行和结算导入。 [阶段验收](docs/ACCEPTANCE.md)
 - 新增运行诊断及本机发布检查。PostgreSQL 迁移到 0013，生产样本和备份独立恢复通过。 [P14 验收](docs/P14_ACCEPTANCE.md)
 - 补齐 Windows 本机画面文字识别，支持采样回查、镜头对齐、人工校对和剧本采纳。 [P6-B OCR 验收](docs/P6B_OCR_ACCEPTANCE.md)
+- 补齐多轨时间轴的拖动、裁剪、吸附和键盘逐帧编辑。 [P10 直接编辑验收](docs/P10_FRAME_EDIT_ACCEPTANCE.md)

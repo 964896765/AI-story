@@ -35,7 +35,7 @@ def run_browser(env, path, phases):
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr'}.intersection(phases) else []),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10'}.intersection(phases) else []),
                   "--host", "127.0.0.1", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { request, statusLabels } from './analysisApi'
+import { moveStart, trimBoundary, type EditEdge } from './timelineGestures'
 
 type Role='main'|'overlay'|'dialogue'|'music'|'sfx'|'caption'
 type Profile='portrait'|'landscape'|'square'
@@ -23,6 +24,7 @@ const profiles:Record<Profile,string>={portrait:'9:16',landscape:'16:9',square:'
 const stack=ref<Version[]>([]), editions=ref<Version[]>([]), active=ref<Version|null>(null), jobs=ref<Job[]>([])
 const title=ref(''), message=ref(''), error=ref(''), saved=ref(''), busy=ref(false)
 const trackRole=ref<Role>('overlay'), currentClip=ref(''), preview=ref('')
+const snap=ref(true)
 const planVersion=ref(''), planEpisode=ref(1), autoTitle=ref('')
 const keys=new Map<string,string>()
 const entityPath=`/projects/${props.projectId}/story/entities`
@@ -31,6 +33,7 @@ let timer:ReturnType<typeof setInterval>|undefined
 function track(role:Role):Track {return {id:crypto.randomUUID(),role,enabled:true,locked:false,volume:1,clips:[]}}
 const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,tracks:[track('main')]})
 const timeline=reactive(freshContent())
+let gesture: { pointer: number; x: number; width: number; lane: Track; clip: Clip; before: Clip; edge: EditEdge } | null = null
 const dirty=computed(()=>JSON.stringify([title.value,timeline])!==saved.value)
 const selection=computed(()=>{
   for(const lane of timeline.tracks){
@@ -45,6 +48,65 @@ function possible(lane:Track){
   return props.assets.filter(asset=>ext.test(asset.name))
 }
 function name(assetId:string){return props.assets.find(item=>item.id===assetId)?.name||'待选素材'}
+function trimOrMove(lane: Track, clip: Clip, before: Clip, edge: EditEdge, delta: number, tolerance: number) {
+  const markers=[0,timeline.frames,...timeline.tracks.filter(track=>track.enabled).flatMap(track=>
+    track.clips.filter(item=>item.id!==clip.id).flatMap(item=>[item.at,item.at+item.frames]))]
+  if(edge==='move') {
+    clip.at=moveStart(before.at+delta,before,timeline.frames,lane.clips.filter(item=>item.id!==clip.id),markers,tolerance)
+    return
+  }
+  const end=before.at+before.frames
+  if(edge==='start') {
+    clip.at=trimBoundary(before.at+delta,before.at,end-1,markers,tolerance)
+    clip.frames=end-clip.at
+    const still=/\.(png|jpe?g|webp)$/i.test(name(clip.asset_id))
+    clip.source_in=still ? 0 : before.source_in+clip.at-before.at
+  } else {
+    clip.frames=trimBoundary(end+delta,before.at+1,end,markers,tolerance)-before.at
+  }
+  clip.fade_in=Math.min(before.fade_in,clip.frames)
+  clip.fade_out=Math.min(before.fade_out,clip.frames-clip.fade_in)
+}
+function beginGesture(event: PointerEvent, lane: Track, clip: Clip, edge: EditEdge) {
+  if(event.button!==0 || gesture)return
+  currentClip.value=clip.id
+  if(lane.locked || busy.value || !Number.isInteger(clip.at) || !Number.isInteger(clip.frames) || clip.frames<1)return
+  const button=event.currentTarget as HTMLButtonElement
+  const width=button.parentElement!.getBoundingClientRect().width
+  if(width<=0)return
+  event.preventDefault()
+  button.focus({preventScroll:true})
+  button.setPointerCapture(event.pointerId)
+  gesture={pointer:event.pointerId,x:event.clientX,width,lane,clip,before:{...clip},edge}
+}
+function dragClip(event: PointerEvent) {
+  if(!gesture || gesture.pointer!==event.pointerId)return
+  const {x,width,lane,clip,before,edge}=gesture
+  const distance=event.clientX-x
+  if(Math.abs(distance)<3) {
+    Object.assign(clip,before)
+    return
+  }
+  const framesPerPixel=timeline.frames/width
+  trimOrMove(lane,clip,before,edge,Math.round(distance*framesPerPixel),snap.value&&!event.altKey ? Math.max(1,Math.round(8*framesPerPixel)) : 0)
+}
+function endGesture(event: PointerEvent, cancel=false) {
+  if(!gesture || gesture.pointer!==event.pointerId)return
+  if(cancel)Object.assign(gesture.clip,gesture.before)
+  gesture=null
+}
+function clipKeys(event: KeyboardEvent, lane: Track, clip: Clip, edge: EditEdge) {
+  if(event.key==='Escape' && gesture) {
+    Object.assign(gesture.clip,gesture.before)
+    gesture=null
+    event.preventDefault()
+    return
+  }
+  if(lane.locked || busy.value || gesture || !['ArrowLeft','ArrowRight'].includes(event.key))return
+  event.preventDefault()
+  currentClip.value=clip.id
+  trimOrMove(lane,clip,{...clip},edge,(event.key==='ArrowLeft' ? -1 : 1)*(event.shiftKey ? 10 : 1),0)
+}
 function requestKey(body:object){
   const signature=JSON.stringify(body)
   if(!keys.has(signature))keys.set(signature,crypto.randomUUID())
@@ -187,6 +249,7 @@ onUnmounted(()=>clearInterval(timer))
           </div>
           <label>固定制作来源版本 ID（可选）<input :value="timeline.source_version_id||''" maxlength="36"
             @input="timeline.source_version_id=($event.target as HTMLInputElement).value.trim()||null"></label>
+          <label class="check"><input v-model="snap" type="checkbox">吸附片段边界</label>
           <div class="tracks" aria-label="多轨片段">
             <article v-for="(lane,index) in timeline.tracks" :key="lane.id" class="lane">
               <div class="actions lane-controls">
@@ -199,10 +262,19 @@ onUnmounted(()=>clearInterval(timer))
                 <button type="button" :disabled="lane.locked || lane.clips.length>=40" @click="addClip(lane)">添加片段</button>
                 <button v-if="lane.role!=='main'" type="button" :disabled="lane.locked" @click="timeline.tracks.splice(index,1)">移除</button>
               </div>
-              <div class="rail" :class="{muted:!lane.enabled}">
-                <button v-for="clip in lane.clips" :key="clip.id" class="clip" type="button" :aria-pressed="clip.id===currentClip"
-                  :title="name(clip.asset_id)" :style="{left:(clip.at/Math.max(1,timeline.frames)*100)+'%',width:(clip.frames/Math.max(1,timeline.frames)*100)+'%'}"
-                  @click="currentClip=clip.id">{{ name(clip.asset_id) }}</button>
+              <div class="rail" :class="{muted:!lane.enabled}" @pointermove="dragClip" @pointerup="endGesture($event)"
+                @pointercancel="endGesture($event,true)" @lostpointercapture="endGesture($event,true)">
+                <template v-for="clip in lane.clips" :key="clip.id">
+                  <button class="clip" type="button" :aria-pressed="clip.id===currentClip"
+                    :title="name(clip.asset_id)" :style="{left:(clip.at/Math.max(1,timeline.frames)*100)+'%',width:(clip.frames/Math.max(1,timeline.frames)*100)+'%'}"
+                    @click="currentClip=clip.id" @pointerdown="beginGesture($event,lane,clip,'move')" @keydown="clipKeys($event,lane,clip,'move')">{{ name(clip.asset_id) }}</button>
+                  <template v-if="clip.id===currentClip && !lane.locked">
+                    <button v-for="edge in (['start','end'] as const)" :key="edge" class="trim-handle" type="button"
+                      :aria-label="edge==='start'?'裁剪片段入点':'裁剪片段出点'"
+                      :style="{left:((clip.at+(edge==='end'?clip.frames:0))/Math.max(1,timeline.frames)*100)+'%'}"
+                      @pointerdown="beginGesture($event,lane,clip,edge)" @keydown="clipKeys($event,lane,clip,edge)"></button>
+                  </template>
+                </template>
               </div>
             </article>
           </div>
@@ -267,7 +339,9 @@ onUnmounted(()=>clearInterval(timer))
 .lane-controls label input[type=number] { width:74px }
 .rail { height:42px; position:relative; overflow:hidden; border:1px solid #394655; border-radius:4px; background:#0f141c }
 .muted { opacity:.5 }
-.clip { display:block; height:38px; min-width:9px; position:absolute; padding:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:#253d5b }
+.clip { display:block; height:38px; min-width:9px; position:absolute; padding:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:#253d5b; touch-action:none; cursor:grab }
 .clip[aria-pressed="true"] { border-color:#95c9ff; z-index:1 }
+.trim-handle { position:absolute; z-index:2; top:3px; width:10px; height:34px; padding:0; transform:translateX(-50%); background:#86aed8; border-radius:3px; touch-action:none; cursor:ew-resize }
+.trim-handle:focus-visible { outline:2px solid white; outline-offset:-2px }
 .timeline-workbench video { max-height:60vh }
 </style>
