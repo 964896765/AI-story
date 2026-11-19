@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-11-19T12:25:10.975Z",
+  "browser": "Installed Chrome headless",
+  "initial_run": "7284cf5f-98fc-494b-bdc8-dc6a91a01db5",
+  "fixed_run": "72742b2d-194a-460b-b6a4-1c0a6d242a34",
+  "detection": [
+    "missing_audio",
+    "black_frames"
+  ],
+  "actual_rerender": true,
+  "verified_preview": true,
+  "linked_clip": "repair-me",
+  "black_range_ms": [
+    0,
+    625
+  ],
+  "returned_to_batch": true,
+  "fixed_timeline_version": "41b30cb4-433b-41e7-8baf-aa032c59913b",
+  "checks_after_fix": 0,
+  "javascript_errors": []
+}

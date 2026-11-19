@@ -1,0 +1,276 @@
+{
+  "backend_passing": 121,
+  "backend_failures": 0,
+  "backend_errors": 0,
+  "backend_skipped": 0,
+  "backend_seconds": 139.004,
+  "chrome_passed_paths": 11,
+  "local_readiness": {
+    "checked_at": "2026-11-19T12:25:21.4606297Z",
+    "url": "http://127.0.0.1:15173",
+    "api_ready": true,
+    "frontend_bundle": "/assets/index-BhJiVA0e.js",
+    "frontend_http": 200,
+    "db_revision": "0013",
+    "projects": 7,
+    "assets": 13,
+    "online_workers": 1,
+    "live_authorized": false,
+    "default_live_budget_micros": 0,
+    "ocr_engine": "windows-ocr-v1",
+    "ocr_languages": [
+      "zh-Hans-CN"
+    ]
+  },
+  "recovery": {
+    "before_revision": "0012",
+    "tested_revision": "0013",
+    "restored_separate_database": true,
+    "restored_separate_storage": true,
+    "projects_verified": 7,
+    "assets_verified": 13,
+    "files_verified": 115,
+    "dump_sha256": "8984a913150caa99f0c0f771d0caa23dc9971dc16f65b01962dcd155de15d64e",
+    "restored_api": {
+      "projects": 7,
+      "assets": 13,
+      "range": 206
+    },
+    "complete_production_storage": true,
+    "migration_roundtrip": [
+      "upgrade 0013",
+      "schema check",
+      "downgrade 0012",
+      "upgrade 0013",
+      "schema check"
+    ],
+    "backup_directory": "data/backups/p14-before-705ced21843a",
+    "local_database_revision": "0013"
+  },
+  "browser": {
+    "p5": {
+      "browser": "Installed Chrome headless",
+      "project_id": "1aba3ad9-e78c-4d6e-95df-e43433483b9e",
+      "source_version_id": "82596fda-1b04-4cd4-a2d7-80a59d5b4f64",
+      "checked_at": "2026-11-19T12:25:57.396Z",
+      "real_external_model_requests": 0,
+      "real_spent_micros": 0,
+      "duplicate_submission_same_call": true,
+      "ffprobe_verified": true,
+      "draft_revision": 2,
+      "simulated": true,
+      "compiled_version": "b4b1d263-cf95-417a-a150-de094143c660",
+      "keyboard_review": true,
+      "render_task": "1f7f6d47-a98f-4718-8e70-59637e6bad77",
+      "status": "succeeded",
+      "range": 206,
+      "render_duration": 1,
+      "actual_cost_micros": null,
+      "javascript_errors": []
+    },
+    "p6": {
+      "checked_at": "2026-11-19T12:26:08.947Z",
+      "browser": "Installed Chrome headless",
+      "operations": [
+        "waveform",
+        "subtitles",
+        "scenes",
+        "frames",
+        "transcode",
+        "remux",
+        "split",
+        "inspect"
+      ],
+      "streams": 4,
+      "split_files": 4,
+      "proxy_metadata_decoded": true,
+      "range_status": 206,
+      "shots": [
+        {
+          "start_us": 0,
+          "end_us": 1000000,
+          "score": null,
+          "artifact": 0
+        },
+        {
+          "start_us": 1000000,
+          "end_us": 2000000,
+          "score": 1,
+          "artifact": 1
+        }
+      ],
+      "source_sha256": "88d156f74312e78a9429ced748f089e3988558981c19889b2a417f8954c4dc04",
+      "source_hash_verified": true,
+      "review_revision_id": "7e349ea4-c309-4d47-818d-5e3f982bb52e",
+      "reviewed_script_version": "8b7c84da-a517-45b2-99f8-0d362d8d9a4d",
+      "keyboard_adoption": true,
+      "real_external_calls": 0,
+      "js_errors": []
+    },
+    "p6-ocr": {
+      "checked_at": "2026-11-19T12:26:14.826Z",
+      "browser": "Installed Chrome headless",
+      "engine": "windows-ocr-v1",
+      "language": "zh-Hans-CN",
+      "raw_text": "灯 塔 坐 标",
+      "reviewed_text": "灯塔坐标（已按画面校正）",
+      "sampled_time_us": 0,
+      "aligned_shots": [
+        1
+      ],
+      "verified_script_reference": true,
+      "original_sha256": "388b6c9d77473ed87ae0297eb403978b1a4241caf90b16389b1eef67d144bda8",
+      "paid_model_calls": 0,
+      "js_errors": []
+    },
+    "p7": {
+      "checked_at": "2026-11-19T12:26:18.029Z",
+      "browser": "Installed Chrome headless",
+      "approved_version_id": "c85e9985-1b3e-488c-9c47-ca48d854ca11",
+      "episode_count": 3,
+      "stable_shot_ids": [
+        "paper-lamp-1",
+        "paper-lamp-2",
+        "paper-lamp-3"
+      ],
+      "test_plan_durations_ms": [
+        3000,
+        3000,
+        3000
+      ],
+      "keyboard_approval": true,
+      "real_external_calls": 0,
+      "javascript_errors": []
+    },
+    "p8": {
+      "checked_at": "2026-11-19T12:26:23.191Z",
+      "browser": "Installed Chrome headless",
+      "actual_candidates": 2,
+      "selected_asset_id": "dc115fb4-801f-4c82-8001-03720a23607a",
+      "selected_task_id": "6d1e74ad-853b-4540-9153-12a2ea9a97f2",
+      "sha256": "983c491e7534f31e6fe2cde55cec01408a376f5478aae5b0b0f51e16a1246591",
+      "browser_metadata_decoded": true,
+      "range_status": 206,
+      "downstream_asset_selectable": true,
+      "external_cost_micros": 0,
+      "physical_resource": "local_cpu",
+      "keyboard_adoption": true,
+      "javascript_errors": []
+    },
+    "p9": {
+      "checked_at": "2026-11-19T12:26:32.1Z",
+      "browser": "Installed Chrome headless",
+      "native_voice_locales": [
+        "zh-CN",
+        "en-US"
+      ],
+      "verified_task": "018869b6-17f5-4dd5-a6b5-8b67311d3c5d",
+      "storyboard_version_id": "c6e1f300-7d37-4fdd-b91a-1ab33ce192b7",
+      "cues": [
+        [
+          0,
+          2345
+        ],
+        [
+          5000,
+          6450
+        ]
+      ],
+      "wav_range_status": 206,
+      "adopted_assets": [
+        "晚安港口配音.srt",
+        "晚安港口配音.wav"
+      ],
+      "keyboard_adoption": true,
+      "external_cost_micros": 0,
+      "javascript_errors": []
+    },
+    "p10": {
+      "checked_at": "2026-11-19T12:26:40.69Z",
+      "browser": "Installed Chrome headless",
+      "real_render_task": "1082851c-93d3-4de9-ab22-c2e59acf9841",
+      "source_version_id": "411d73bb-da39-401a-b66d-3e5eb0cd036e",
+      "restored_version_id": "37f21097-1169-4b63-bddc-a12dcd90d3f1",
+      "restored_version": 3,
+      "output_sha256": "19af7587b281ef872ac42fcc164f36bc1e58d53c19f164cd513a8246304fb2c9",
+      "output_frames": 48,
+      "real_browser_preview": true,
+      "range_status": 206,
+      "snapped_position": 6,
+      "keyboard_nudge_verified": true,
+      "locked_track_verified": true,
+      "overlap_blocked": true,
+      "edited_caption_frames": [
+        10,
+        4,
+        36
+      ],
+      "edited_output_sha256": "57afbe1f8c9ed51c22188065f4f829fdcf163e13873e8dd5f9f4da24652b10f6",
+      "tracks": [
+        "main",
+        "dialogue",
+        "caption"
+      ],
+      "javascript_errors": []
+    },
+    "p11": {
+      "checked_at": "2026-11-19T12:26:50.756Z",
+      "browser": "Installed Chrome headless",
+      "initial_run": "44e66d0f-0d79-42f8-a063-8c2bf5faff17",
+      "fixed_run": "24f1ee48-6cd9-456d-8833-b9876cc2f9ab",
+      "detection": [
+        "missing_audio",
+        "black_frames"
+      ],
+      "actual_rerender": true,
+      "verified_preview": true,
+      "linked_clip": "repair-me",
+      "black_range_ms": [
+        0,
+        625
+      ],
+      "returned_to_batch": true,
+      "fixed_timeline_version": "e7facb46-9373-4ada-b37c-d245a56e3dad",
+      "checks_after_fix": 0,
+      "javascript_errors": []
+    },
+    "p12": {
+      "checked_at": "2026-11-19T12:26:58.902Z",
+      "browser": "Installed Chrome headless",
+      "checked_run": "99605218-3aac-41e5-a206-b12251dd6461",
+      "package_task": "e19bf0fb-2900-49f7-b8af-eeffe91ebd4e",
+      "missing_rights_blocked": true,
+      "recorded_rights_then_downloaded": true,
+      "zip_sha256_verified": true,
+      "zip_bytes": 146204,
+      "javascript_errors": []
+    },
+    "p13": {
+      "checked_at": "2026-11-19T12:27:07.629Z",
+      "browser": "Installed Chrome headless",
+      "distribution_mode": "manual_record",
+      "recorded_status": "planned",
+      "promo_zip_downloaded": true,
+      "settlements_inserted": 2,
+      "duplicates_skipped": 2,
+      "fixture_cash_micros": 30000000,
+      "fixture_ad_credits_micros": 100000000,
+      "actual_external_publishes": 0,
+      "javascript_errors": []
+    },
+    "p14": {
+      "checked_at": "2026-11-19T12:27:09.707Z",
+      "browser": "Installed Chrome headless",
+      "build": "Vite production preview",
+      "keyboard_navigation": true,
+      "first_load_script_count": 1,
+      "dynamic_diagnostics_script_loaded": true,
+      "logical_cpus": 16,
+      "db_revision": "0013",
+      "disk_free_bytes": 139195342848,
+      "cross_site_write_blocked": true,
+      "request_id_attached": true,
+      "javascript_errors": []
+    }
+  }
+}

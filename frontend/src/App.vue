@@ -28,7 +28,10 @@ const adaptationSource=ref<{version_id:string;title:string;version:number}|null>
 function adaptStory(version:{version_id:string;title:string;version:number}){adaptationSource.value=version;view.value='剧情改编'}
 const analysisAsset=ref('')
 const timelineVersion=ref('')
-function openTimeline(versionId:string){timelineVersion.value=versionId;view.value='多轨时间轴'}
+const timelineClip=ref(''), productionRun=ref('')
+function openTimeline(versionId:string,runId:string,clipId=''){
+ timelineVersion.value=versionId;timelineClip.value=clipId;productionRun.value=runId;view.value='多轨时间轴'
+}
 function openAnalysis(asset:Asset){analysisAsset.value=asset.id;view.value='智能解析'}
 const sections=['素材资产中心','智能解析','智能二创','剧情改编','漫剧定制','故事圣经','生成候选','配音与字幕','多轨时间轴','批量生产','质检与导出','资源与交付','运营中心','运行诊断']
 const labels:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败',cancelled:'已取消'}
@@ -77,7 +80,7 @@ async function taskPage(direction:number){
  logTask.value=''
  await refresh(false)
 }
-async function changeProject(){assetUpdatedAt=0;taskOffset.value=0;assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';productionStory.value=null;adaptationSource.value=null;analysisAsset.value='';timelineVersion.value='';events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
+async function changeProject(){assetUpdatedAt=0;taskOffset.value=0;assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';productionStory.value=null;adaptationSource.value=null;analysisAsset.value='';timelineVersion.value='';timelineClip.value='';productionRun.value='';events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
 async function action(fn:()=>Promise<void>){busy.value=true;error.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
 async function create(){await action(async()=>{const p=await api<Project>('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.value,description:description.value})});projects.value.unshift(p);selected.value=p.id;name.value='';description.value='';await changeProject()})}
 async function upload(event:globalThis.Event){const input=event.target as HTMLInputElement;const files=Array.from(input.files??[]);await action(async()=>{if(!authorization.value.trim())throw new Error('请先填写授权来源');for(const file of files){const form=new FormData();form.append('file',file);form.append('authorization',authorization.value);await api(`/projects/${selected.value}/assets`,{method:'POST',body:form})}await refresh()});input.value=''}
@@ -108,9 +111,10 @@ onUnmounted(()=>clearInterval(timer))
    <SeriesStudio v-else-if="view==='故事圣经'" :key="selected" :project-id="selected" />
    <GenerationStudio v-else-if="view==='生成候选'" :key="selected" :project-id="selected" :assets="assets" @assets-changed="refresh" />
    <VoiceStudio v-else-if="view==='配音与字幕'" :key="selected" :project-id="selected" @assets-changed="refresh" />
-   <TimelineStudio v-else-if="view==='多轨时间轴'" :key="selected" :project-id="selected" :assets="assets" :initial-version="timelineVersion" />
+   <TimelineStudio v-else-if="view==='多轨时间轴'" :key="selected" :project-id="selected" :assets="assets" :initial-version="timelineVersion"
+    :initial-clip="timelineClip" :can-return="!!productionRun" @return-to-production="view='批量生产'" />
    <template v-else-if="view==='批量生产'">
-    <ProductionStudio :key="selected" :project-id="selected" @inspect-timeline="openTimeline" />
+    <ProductionStudio :key="selected" :project-id="selected" :initial-run="productionRun" @inspect-timeline="openTimeline" />
     <QueuePanel :project-id="selected" />
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>
     <p v-if="!selected" class="empty">请先选择项目。</p><p v-else-if="!tasks.length" class="empty">暂无任务。导入素材后可读取媒体信息，或在智能二创中提交剪辑任务。</p>

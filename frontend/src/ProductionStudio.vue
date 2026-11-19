@@ -13,13 +13,13 @@ interface Run {
   id:string;plan_version_id:string;created_at:string;status:string;episode_count:number;passed:number;reused:number
   episodes:Episode[]|null;policy:{require_audio:boolean;require_subtitles:boolean}
 }
-const props=defineProps<{projectId:string}>()
-const emit=defineEmits<{ inspectTimeline:[versionId:string] }>()
+const props=defineProps<{projectId:string;initialRun?:string}>()
+const emit=defineEmits<{ inspectTimeline:[versionId:string,runId:string,clipId?:string] }>()
 const plans=ref<Version[]>([]), timelines=ref<Version[]>([]), runs=ref<Run[]>([]), active=ref<Run|null>(null)
 const plan=ref(''), prior=ref(''), links=ref<{number:number;title:string;timeline_version_id:string}[]>([])
 const requireAudio=ref(false), requireSubtitles=ref(false)
 const error=ref(''), notice=ref(''), busy=ref(false), reviewed=ref<Record<number,string>>({})
-const selectedId=ref(''), preview=ref('')
+const selectedId=ref(props.initialRun||''), preview=ref('')
 const keys=new Map<string,string>()
 const states:Record<string,string>={processing:'执行中',needs_rework:'需返工',needs_review:'待人工复核',passed:'通过',cancelled:'已停止'}
 let refreshing=false
@@ -98,6 +98,9 @@ async function approve(episode:Episode){
     notice.value='已保存人工复核意见'
   })
 }
+function inspect(episode:Episode, clipId?:string){
+  if(active.value)emit('inspectTimeline',episode.timeline_version_id,active.value.id,clipId)
+}
 onMounted(()=>{
   void run(async()=>{await loadVersions();await refresh()})
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3500)
@@ -150,13 +153,16 @@ onUnmounted(()=>clearInterval(timer))
         <div class="actions">
           <strong>第 {{ episode.number }} 集</strong><span>{{ states[episode.status] }}<template v-if="episode.reused"> · 已校验复用</template></span>
           <button v-if="episode.render_status==='succeeded'" @click="preview=episode.render_task_id">预览本集</button>
-          <button @click="emit('inspectTimeline',episode.timeline_version_id)">打开固定时间轴</button>
+          <button @click="inspect(episode)">打开固定时间轴</button>
         </div>
         <p class="hint">渲染 {{ statusLabels[episode.render_status] || episode.render_status }} · 质检 {{ episode.qc_stage==='dependency_failed'?'上游失败未执行':statusLabels[episode.qc_status] || episode.qc_status }}</p>
         <p v-if="episode.render_error || episode.qc_error" class="error">{{ episode.render_error || episode.qc_error }}</p>
         <ul v-if="episode.qc?.issues.length">
           <li v-for="(issue,i) in episode.qc.issues" :key="i" :class="{failed:issue.severity==='error'}">
             {{ issue.detail }} <template v-if="issue.start_ms!==null">· {{ issue.start_ms/1000 }}–{{ (issue.end_ms||0)/1000 }} 秒</template>
+            <div v-if="issue.clips?.length" class="actions finding-clips">
+              <button v-for="(clip,index) in issue.clips" :key="clip" @click="inspect(episode,clip)">定位关联片段{{ issue.clips.length>1 ? ' '+(index+1) : '' }}</button>
+            </div>
           </li>
         </ul>
         <p v-if="episode.review">人工复核 · {{ episode.review.note }}</p>
@@ -173,4 +179,5 @@ onUnmounted(()=>clearInterval(timer))
 .form-grid { display:grid; gap:12px; margin:14px 0 0 }
 .episode { padding:14px 0; border-top:1px solid #334050 }
 .production video { max-height:59vh }
+.finding-clips { margin:5px 0 }
 </style>

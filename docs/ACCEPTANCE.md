@@ -1,6 +1,10 @@
 # 阶段验收记录
 
+2026-11-19 本机 V2.0 最终发布检查通过 121 项后端测试及 11 条生产构建浏览器流程。0013、回环前端、Worker 与本机简体中文 OCR 就绪，真实模型预算为 0。 [发布证据](v2-release-acceptance.json) · [后端回归](v2-release-backend-tests.xml)
+
 ## 状态
+
+P11 黑场质检定位、片段修正、返回原批次和重新渲染见 [片段返工验收](P11_CLIP_REWORK_ACCEPTANCE.md)。
 
 P10 同轨拖动、双边裁剪、吸附、键盘操作及新版本渲染见 [直接编辑验收](P10_FRAME_EDIT_ACCEPTANCE.md)。
 

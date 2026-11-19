@@ -8,3 +8,4 @@
 - 新增运行诊断及本机发布检查。PostgreSQL 迁移到 0013，生产样本和备份独立恢复通过。 [P14 验收](docs/P14_ACCEPTANCE.md)
 - 补齐 Windows 本机画面文字识别，支持采样回查、镜头对齐、人工校对和剧本采纳。 [P6-B OCR 验收](docs/P6B_OCR_ACCEPTANCE.md)
 - 补齐多轨时间轴的拖动、裁剪、吸附和键盘逐帧编辑。 [P10 直接编辑验收](docs/P10_FRAME_EDIT_ACCEPTANCE.md)
+- 支持从质检证据定位固定片段，修正后返回原批次并复检。 [P11 片段返工验收](docs/P11_CLIP_REWORK_ACCEPTANCE.md)

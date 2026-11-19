@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { request, statusLabels } from './analysisApi'
 import { moveStart, trimBoundary, type EditEdge } from './timelineGestures'
 
@@ -18,13 +18,15 @@ interface Job {
   id:string;status:string;stage:string;progress:number;error:string|null;story_version_id:string;cancel_requested:boolean
   output:{frames?:number;duration?:number;has_audio?:boolean;sha256?:string}
 }
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialVersion?:string}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialVersion?:string;initialClip?:string;canReturn?:boolean}>()
+const emit=defineEmits<{returnToProduction:[]}>()
 const labels:Record<Role,string>={main:'主画面',overlay:'叠画',dialogue:'对白',music:'音乐',sfx:'音效',caption:'字幕'}
 const profiles:Record<Profile,string>={portrait:'9:16',landscape:'16:9',square:'1:1'}
 const stack=ref<Version[]>([]), editions=ref<Version[]>([]), active=ref<Version|null>(null), jobs=ref<Job[]>([])
 const title=ref(''), message=ref(''), error=ref(''), saved=ref(''), busy=ref(false)
 const trackRole=ref<Role>('overlay'), currentClip=ref(''), preview=ref('')
 const snap=ref(true)
+const workbench=ref<HTMLDivElement|null>(null)
 const planVersion=ref(''), planEpisode=ref(1), autoTitle=ref('')
 const keys=new Map<string,string>()
 const entityPath=`/projects/${props.projectId}/story/entities`
@@ -206,6 +208,12 @@ onMounted(()=>{
     await list()
     await refresh()
     if(props.initialVersion)await open(await request<Version>('/story/versions/'+props.initialVersion))
+    if(props.initialClip && timeline.tracks.some(lane=>lane.clips.some(clip=>clip.id===props.initialClip))){
+      currentClip.value=props.initialClip
+      await nextTick()
+      Array.from(workbench.value?.querySelectorAll<HTMLButtonElement>('button[data-clip-id]') || [])
+        .find(button=>button.dataset.clipId===props.initialClip)?.focus()
+    }
   })
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3000)
 })
@@ -214,7 +222,11 @@ onUnmounted(()=>clearInterval(timer))
 
 <template>
   <p v-if="!projectId" class="empty">选择项目以编辑多轨时间轴。</p>
-  <div v-else class="timeline-workbench">
+  <div v-else ref="workbench" class="timeline-workbench">
+    <div v-if="canReturn" class="actions">
+      <button type="button" :disabled="busy || dirty" @click="emit('returnToProduction')">返回原质检批次</button>
+      <span v-if="!busy && dirty" class="hint">保存时间轴后可返回质检。</span>
+    </div>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="message" role="status">{{ message }}</p>
     <div class="story-layout">
@@ -265,7 +277,7 @@ onUnmounted(()=>clearInterval(timer))
               <div class="rail" :class="{muted:!lane.enabled}" @pointermove="dragClip" @pointerup="endGesture($event)"
                 @pointercancel="endGesture($event,true)" @lostpointercapture="endGesture($event,true)">
                 <template v-for="clip in lane.clips" :key="clip.id">
-                  <button class="clip" type="button" :aria-pressed="clip.id===currentClip"
+                  <button class="clip" type="button" :aria-pressed="clip.id===currentClip" :data-clip-id="clip.id"
                     :title="name(clip.asset_id)" :style="{left:(clip.at/Math.max(1,timeline.frames)*100)+'%',width:(clip.frames/Math.max(1,timeline.frames)*100)+'%'}"
                     @click="currentClip=clip.id" @pointerdown="beginGesture($event,lane,clip,'move')" @keydown="clipKeys($event,lane,clip,'move')">{{ name(clip.asset_id) }}</button>
                   <template v-if="clip.id===currentClip && !lane.locked">
