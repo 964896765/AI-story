@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--junitxml", type=Path)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--browser-only", action="store_true")
-    parser.add_argument("--browser-phase", choices=["p5", "p6"], default="p5")
+    parser.add_argument("--browser-phase", choices=["p5", "p6", "p7"], default="p5")
     parser.add_argument("--browser-evidence", type=Path, default=ROOT / "data" / "tmp")
     parser.add_argument("--test-file", help="Optional pytest path or node ID relative to backend")
     args = parser.parse_args()

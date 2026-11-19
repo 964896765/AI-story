@@ -40,7 +40,7 @@ def safe_child(root, key):
     return child
 
 
-def manifest(connection, storage):
+def manifest(connection, storage, revision):
     assets = dict(connection.execute('SELECT storage_key, sha256 FROM assets'))
     tasks = connection.execute('SELECT id, output FROM tasks ORDER BY id').fetchall()
     files = dict(assets)
@@ -55,15 +55,19 @@ def manifest(connection, storage):
                     files.setdefault(verified.relative_to(storage).as_posix(), None)
         if (key := (output or {}).get('storage_key')) and key not in files:
             raise RuntimeError(f'Published output missing: {task_id}')
+    if revision == '0007':
+        for (payload,) in connection.execute('SELECT payload FROM media_analyses'):
+            for artifact in payload['artifacts']:
+                files[artifact['storage_key']] = artifact['sha256']
     return files, len(assets)
 
 
-def snapshot_and_verify(source, storage, container, directory):
+def snapshot_and_verify(source, storage, container, directory, before, target):
     dump = directory / 'database.dump'
     with dump.open('wb') as output:
         subprocess.run(['docker','exec',container,'pg_dump','-U',source.username,'-d',source.database,'-Fc'],
                        stdout=output, check=True, timeout=60)
-    db_name = 'story_p6_restore_' + uuid4().hex[:12]
+    db_name = 'story_upgrade_restore_' + uuid4().hex[:12]
     admin = source.set(drivername='postgresql', database='postgres')
     restored = source.set(database=db_name)
     with psycopg.connect(admin.render_as_string(hide_password=False), autocommit=True) as connection:
@@ -74,10 +78,10 @@ def snapshot_and_verify(source, storage, container, directory):
                                 '-U',source.username,'-d',db_name], stdin=backup, check=True, timeout=60)
             with psycopg.connect(restored.set(drivername='postgresql').render_as_string(hide_password=False)) as db:
                 original_revision = db.execute('SELECT version_num FROM alembic_version').fetchone()[0]
-                if original_revision != '0006':
-                    raise RuntimeError('Expected a pre-upgrade 0006 snapshot')
+                if original_revision != before:
+                    raise RuntimeError(f'Expected a pre-upgrade snapshot at {before}')
                 projects = db.execute('SELECT count(*) FROM projects').fetchone()[0]
-                files, assets = manifest(db, storage)
+                files, assets = manifest(db, storage, before)
             snapshot_store = directory / 'storage'
             snapshot_store.mkdir()
             copied = {}
@@ -90,18 +94,18 @@ def snapshot_and_verify(source, storage, container, directory):
                 if copied[key] != sha256(path) or (digest and copied[key] != digest):
                     raise RuntimeError('Referenced file hash differs: ' + key)
             (directory/'files.json').write_text(json.dumps(copied, indent=2)+'\n',encoding='utf-8')
-            for arguments in (('upgrade','0007'),('check',),('downgrade','0006'),('upgrade','0007'),('check',)):
+            for arguments in (('upgrade',target),('check',),('downgrade',before),('upgrade',target),('check',)):
                 run_alembic(restored,*arguments)
-            with TemporaryDirectory(prefix='p6-recovery-',dir=directory) as folder:
+            with TemporaryDirectory(prefix='upgrade-recovery-',dir=directory) as folder:
                 restored_store = Path(folder)
                 shutil.copytree(snapshot_store, restored_store, dirs_exist_ok=True)
                 for key, digest in copied.items():
                     if sha256(safe_child(restored_store,key)) != digest:
                         raise RuntimeError('Restored file hash differs: ' + key)
-            return {'before_revision':'0006','tested_revision':'0007','restored_separate_database':True,
+            return {'before_revision':before,'tested_revision':target,'restored_separate_database':True,
                     'restored_separate_storage':True,'projects_verified':projects,'assets_verified':assets,
                     'files_verified':len(copied),'dump_sha256':sha256(dump),
-                    'empty_analysis_history_roundtrip':['upgrade 0007','schema check','downgrade 0006','upgrade 0007','schema check']}
+                    'migration_roundtrip':[f'upgrade {target}','schema check',f'downgrade {before}',f'upgrade {target}','schema check']}
         finally:
             connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(db_name)))
 
@@ -109,6 +113,7 @@ def snapshot_and_verify(source, storage, container, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
+    parser.add_argument('--stage', choices=['p6','p7'], default='p6')
     args = parser.parse_args()
     if args.upgrade:
         for port in (18000, 15173):
@@ -129,16 +134,18 @@ def main():
     container = subprocess.check_output(['docker','compose','ps','-q','db'],cwd=ROOT,text=True).strip()
     if not container:
         raise SystemExit('Project PostgreSQL is not running')
-    directory = ROOT / 'data/backups' / ('p6-before-' + uuid4().hex[:12])
+    before, target = ('0006','0007') if args.stage=='p6' else ('0007','0008')
+    directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
-    report = snapshot_and_verify(source, storage, container, directory)
+    report = snapshot_and_verify(source, storage, container, directory, before, target)
     report['backup_directory'] = directory.relative_to(ROOT).as_posix()
     if args.upgrade:
-        run_alembic(source,'upgrade','0007')
+        run_alembic(source,'upgrade',target)
         run_alembic(source,'check')
-        report['local_database_revision']='0007'
+        report['local_database_revision']=target
     (ROOT/'data/tmp').mkdir(parents=True,exist_ok=True)
-    (ROOT/'data/tmp/p6-backup-migration-acceptance.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    report_path = ROOT/'data/tmp'/f'{args.stage}-backup-migration-acceptance.json'
+    report_path.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(report,indent=2))
 
 

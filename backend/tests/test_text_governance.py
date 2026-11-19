@@ -385,7 +385,7 @@ def test_financial_migration_downgrade_is_refused(governed):
         env={**os.environ,'DATABASE_URL':os.environ['TEST_DATABASE_URL']},capture_output=True,text=True,timeout=30)
     assert result.returncode!=0 and 'P5 financial audit records exist' in result.stderr
     from sqlalchemy import text
-    with factory() as db:assert db.scalar(text('SELECT version_num FROM alembic_version'))=='0007'
+    with factory() as db:assert db.scalar(text('SELECT version_num FROM alembic_version'))=='0008'
 
 
 def test_new_worker_process_recovers_persisted_receipt_without_network(governed):

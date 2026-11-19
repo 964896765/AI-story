@@ -61,7 +61,7 @@ PostgreSQL 集成测试需独立测试数据库，先以其 `DATABASE_URL` 执�
 
 已配置完成时，也可在根目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start.ps1` 隐藏启动三个进程。日志和 PID 存于 `data/runtime`；如需关闭，先核对记录 PID 的实际命令行再停止对应进程。脚本遇到端口占用会退出，不终止其他服务。P3 记录进程启动时间和可执行文件，过期记录由启动脚本归档；`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -WhatIf` 可检查将停止的本项目进程，再去掉 `-WhatIf` 实际停止。身份不匹配就拒绝操作，不按端口或复用 PID 杀进程。停止前建议等待任务结束或取消；强制停止的任务通过租约恢复。
 
-升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P6 为 0007），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P6 恢复步骤](docs/P6_ACCEPTANCE.md)
+升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前 P7 为 0008），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [P7 恢复步骤](docs/P7_ACCEPTANCE.md)
 
 P2 实机验证脚本：服务运行后根目录执行 `.\.venv\Scripts\python scripts/p2_smoke.py`，会创建明确标识的验收项目与自有测试视频，并生成两条真实成片。浏览器验证使用本机 Chrome：`node --experimental-websocket scripts/browser-p2.mjs`，独立临时浏览器配置，不下载浏览器或模型；会再创建一条真实任务。
 
@@ -112,3 +112,7 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 在素材资产中心进入音视频的“智能解析”，选择需要的步骤并提交。解析记录可查看参数、产物、阶段和日志，切镜或字幕时间可定位至预览播放头。审核快照保存选定解析证据、人工切点和标注，审核稿可以保存为剧本后进入 P5 剧情改编。
 
 模型感知在设置与接口中显示接入状态。当前可使用软字幕抽取、真实波形和人工标注。浏览器复验使用 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser-phase p6 --browser-only`，默认把新证据写到 `data/tmp`。 [P6 验收](docs/P6_ACCEPTANCE.md)
+
+## P7 故事圣经
+
+在漫剧定制保存总剧本、分集和分镜，进入“故事圣经”固定各版本，填写目标时长与角色跨集状态。保存后可查看规则检查和镜头计划，用审核说明批准指定版本。生成式分镜与视频画面一致性等待模型接入和实测。 [P7 验收](docs/P7_ACCEPTANCE.md)

@@ -134,7 +134,7 @@ class StoryEntity(Base):
     current_version: Mapped[int] = mapped_column(Integer,default=1)
     creation_key: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
-    __table_args__=(UniqueConstraint('project_id','creation_key'),CheckConstraint("kind IN ('novel','script','character','scene','relationship','episode','storyboard','generation_plan')",name='ck_story_kind'),)
+    __table_args__=(UniqueConstraint('project_id','creation_key'),CheckConstraint("kind IN ('novel','script','character','scene','relationship','episode','storyboard','generation_plan','story_bible')",name='ck_story_kind'),)
 
 class StoryVersion(Base):
     __tablename__='story_versions'

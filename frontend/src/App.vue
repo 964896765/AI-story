@@ -6,6 +6,7 @@ import AttemptHistory from './AttemptHistory.vue'
 import StoryStudio from './StoryStudio.vue'
 import TextAdaptation from './TextAdaptation.vue'
 import MediaAnalysis from './MediaAnalysis.vue'
+import SeriesStudio from './SeriesStudio.vue'
 interface Project {id:string;name:string;description:string;budget_cents:number}
 interface Asset {id:string;name:string;size_bytes:number;authorization:string;sha256:string;media_info:Record<string,unknown>}
 interface Task {story_version_id:string|null;batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string|null;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
@@ -19,7 +20,7 @@ const adaptationSource=ref<{version_id:string;title:string;version:number}|null>
 function adaptStory(version:{version_id:string;title:string;version:number}){adaptationSource.value=version;view.value='剧情改编'}
 const analysisAsset=ref('')
 function openAnalysis(asset:Asset){analysisAsset.value=asset.id;view.value='智能解析'}
-const sections=['素材资产中心','智能解析','智能二创','剧情改编','漫剧定制','批量生产','质检与导出','运营中心']
+const sections=['素材资产中心','智能解析','智能二创','剧情改编','漫剧定制','故事圣经','批量生产','质检与导出','运营中心']
 const labels:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败',cancelled:'已取消'}
 const stages:Record<string,string>={queued:'等待领取',recovered:'中断恢复',inspecting:'检查输入',encoding:'FFmpeg 编码',validating:'验证成片',publishing:'发布输出',succeeded:'完成',failed:'失败',cancelled:'已取消',retry_wait:'等待自动重试',checkpoint:'核验检查点',resuming_checkpoint:'复用编码检查点',awaiting_review:'待人工审核',approved:'人工已通过',rejected:'人工已拒绝',settlement_recovery:'恢复用量核算',dispatching:'模型调用处理中',received:'响应已保存，核算中'}
 let timer:ReturnType<typeof setInterval>|undefined
@@ -66,6 +67,7 @@ onUnmounted(()=>clearInterval(timer))
    <template v-else-if="view==='智能二创'"><p v-if="productionStory" class="hint">生产依据：{{productionStory.title}} · v{{productionStory.version}} <button @click="productionStory=null">清除引用</button></p><VideoEditor :project-id="selected" :assets="assets" :story-version-id="productionStory?.version_id" @submitted="refresh" /></template>
    <StoryStudio :key="selected" v-else-if="view==='漫剧定制'" :project-id="selected" :assets="assets" @assets-changed="refresh" @production="useStory" @adaptation="adaptStory" />
    <TextAdaptation v-else-if="view==='剧情改编'" :key="selected" :project-id="selected" :source="adaptationSource" @source-picker="view='漫剧定制'" @production="useStory" />
+   <SeriesStudio v-else-if="view==='故事圣经'" :key="selected" :project-id="selected" />
    <template v-else-if="view==='批量生产'">
     <QueuePanel :project-id="selected" />
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>

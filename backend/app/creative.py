@@ -11,7 +11,7 @@ from sqlalchemy import select,func
 from sqlalchemy.orm import defer
 from .db import session
 from .models import Project,Asset,StoryEntity,StoryVersion,StoryReference,StoryOperation,Task
-from .story_schemas import CONTENT_MODELS,EntityInput,VersionInput,RestoreInput,DeriveInput
+from .story_schemas import CONTENT_MODELS,Kind,Shot,EntityInput,VersionInput,RestoreInput,DeriveInput
 from .model_adapters import adapter_for,ModelRequest
 
 router=APIRouter(prefix='/api',tags=['creative'])
@@ -62,9 +62,22 @@ def validate_content(db,project_id,kind,content):
             version('to_character',item['to_character_version_id'],{'character'})
     if kind=='storyboard':
         version('source',normalized['source_version_id'],{'script','episode'})
+        old_fields={'number','description','dialogue','planned_duration','scene_version_id','character_version_ids'}
         for shot in normalized['shots']:
             version(f"shot:{shot['number']}:scene",shot['scene_version_id'],{'scene'})
             for key in shot['character_version_ids']:version(f"shot:{shot['number']}:character",key,{'character'})
+            # Legacy request hashes include exactly the original shot keys and defaults.
+            for field, definition in Shot.model_fields.items():
+                if field not in old_fields and shot[field]==definition.default:
+                    shot.pop(field)
+    if kind=='story_bible':
+        version('series_source',normalized['script_version_id'],{'script'})
+        for index, block in enumerate(normalized['episodes'],1):
+            version(f'series:{index}:episode',block['episode_version_id'],{'episode'})
+            version(f'series:{index}:board',block['storyboard_version_id'],{'storyboard'})
+            for state in block['opener']+block['closer']:
+                version(f'series:{index}:character',state['character_version_id'],{'character'})
+                version(f'series:{index}:scene',state['scene_version_id'],{'scene'})
     if kind=='generation_plan':
         for key in normalized['input_version_ids']:version('generation_input',key)
     refs=list(dict.fromkeys(refs))
@@ -92,11 +105,13 @@ def create_entity(db,project_id,kind,title,content,key,note='',provenance=None):
     return entity,append_version(db,entity,title,normalized,refs,key,note,provenance)
 
 @router.get('/projects/{project_id}/story/entities')
-def list_entities(project_id:str,offset:int=0,limit:int=200,db=Depends(session)):
+def list_entities(project_id:str,offset:int=0,limit:int=200,kind:Kind|None=None,db=Depends(session)):
     require(db,Project,project_id)
     if not 0<=offset or not 1<=limit<=200:raise HTTPException(422,'分页范围无效')
-    rows=db.execute(select(StoryEntity,StoryVersion).options(defer(StoryVersion.content)).join(StoryVersion,StoryVersion.entity_id==StoryEntity.id).where(StoryEntity.project_id==project_id,StoryVersion.number==StoryEntity.current_version).order_by(StoryEntity.created_at.desc()).offset(offset).limit(limit)).all()
-    total=db.scalar(select(func.count()).select_from(StoryEntity).where(StoryEntity.project_id==project_id))
+    scope=[StoryEntity.project_id==project_id]
+    if kind:scope.append(StoryEntity.kind==kind)
+    rows=db.execute(select(StoryEntity,StoryVersion).options(defer(StoryVersion.content)).join(StoryVersion,StoryVersion.entity_id==StoryEntity.id).where(*scope,StoryVersion.number==StoryEntity.current_version).order_by(StoryEntity.created_at.desc()).offset(offset).limit(limit)).all()
+    total=db.scalar(select(func.count()).select_from(StoryEntity).where(*scope))
     return {'items':[pack(db,e,v,False) for e,v in rows],'total':total}
 
 @router.post('/projects/{project_id}/story/entities',status_code=201)

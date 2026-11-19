@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-19T01:39:41.123Z",
+  "browser": "Installed Chrome headless",
+  "approved_version_id": "667c5844-443d-476b-8890-a6e5ce33da5a",
+  "episode_count": 3,
+  "stable_shot_ids": [
+    "paper-lamp-1",
+    "paper-lamp-2",
+    "paper-lamp-3"
+  ],
+  "test_plan_durations_ms": [
+    3000,
+    3000,
+    3000
+  ],
+  "keyboard_approval": true,
+  "real_external_calls": 0,
+  "javascript_errors": []
+}
