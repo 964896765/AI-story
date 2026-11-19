@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, BigInteger, JSON, UniqueConstraint, CheckConstraint, Float, Boolean, text
+from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, BigInteger, JSON, UniqueConstraint, CheckConstraint, Float, Boolean, Index, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -31,6 +32,43 @@ class Asset(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     media_info: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+class LibraryWork(Base):
+    __tablename__ = 'library_works'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'),index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    origin: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list] = mapped_column(JSONB)
+    request_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('project_id','request_key'),Index('ix_library_works_tags','tags',postgresql_using='gin'))
+
+class LibraryEpisode(Base):
+    __tablename__ = 'library_episodes'
+    work_id: Mapped[str] = mapped_column(ForeignKey('library_works.id',ondelete='CASCADE'),primary_key=True)
+    number: Mapped[int] = mapped_column(Integer,primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id'),index=True)
+
+class AssetRight(Base):
+    __tablename__ = 'asset_rights'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    asset_id: Mapped[str] = mapped_column(ForeignKey('assets.id'),index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20))
+    source_type: Mapped[str] = mapped_column(String(20))
+    holder: Mapped[str] = mapped_column(String(300))
+    scope: Mapped[dict] = mapped_column(JSON)
+    evidence: Mapped[str] = mapped_column(Text)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),nullable=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('asset_id','revision'),UniqueConstraint('asset_id','request_key'))
 
 class Task(Base):
     __tablename__ = 'tasks'

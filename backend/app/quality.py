@@ -49,8 +49,10 @@ def qa_output(render,policy,update,task_id,attempt):
         add('video_contract','error','视频编码或帧数不符合固定时间轴')
     if policy['require_audio'] and not has_audio:
         add('missing_audio','error','本批次要求音轨，当前输出没有音轨')
-    if policy['require_subtitles'] and 'caption' not in active_roles:
-        add('missing_subtitles','error','本批次要求字幕，固定时间轴没有启用的字幕片段')
+    if policy['require_subtitles']:
+        captions = output.get('caption_storage_key') or f'tmp/{render.id}/{render.attempt}/timeline.srt'
+        if 'caption' not in active_roles or not storage.resolve_key(captions).is_file():
+            add('missing_subtitles','error','本批次要求字幕，成片没有实际输出字幕')
     if not video:
         return result
     work = storage.resolve_key(f'tmp/{task_id}/{attempt}')

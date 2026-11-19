@@ -28,9 +28,11 @@ from .generation import router as generation_router
 from .voice import router as voice_router
 from .timeline import router as timeline_router
 from .production import router as production_router
+from .library import router as library_router
+from .delivery import router as delivery_router
 from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(title='AI 漫剧工厂', version='0.11.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.12.0')
 app.include_router(creative_router)
 app.include_router(text_router)
 app.include_router(analysis_router)
@@ -40,6 +42,8 @@ app.include_router(generation_router)
 app.include_router(voice_router)
 app.include_router(timeline_router)
 app.include_router(production_router)
+app.include_router(library_router)
+app.include_router(delivery_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -100,7 +104,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0010'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0011'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})

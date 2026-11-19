@@ -2,6 +2,8 @@
 
 ## 状态
 
+P12 作品、素材授权、整剧 ZIP 交付见 [P12 验收](P12_ACCEPTANCE.md)。
+
 P11 整剧队列、技术质检、分集返工见 [P11 验收](P11_ACCEPTANCE.md)。
 
 P10 本地多轨、自动装配和三集真实渲染见 [P10 验收](P10_ACCEPTANCE.md)。

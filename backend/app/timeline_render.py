@@ -242,6 +242,15 @@ def timeline_render(task_id,attempt,parameters,snapshot,update):
                'frame_rate':FPS,'frames':timeline.frames,'engine':ENGINE}
     update('publishing',99)
     target.parent.mkdir(parents=True,exist_ok=True)
+    captions=work/'timeline.srt'
+    if captions.is_file():
+        caption_output=target.parent/'captions.srt'
+        digest=file_hash(captions)
+        if not caption_output.exists():
+            os.link(captions,caption_output)
+        elif file_hash(caption_output)!=digest:
+            raise ValueError('已发布字幕与当前固定时间轴不符')
+        payload.update(caption_storage_key=f'outputs/{task_id}/captions.srt',caption_sha256=digest)
     write_manifest(published,payload)
     os.link(temporary,target)
     temporary.unlink()
