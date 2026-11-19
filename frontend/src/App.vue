@@ -10,6 +10,7 @@ import SeriesStudio from './SeriesStudio.vue'
 import GenerationStudio from './GenerationStudio.vue'
 import VoiceStudio from './VoiceStudio.vue'
 import TimelineStudio from './TimelineStudio.vue'
+import ProductionStudio from './ProductionStudio.vue'
 interface Project {id:string;name:string;description:string;budget_cents:number}
 interface Asset {id:string;name:string;size_bytes:number;authorization:string;sha256:string;media_info:Record<string,unknown>}
 interface Task {story_version_id:string|null;batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string|null;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
@@ -23,6 +24,8 @@ function useStory(version:{version_id:string;title:string;version:number}){produ
 const adaptationSource=ref<{version_id:string;title:string;version:number}|null>(null)
 function adaptStory(version:{version_id:string;title:string;version:number}){adaptationSource.value=version;view.value='剧情改编'}
 const analysisAsset=ref('')
+const timelineVersion=ref('')
+function openTimeline(versionId:string){timelineVersion.value=versionId;view.value='多轨时间轴'}
 function openAnalysis(asset:Asset){analysisAsset.value=asset.id;view.value='智能解析'}
 const sections=['素材资产中心','智能解析','智能二创','剧情改编','漫剧定制','故事圣经','生成候选','配音与字幕','多轨时间轴','批量生产','质检与导出','运营中心']
 const labels:Record<string,string>={queued:'排队中',running:'执行中',succeeded:'已完成',failed:'失败',cancelled:'已取消'}
@@ -43,7 +46,7 @@ async function refresh(){
   assets.value=a;tasks.value=t;cost.value=`¥${(c.recorded_cents/100).toFixed(2)} · ${c.note}`
  }catch(e){error.value=String(e)}finally{refreshing=false}
 }
-async function changeProject(){assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';productionStory.value=null;adaptationSource.value=null;analysisAsset.value='';events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
+async function changeProject(){assets.value=[];tasks.value=[];preview.value='';outputPreview.value='';productionStory.value=null;adaptationSource.value=null;analysisAsset.value='';timelineVersion.value='';events.value=[];logTask.value='';cost.value='';if(selected.value)await refresh()}
 async function action(fn:()=>Promise<void>){busy.value=true;error.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
 async function create(){await action(async()=>{const p=await api<Project>('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.value,description:description.value})});projects.value.unshift(p);selected.value=p.id;name.value='';description.value='';await changeProject()})}
 async function upload(event:globalThis.Event){const input=event.target as HTMLInputElement;const files=Array.from(input.files??[]);await action(async()=>{if(!authorization.value.trim())throw new Error('请先填写授权来源');for(const file of files){const form=new FormData();form.append('file',file);form.append('authorization',authorization.value);await api(`/projects/${selected.value}/assets`,{method:'POST',body:form})}await refresh()});input.value=''}
@@ -74,13 +77,14 @@ onUnmounted(()=>clearInterval(timer))
    <SeriesStudio v-else-if="view==='故事圣经'" :key="selected" :project-id="selected" />
    <GenerationStudio v-else-if="view==='生成候选'" :key="selected" :project-id="selected" :assets="assets" @assets-changed="refresh" />
    <VoiceStudio v-else-if="view==='配音与字幕'" :key="selected" :project-id="selected" @assets-changed="refresh" />
-   <TimelineStudio v-else-if="view==='多轨时间轴'" :key="selected" :project-id="selected" :assets="assets" />
+   <TimelineStudio v-else-if="view==='多轨时间轴'" :key="selected" :project-id="selected" :assets="assets" :initial-version="timelineVersion" />
    <template v-else-if="view==='批量生产'">
+    <ProductionStudio :key="selected" :project-id="selected" @inspect-timeline="openTimeline" />
     <QueuePanel :project-id="selected" />
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>
     <p v-if="!selected" class="empty">请先选择项目。</p><p v-else-if="!tasks.length" class="empty">暂无任务。导入素材后可读取媒体信息，或在智能二创中提交剪辑任务。</p>
     <article v-for="task in tasks" :key="task.id" class="task">
-     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id||(task.kind==='local_voice'?'本机配音':task.kind==='timeline_render'?'多轨渲染':'剧情改编')}}</strong><p class="mono">{{task.kind==='timeline_render'?'多轨渲染':task.kind==='render'?'视频剪辑':task.kind==='adapt'?'剧情改编':task.kind==='still_motion'?'静图运镜':task.kind==='local_voice'?'本机配音':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.story_version_id" class="mono">创作版本 {{task.story_version_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
+     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id||(task.kind==='local_voice'?'本机配音':task.kind==='timeline_render'?'多轨渲染':task.kind==='qc_review'?'技术质检':'剧情改编')}}</strong><p class="mono">{{task.kind==='qc_review'?'技术质检':task.kind==='timeline_render'?'多轨渲染':task.kind==='render'?'视频剪辑':task.kind==='adapt'?'剧情改编':task.kind==='still_motion'?'静图运镜':task.kind==='local_voice'?'本机配音':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.story_version_id" class="mono">创作版本 {{task.story_version_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
       <p>{{stages[task.stage]||task.stage}} · 本次耗时 {{task.elapsed_seconds.toFixed(1)}} 秒 · 尝试 {{task.attempt}}</p>
       <progress v-if="isRender(task)" :value="task.progress" max="100" :aria-label="`编码进度 ${task.progress.toFixed(1)}%`"></progress><span v-if="isRender(task)"> {{task.progress.toFixed(1)}}%</span>
       <details v-if="isRender(task)"><summary>已保存处理参数</summary><pre>{{JSON.stringify(task.parameters,null,2)}}</pre></details>

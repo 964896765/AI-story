@@ -55,7 +55,7 @@ def manifest(connection, storage, revision):
                     files.setdefault(verified.relative_to(storage).as_posix(), None)
         if (key := (output or {}).get('storage_key')) and key not in files:
             raise RuntimeError(f'Published output missing: {task_id}')
-    if revision in ('0007','0008'):
+    if revision in ('0007','0008','0009'):
         for (payload,) in connection.execute('SELECT payload FROM media_analyses'):
             for artifact in payload['artifacts']:
                 files[artifact['storage_key']] = artifact['sha256']
@@ -113,7 +113,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
-    parser.add_argument('--stage', choices=['p6','p7','p10'], default='p6')
+    parser.add_argument('--stage', choices=['p6','p7','p10','p11'], default='p6')
     args = parser.parse_args()
     if args.upgrade:
         for port in (18000, 15173):
@@ -134,7 +134,7 @@ def main():
     container = subprocess.check_output(['docker','compose','ps','-q','db'],cwd=ROOT,text=True).strip()
     if not container:
         raise SystemExit('Project PostgreSQL is not running')
-    before, target = {'p6':('0006','0007'),'p7':('0007','0008'),'p10':('0008','0009')}[args.stage]
+    before, target = {'p6':('0006','0007'),'p7':('0007','0008'),'p10':('0008','0009'),'p11':('0009','0010')}[args.stage]
     directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
     report = snapshot_and_verify(source, storage, container, directory, before, target)

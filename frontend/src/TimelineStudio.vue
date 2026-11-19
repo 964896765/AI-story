@@ -17,7 +17,7 @@ interface Job {
   id:string;status:string;stage:string;progress:number;error:string|null;story_version_id:string;cancel_requested:boolean
   output:{frames?:number;duration?:number;has_audio?:boolean;sha256?:string}
 }
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialVersion?:string}>()
 const labels:Record<Role,string>={main:'主画面',overlay:'叠画',dialogue:'对白',music:'音乐',sfx:'音效',caption:'字幕'}
 const profiles:Record<Profile,string>={portrait:'9:16',landscape:'16:9',square:'1:1'}
 const stack=ref<Version[]>([]), editions=ref<Version[]>([]), active=ref<Version|null>(null), jobs=ref<Job[]>([])
@@ -140,7 +140,11 @@ async function control(job:Job,action:'cancel'|'retry'){
   await run(async()=>{await request('/tasks/'+job.id+'/'+action,{}); await refresh()})
 }
 onMounted(()=>{
-  void run(async()=>{await list();await refresh()})
+  void run(async()=>{
+    await list()
+    await refresh()
+    if(props.initialVersion)await open(await request<Version>('/story/versions/'+props.initialVersion))
+  })
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3000)
 })
 onUnmounted(()=>clearInterval(timer))
@@ -181,6 +185,8 @@ onUnmounted(()=>clearInterval(timer))
             <label>输出画幅<select v-model="timeline.profile"><option v-for="(label,key) in profiles" :key="key" :value="key">{{ label }}</option></select></label>
             <label>总帧数（24 fps）<input v-model.number="timeline.frames" required type="number" min="12" max="14400"></label>
           </div>
+          <label>固定制作来源版本 ID（可选）<input :value="timeline.source_version_id||''" maxlength="36"
+            @input="timeline.source_version_id=($event.target as HTMLInputElement).value.trim()||null"></label>
           <div class="tracks" aria-label="多轨片段">
             <article v-for="(lane,index) in timeline.tracks" :key="lane.id" class="lane">
               <div class="actions lane-controls">

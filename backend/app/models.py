@@ -40,6 +40,7 @@ class Task(Base):
     kind: Mapped[str] = mapped_column(String(40), default='probe')
     batch_id: Mapped[str | None] = mapped_column(ForeignKey('batches.id', ondelete='SET NULL'), nullable=True, index=True)
     story_version_id: Mapped[str | None] = mapped_column(ForeignKey('story_versions.id'),nullable=True,index=True)
+    dependency_task_id: Mapped[str | None] = mapped_column(ForeignKey('tasks.id'),nullable=True,index=True)
     error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, server_default=text('now()'))
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default='3')
@@ -61,6 +62,37 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     __table_args__ = (UniqueConstraint('project_id', 'idempotency_key'), CheckConstraint("status IN ('queued','running','succeeded','failed','cancelled')", name='ck_task_status'), CheckConstraint('progress >= 0 AND progress <= 100', name='ck_task_progress'))
+
+class ProductionRun(Base):
+    __tablename__ = 'production_runs'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'),index=True)
+    plan_version_id: Mapped[str] = mapped_column(ForeignKey('story_versions.id'))
+    previous_run_id: Mapped[str | None] = mapped_column(ForeignKey('production_runs.id'),nullable=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    policy: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('project_id','request_key'),)
+
+class ProductionEpisode(Base):
+    __tablename__ = 'production_episodes'
+    run_id: Mapped[str] = mapped_column(ForeignKey('production_runs.id',ondelete='CASCADE'),primary_key=True)
+    number: Mapped[int] = mapped_column(Integer,primary_key=True)
+    timeline_version_id: Mapped[str] = mapped_column(ForeignKey('story_versions.id'))
+    render_task_id: Mapped[str] = mapped_column(ForeignKey('tasks.id'),index=True)
+    qc_task_id: Mapped[str] = mapped_column(ForeignKey('tasks.id'),index=True)
+    reused: Mapped[bool] = mapped_column(Boolean,default=False)
+
+class QualityReview(Base):
+    __tablename__ = 'quality_reviews'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    qc_task_id: Mapped[str] = mapped_column(ForeignKey('tasks.id'),index=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    reviewed_sha256: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('qc_task_id','request_key'),)
 
 class TaskEvent(Base):
     __tablename__ = 'task_events'

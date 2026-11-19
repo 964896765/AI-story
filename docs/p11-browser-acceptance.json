@@ -1,0 +1,11 @@
+{
+  "checked_at": "2026-11-19T02:20:49.635Z",
+  "browser": "Installed Chrome headless",
+  "initial_run": "22ddb394-3114-4187-93e9-cc620f8fe572",
+  "fixed_run": "5bf6feb1-8cf2-45ef-a0da-0ed4edca18e6",
+  "detection": "missing_audio",
+  "actual_rerender": true,
+  "verified_preview": true,
+  "checks_after_fix": 0,
+  "javascript_errors": []
+}

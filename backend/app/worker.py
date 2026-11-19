@@ -2,7 +2,8 @@
 import time
 from datetime import timedelta
 from uuid import uuid4
-from sqlalchemy import select, text
+from sqlalchemy import or_, select, text
+from sqlalchemy.orm import aliased
 from .db import Session
 from .models import Task, TaskEvent, Asset, TaskAttempt, MediaAnalysis, now
 from .storage import resolve_key
@@ -16,6 +17,16 @@ LEASE_SECONDS = 30
 
 def event(db, task, message):
     db.add(TaskEvent(task_id=task.id, attempt=task.attempt, message=message))
+
+def cancel_failed_dependencies(db):
+    parent=aliased(Task)
+    failed=select(parent.id).where(parent.status.in_(('failed','cancelled')))
+    dependents=db.scalars(select(Task).where(Task.status=='queued',Task.dependency_task_id.in_(failed))
+                          .with_for_update(skip_locked=True)).all()
+    for task in dependents:
+        task.status,task.stage,task.finished_at='cancelled','dependency_failed',now()
+        task.error_code,task.error='DEPENDENCY_FAILED','上游任务失败或取消，未执行本步骤'
+        event(db,task,task.error)
 
 def recover_expired(db):
     for task in db.scalars(select(Task).where(Task.status == 'running', Task.lease_until < now()).with_for_update()).all():
@@ -34,7 +45,7 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render') and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
@@ -49,10 +60,15 @@ def _run_once(heartbeat):
         recover_expired(db)
         from .text_service import recover_detached_calls
         recover_detached_calls(db)
+        cancel_failed_dependencies(db)
         # A live lease is a second concurrency fence if the advisory connection was lost.
         if control.paused or db.scalar(select(Task.id).where(Task.status=='running').limit(1)):
             return False
-        task = db.scalar(select(Task).where(Task.status == 'queued',Task.next_run_at<=now()).order_by(Task.created_at,Task.id).with_for_update(skip_locked=True).limit(1))
+        parent=aliased(Task)
+        succeeded=select(parent.id).where(parent.id==Task.dependency_task_id,parent.status=='succeeded').exists()
+        task = db.scalar(select(Task).where(Task.status == 'queued',Task.next_run_at<=now(),
+            or_(Task.dependency_task_id.is_(None),succeeded)).order_by(Task.created_at,Task.id)
+            .with_for_update(skip_locked=True).limit(1))
         if not task:
             return False
         task.status, task.stage, task.progress = 'running', 'inspecting', 0
@@ -124,6 +140,13 @@ def _run_once(heartbeat):
         elif kind == 'timeline_render':
             from .timeline_render import timeline_render
             output = timeline_render(task_id,attempt,parameters,inputs,update)
+        elif kind == 'qc_review':
+            from .quality import qa_output
+            with Session() as db:
+                origin = db.get(Task,inputs['render_task_id'])
+                if origin is None or origin.status!='succeeded':
+                    raise ValueError('上游产物尚未通过渲染')
+                output = qa_output(origin,parameters,update,task_id,attempt)
         else:
             raise ValueError('未知任务类型：'+kind)
     except Cancelled as exc:
@@ -173,6 +196,7 @@ def _run_once(heartbeat):
                          'still_motion':'运镜候选已验证',
                          'local_voice':'配音、时间与字幕已验证',
                          'timeline_render':'多轨成片已解码验证',
+                         'qc_review':'已保存真实技术质检结果',
                          'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
