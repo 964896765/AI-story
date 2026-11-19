@@ -132,6 +132,60 @@ class QualityReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
     __table_args__ = (UniqueConstraint('qc_task_id','request_key'),)
 
+class ChannelProfile(Base):
+    __tablename__ = 'channel_profiles'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'),index=True)
+    label: Mapped[str] = mapped_column(String(180))
+    platform: Mapped[str] = mapped_column(String(40))
+    region: Mapped[str] = mapped_column(String(5))
+    revision: Mapped[int] = mapped_column(Integer)
+    details: Mapped[dict] = mapped_column(JSON)
+    request_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('project_id','request_key'),UniqueConstraint('project_id','platform','revision'))
+
+class Publication(Base):
+    __tablename__ = 'publications'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'),index=True)
+    channel_id: Mapped[str] = mapped_column(ForeignKey('channel_profiles.id'))
+    delivery_task_id: Mapped[str] = mapped_column(ForeignKey('tasks.id'))
+    title: Mapped[str] = mapped_column(String(180))
+    status: Mapped[str] = mapped_column(String(30),default='draft')
+    planned_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),nullable=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('project_id','request_key'),)
+
+class PublicationEvent(Base):
+    __tablename__ = 'publication_events'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    publication_id: Mapped[str] = mapped_column(ForeignKey('publications.id',ondelete='CASCADE'),index=True)
+    from_status: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(30))
+    evidence: Mapped[str] = mapped_column(Text)
+    request_key: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('publication_id','request_key'),)
+
+class SettlementEntry(Base):
+    __tablename__ = 'settlement_entries'
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)
+    channel_id: Mapped[str] = mapped_column(ForeignKey('channel_profiles.id'),index=True)
+    account_scope: Mapped[str] = mapped_column(String(64))
+    external_id: Mapped[str] = mapped_column(String(150))
+    currency: Mapped[str] = mapped_column(String(3))
+    kind: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    amount_micros: Mapped[int | None] = mapped_column(BigInteger,nullable=True)
+    details: Mapped[dict] = mapped_column(JSON)
+    source_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),default=now)
+    __table_args__ = (UniqueConstraint('account_scope','external_id'),)
+
 class TaskEvent(Base):
     __tablename__ = 'task_events'
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

@@ -12,6 +12,7 @@ import VoiceStudio from './VoiceStudio.vue'
 import TimelineStudio from './TimelineStudio.vue'
 import ProductionStudio from './ProductionStudio.vue'
 import LibraryDelivery from './LibraryDelivery.vue'
+import OperationsStudio from './OperationsStudio.vue'
 interface Project {id:string;name:string;description:string;budget_cents:number}
 interface Asset {id:string;name:string;size_bytes:number;authorization:string;sha256:string;media_info:Record<string,unknown>}
 interface Task {story_version_id:string|null;batch_id:string|null;error_code:string|null;next_run_at:string;id:string;asset_id:string|null;status:string;kind:string;attempt:number;error:string|null;stage:string;progress:number;cancel_requested:boolean;elapsed_seconds:number;parameters:Record<string,unknown>;output:{storage_key?:string;duration?:number;width?:number;height?:number;size_bytes?:number;has_audio?:boolean}}
@@ -85,7 +86,7 @@ onUnmounted(()=>clearInterval(timer))
     <h2>持久化任务队列</h2><p class="hint">全局同时执行 1 项任务。编码进度来自 FFmpeg 已处理时间，验证完成后才显示 100%。Worker 重启后等待租约过期，再安全恢复未完成剪辑。</p>
     <p v-if="!selected" class="empty">请先选择项目。</p><p v-else-if="!tasks.length" class="empty">暂无任务。导入素材后可读取媒体信息，或在智能二创中提交剪辑任务。</p>
     <article v-for="task in tasks" :key="task.id" class="task">
-     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id||(task.kind==='local_voice'?'本机配音':task.kind==='timeline_render'?'多轨渲染':task.kind==='qc_review'?'技术质检':task.kind==='delivery'?'整剧交付':'剧情改编')}}</strong><p class="mono">{{task.kind==='delivery'?'整剧交付':task.kind==='qc_review'?'技术质检':task.kind==='timeline_render'?'多轨渲染':task.kind==='render'?'视频剪辑':task.kind==='adapt'?'剧情改编':task.kind==='still_motion'?'静图运镜':task.kind==='local_voice'?'本机配音':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.story_version_id" class="mono">创作版本 {{task.story_version_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
+     <div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||task.asset_id||(task.kind==='local_voice'?'本机配音':task.kind==='timeline_render'?'多轨渲染':task.kind==='qc_review'?'技术质检':task.kind==='delivery'?'整剧交付':task.kind==='promotion'?'推广包':'剧情改编')}}</strong><p class="mono">{{task.kind==='promotion'?'推广包':task.kind==='delivery'?'整剧交付':task.kind==='qc_review'?'技术质检':task.kind==='timeline_render'?'多轨渲染':task.kind==='render'?'视频剪辑':task.kind==='adapt'?'剧情改编':task.kind==='still_motion'?'静图运镜':task.kind==='local_voice'?'本机配音':'媒体解析'}} · {{task.id}}</p><p v-if="task.batch_id" class="mono">批次 {{task.batch_id}}</p><p v-if="task.story_version_id" class="mono">创作版本 {{task.story_version_id}}</p><p v-if="task.stage==='retry_wait'" class="hint">{{task.error_code}} · 计划重试 {{new Date(task.next_run_at).toLocaleString('zh-CN')}}</p>
       <p>{{stages[task.stage]||task.stage}} · 本次耗时 {{task.elapsed_seconds.toFixed(1)}} 秒 · 尝试 {{task.attempt}}</p>
       <progress v-if="isRender(task)" :value="task.progress" max="100" :aria-label="`编码进度 ${task.progress.toFixed(1)}%`"></progress><span v-if="isRender(task)"> {{task.progress.toFixed(1)}}%</span>
       <details v-if="isRender(task)"><summary>已保存处理参数</summary><pre>{{JSON.stringify(task.parameters,null,2)}}</pre></details>
@@ -103,7 +104,7 @@ onUnmounted(()=>clearInterval(timer))
     <article v-for="task in tasks.filter(t=>isRender(t)&&t.status==='succeeded')" :key="task.id" class="task"><div><strong>{{assets.find(a=>a.id===task.asset_id)?.name||'多轨成片'}}</strong><p>{{task.output.width}} × {{task.output.height}} · {{task.output.duration?.toFixed(2)}} 秒 · {{((task.output.size_bytes||0)/1024/1024).toFixed(2)}} MB · {{task.output.has_audio?'有音轨':'无音轨'}}</p></div><button @click="outputPreview=task.id">预览成片</button><a :href="`/api/tasks/${task.id}/output?download=true`">下载</a></article>
    </template>
    <LibraryDelivery v-else-if="view==='资源与交付'" :key="selected" :project-id="selected" :assets="assets" />
-   <section v-else class="empty"><h2>{{view}}尚未实现</h2><p>本阶段提供项目、素材与解析任务基础。该入口将在后续阶段接入真实业务，当前没有生成或导出结果。</p></section>
+   <OperationsStudio v-else-if="view==='运营中心'" :key="selected" :project-id="selected" />
   <section v-if="outputPreview" class="output-preview"><div class="actions"><h2>已验证成片预览</h2><button @click="outputPreview=''">关闭预览</button></div><video :key="outputPreview" controls :src="`/api/tasks/${outputPreview}/output`"></video><p class="hint">MKV 播放取决于浏览器支持，可下载后使用本机播放器。</p></section>
   </main>
  </div>

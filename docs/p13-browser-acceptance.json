@@ -1,0 +1,13 @@
+{
+  "checked_at": "2026-11-19T02:59:05.044Z",
+  "browser": "Installed Chrome headless",
+  "distribution_mode": "manual_record",
+  "recorded_status": "planned",
+  "promo_zip_downloaded": true,
+  "settlements_inserted": 2,
+  "duplicates_skipped": 2,
+  "fixture_cash_micros": 30000000,
+  "fixture_ad_credits_micros": 100000000,
+  "actual_external_publishes": 0,
+  "javascript_errors": []
+}

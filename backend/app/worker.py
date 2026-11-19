@@ -45,7 +45,7 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery') and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery', 'promotion') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
@@ -150,6 +150,9 @@ def _run_once(heartbeat):
         elif kind == 'delivery':
             from .delivery import deliver
             output = deliver(task_id,attempt,parameters,inputs,update,Session)
+        elif kind == 'promotion':
+            from .distribution import render_promotion
+            output=render_promotion(task_id,attempt,parameters,inputs,update,Session)
         else:
             raise ValueError('未知任务类型：'+kind)
     except Cancelled as exc:
@@ -170,7 +173,7 @@ def _run_once(heartbeat):
             if call.status in ('awaiting_review','accepted','rejected'):error=None;code=None;cancelled=False
             elif call.status=='cancelled':cancelled=True
         # Publication wins a cancellation racing the final atomic publish.
-        if task.cancel_requested and not (kind in ('render','still_motion','local_voice','timeline_render','delivery') and output):
+        if task.cancel_requested and not (kind in ('render','still_motion','local_voice','timeline_render','delivery','promotion') and output):
             cancelled = True
             if kind == 'analyze':
                 output = {}
@@ -203,6 +206,7 @@ def _run_once(heartbeat):
                          'timeline_render':'多轨成片已解码验证',
                          'qc_review':'已保存真实技术质检结果',
                          'delivery':'交付包与文件哈希已核验',
+                         'promotion':'实际推广片段和封面已制作，等待人工审阅',
                          'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
