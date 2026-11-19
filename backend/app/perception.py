@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from .text_adapters import live_gate
+from .perception_ocr import ENGINE, installed_languages
 
 Capability = Literal['asr', 'ocr', 'diarization', 'source_separation', 'video_understanding']
 
@@ -49,10 +50,15 @@ CAPABILITIES = {
 
 
 def available_capabilities():
-    return {'capabilities': [{'id': key, 'label': label, 'status': 'pending_integration',
-                             'available': False} for key, label in CAPABILITIES.items()],
-            'text_live_authorized': live_gate(),
-            'text_gate': '/api/text/status'}
+    languages = installed_languages()
+    capabilities = []
+    for key, label in CAPABILITIES.items():
+        capability = {'id': key, 'label': label, 'status': 'pending_integration', 'available': False}
+        if key == 'ocr':
+            capability.update(status='ready_local' if languages else 'missing_recognizer', available=bool(languages),
+                              engine=ENGINE, languages=languages)
+        capabilities.append(capability)
+    return {'capabilities': capabilities, 'text_live_authorized': live_gate(), 'text_gate': '/api/text/status'}
 
 
 def align_to_shots(items, shots):

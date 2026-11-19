@@ -14,7 +14,7 @@
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check_release.ps1 -ProductionBrowser
 ```
 
-浏览器使用独立数据库、文件根目录和备用回环端口。若要复验 P5 到 P14 的已实现浏览器路径，构建后运行 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser-only --all-browsers`。本地检查可以接入已有 Windows CI runner；需要安装中文和英文系统音色才可执行双角色本机配音验收。
+浏览器使用独立数据库、文件根目录和备用回环端口。若要复验 P5 到 P14 的已实现浏览器路径，构建后运行 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser-only --all-browsers`。本地检查可以接入已有 Windows CI runner。双角色配音验收使用中文和英文系统音色，OCR 验收使用已安装的 `zh-Hans-CN` 识别器和 SimHei 测试字体。
 
 构建并迁移后可用 `scripts/start.ps1 -Production` 从本机回环地址预览生产构建。运行 `scripts/package_local.ps1` 从 Git 提交生成源码 ZIP 和 SHA-256。源码包含锁文件、迁移和文档。输出位于忽略目录 `data/releases`，兼容环境在本机按锁文件构建。备份数据库、素材、凭据和本机环境独立保管。
 

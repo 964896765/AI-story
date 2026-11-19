@@ -17,7 +17,7 @@ from sqlalchemy.engine import make_url
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BROWSER_PHASES = tuple(f'p{number}' for number in range(5,15))
+BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)))
 
 def run_browser(env, path, phases):
     api_port, browser_port = 18006, 15179
@@ -35,7 +35,7 @@ def run_browser(env, path, phases):
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if "p14" in phases else []),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr'}.intersection(phases) else []),
                   "--host", "127.0.0.1", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:

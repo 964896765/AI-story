@@ -9,6 +9,7 @@ from . import storage
 from .analysis_engine import ALGORITHM, analyze, tools_version
 from .analysis_schemas import AnalysisOptions
 from .models import MediaAnalysis
+from .perception_ocr import recognizer
 from .render import file_hash
 
 
@@ -32,8 +33,18 @@ def execute_analysis(task_id, attempt, parameters, input_snapshot, update, facto
     actual = file_hash(path, lambda *_: update('analysis_hash', 3))
     if actual != source['sha256']:
         raise ValueError('源文件与导入时的 SHA-256 不一致，请重新导入未修改的素材')
-    signature = fingerprint({'algorithm': ALGORITHM, 'tools': tools_version(), 'source': actual,
-                             'asset_id': source['id'], 'options': options.signature_parameters()})
+    adapter = None
+    if options.operation == 'ocr':
+        pinned = input_snapshot.get('ocr')
+        adapter = recognizer(pinned['language'] if pinned else options.ocr_language)
+        if pinned and adapter != pinned:
+            raise ValueError('本机 OCR 识别器环境已变更，请重新提交解析')
+        options = options.model_copy(update={'ocr_language': adapter['language']})
+    inputs = {'algorithm': ALGORITHM, 'tools': tools_version(), 'source': actual,
+              'asset_id': source['id'], 'options': options.signature_parameters()}
+    if adapter:
+        inputs['recognizer'] = adapter
+    signature = fingerprint(inputs)
     with factory() as db:
         cached = db.scalars(select(MediaAnalysis).where(MediaAnalysis.signature == signature)
                             .order_by(MediaAnalysis.created_at.desc()).limit(5)).all()

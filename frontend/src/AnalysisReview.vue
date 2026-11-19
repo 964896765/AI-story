@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { artifactUrl, clock, operationLabels, request, type Interval, type Result, type Shot, type Version } from './analysisApi'
+import { artifactUrl, clock, operationLabels, request, type Interval, type OcrFrame, type Result, type Shot, type Version } from './analysisApi'
 
 type EvidenceKind = 'transcript' | 'screen_text' | 'speaker' | 'observation'
 type Evidence = Interval & { kind: EvidenceKind; text: string; shots?: number[] }
@@ -8,7 +8,8 @@ type Candidate = { kind:'character'|'scene'; title:string; description:string; t
 interface Snapshot {
   id:string; number:number
   payload: null | { result_task_ids:string[]; shots:Shot[]; cuts_us:number[]|null; candidates:Candidate[];
-    evidence:Evidence[]; subtitle_cues: unknown[]; note:string }
+    evidence:Evidence[]; subtitle_cues: unknown[]; note:string;
+    ocr_samples?: (Interval & { task_id:string; artifact:number; text:string; shots:number[] })[] }
 }
 const props = defineProps<{ assetId:string; results:Result[]; playhead:number }>()
 const emit = defineEmits<{ seek:[time:number]; adaptation:[version:Version]; assetsChanged:[] }>()
@@ -22,7 +23,10 @@ const useResultIds = computed(() => chosen.value ?? props.results.map(result => 
 const scene = computed(() => props.results.find(result => result.operation === 'scenes' && useResultIds.value.includes(result.task_id)))
 const frames = computed(() => props.results.filter(result => useResultIds.value.includes(result.task_id)).flatMap(result =>
   result.artifacts.filter(a => ['frame','shot_frame'].includes(a.role)).map(a => ({ ...a, task:result.task_id }))))
+const ocrFrames = computed(() => props.results.filter(result => useResultIds.value.includes(result.task_id)).flatMap(result =>
+  (result.ocr?.frames || []).filter(frame => frame.text).map(frame => ({ ...frame, task:result.task_id }))))
 const revised = computed(() => loaded.value?.payload)
+const reviewedScreenText = computed(() => revised.value?.evidence.filter(item => item.kind === 'screen_text') || [])
 const kinds: Record<EvidenceKind,string> = { transcript:'人工转写', screen_text:'人工标注画面文字',
   speaker:'说话段标注', observation:'画面观察' }
 const base = `/analysis/assets/${props.assetId}/revisions`
@@ -52,6 +56,9 @@ function chooseResult(id: string, checked: boolean) {
 }
 function addEvidence() {
   evidence.value.push({ kind:'observation', start_us:props.playhead, end_us:props.playhead+500000, text:'' })
+}
+function addScreenText(frame: OcrFrame) {
+  evidence.value.push({kind:'screen_text', start_us:frame.time_us, end_us:frame.time_us+1, text:frame.text.slice(0,2000)})
 }
 function addCandidate(frame: {task:string;id:number}) {
   candidates.value.push({kind:'scene', title:'', description:'', task_id:frame.task, artifact:frame.id})
@@ -138,6 +145,14 @@ onMounted(() => void run(loadList))
         </label>
         <button type="button" @click="addCut">在播放头添加切点</button>
       </details>
+      <details v-if="ocrFrames.length">
+        <summary>OCR 文字采样 · {{ ocrFrames.length }} 帧</summary>
+        <div v-for="frame in ocrFrames" :key="frame.task+':'+frame.artifact" class="aligned">
+          <a :href="artifactUrl(frame.task,frame.artifact)" target="_blank" rel="noopener">查看 {{ clock(frame.time_us) }} 处画面</a>
+          <p>{{ frame.text }}</p>
+          <button type="button" :disabled="evidence.length>=300" @click="addScreenText(frame)">以此帧创建人工校对</button>
+        </div>
+      </details>
       <details>
         <summary>人工时间证据 · {{ evidence.length }}</summary>
         <fieldset v-for="(item,index) in evidence" :key="index">
@@ -190,6 +205,13 @@ onMounted(() => void run(loadList))
         </div>
         <p v-for="(item,i) in revised.evidence" :key="i">证据 {{ i+1 }} · {{ item.shots?.length ? '镜头 '+item.shots.join('、') : '镜头范围外' }} · {{ item.text }}</p>
       </details>
+      <details v-if="revised.ocr_samples?.length">
+        <summary>已保存的 OCR 采样 · {{ revised.ocr_samples.length }} 帧</summary>
+        <div v-for="sample in revised.ocr_samples" :key="sample.task_id+':'+sample.artifact" class="actions aligned">
+          <button @click="emit('seek',sample.start_us)">{{ clock(sample.start_us) }}</button>
+          <span>{{ sample.shots.length ? '镜头 '+sample.shots.join('、') : '未对齐镜头' }} · {{ sample.text }}</span>
+        </div>
+      </details>
       <fieldset>
         <legend>采纳已审核的证据</legend>
         <label>采纳说明<textarea v-model="approval" maxlength="4000"></textarea></label>
@@ -202,6 +224,7 @@ onMounted(() => void run(loadList))
         <label>人工确认的审核稿正文<textarea v-model="scriptBody" maxlength="100000" rows="4"></textarea></label>
         <div class="actions aligned">
           <button @click="useTranscript">载入选定字幕或人工转写</button>
+          <button v-if="reviewedScreenText.length" @click="scriptBody=reviewedScreenText.map(item=>item.text).join('\n').slice(0,100000)">载入人工校对的画面文字</button>
           <button class="primary" :disabled="busy || !approval.trim() || !scriptTitle.trim() || !scriptBody.trim()"
             @click="adopt('script')">保存 P4 剧本并打开 P5 改编</button>
         </div>

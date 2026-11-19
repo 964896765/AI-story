@@ -1,6 +1,8 @@
 from datetime import timedelta
 import hashlib
 import os
+from pathlib import Path
+import shutil
 import subprocess
 import sys
 from uuid import uuid4
@@ -10,6 +12,7 @@ from sqlalchemy import delete, select
 
 from app import worker
 from app.models import AnalysisRevision, Asset, MediaAnalysis, StoryEntity, Task
+from app.perception_ocr import installed_languages
 from test_render_postgres import studio
 from test_postgres import database
 
@@ -182,4 +185,50 @@ def test_review_snapshot_alignment_source_isolation_and_adoption(analysis):
     assert script.json()['provenance']['analysis_sha256']==updated['content_hash']
     assert client.get(f"/api/analysis/revisions/{saved['id']}").json()==saved
     capabilities=client.get('/api/analysis/capabilities').json()['capabilities']
-    assert len(capabilities)==5 and not any(item['available'] for item in capabilities)
+    assert len(capabilities)==5 and not any(item['available'] for item in capabilities if item['id']!='ocr')
+    ocr=next(item for item in capabilities if item['id']=='ocr')
+    assert ocr['available']==bool(ocr['languages'])
+
+
+def test_windows_ocr_timestamps_original_hash_cache_and_review(analysis, tmp_path):
+    font=Path(os.environ.get('SystemRoot','C:/Windows'))/'Fonts'/'simhei.ttf'
+    if 'zh-Hans-CN' not in installed_languages() or not font.is_file():
+        pytest.skip('Windows simplified-Chinese OCR recognizer and SimHei test font are required')
+    client, _, _, upload, _, resolve, _, submit, complete=analysis
+    shutil.copyfile(font,tmp_path/'fixture-font.ttf')
+    source=tmp_path/'burned.mp4'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=white:s=960x540:r=24:d=1',
+        '-f','lavfi','-i','color=c=black:s=960x540:r=24:d=1','-filter_complex',
+        "[0:v]drawtext=fontfile=fixture-font.ttf:text='灯塔坐标':fontsize=105:fontcolor=black:x=(w-tw)/2:y=(h-th)/2[a];"
+        '[a][1:v]concat=n=2:v=1:a=0[v]','-map','[v]','-c:v','libx264','-threads','2',str(source)],
+        check=True,timeout=60,cwd=tmp_path)
+    asset=upload('自制画面文字.mp4',source.read_bytes())
+    assert submit([{'operation':'ocr','ocr_language':'xx-Absent'}],asset['id']).status_code==422
+    steps=[{'operation':'scenes'},{'operation':'ocr','frame_interval':1,'ocr_language':'zh-Hans-CN'}]
+    submitted=submit(steps,asset['id'],'ocr-test')
+    assert submitted.status_code==201,submitted.text
+    assert submitted.json()[1]['input_snapshot']['ocr']['language']=='zh-Hans-CN'
+    job_ids=[job['id'] for job in submitted.json()]
+    assert [job['id'] for job in submit(steps,asset['id'],'ocr-test').json()]==job_ids
+    scenes, result=map(complete,job_ids)
+    ocr=result['ocr']
+    assert ocr['engine']=='windows-ocr-v1' and ocr['language']=='zh-Hans-CN'
+    assert [frame['time_us'] for frame in ocr['frames']]==[0,1_000_000]
+    assert ''.join(ocr['frames'][0]['text'].split())=='灯塔坐标'
+    assert ocr['frames'][1]['text']=='' and ocr['frames'][1]['lines']==[]
+    download=client.get(f"/api/analysis/tasks/{result['task_id']}/artifacts/0")
+    assert download.status_code==200
+    assert hashlib.sha256(download.content).hexdigest()==result['artifacts'][0]['sha256']
+    replay=complete(submit(steps[1:],asset['id']).json()[0]['id'])
+    assert replay['reused_from_task_id']==result['task_id']
+    revision_request=client.post(f"/api/analysis/assets/{asset['id']}/revisions",json={
+        'expected_version':0,'result_task_ids':[scenes['task_id'],result['task_id']],
+        'note':'人工核对自制画面文字','idempotency_key':'ocr-review',
+        'evidence':[{'kind':'screen_text','start_us':0,'end_us':1_000_000,'text':'灯塔坐标'}],
+    })
+    assert revision_request.status_code==201,revision_request.text
+    snapshot=revision_request.json()['payload']
+    assert snapshot['ocr_samples']==[{'start_us':0,'end_us':1,'artifact':0,'text':ocr['frames'][0]['text'],
+        'task_id':result['task_id'],'origin':'ocr_sample','shots':[1]}]
+    assert snapshot['evidence'][0]['origin']=='human' and snapshot['evidence'][0]['shots']==[1]
+    assert snapshot['source_sha256']==hashlib.sha256(resolve(asset['storage_key']).read_bytes()).hexdigest()

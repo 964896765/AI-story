@@ -113,6 +113,8 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 
 模型感知在设置与接口中显示接入状态。当前可使用软字幕抽取、真实波形和人工标注。浏览器复验使用 `.\.venv\Scripts\python.exe scripts/isolated_regression.py --browser-phase p6 --browser-only`，默认把新证据写到 `data/tmp`。 [P6 验收](docs/P6_ACCEPTANCE.md)
 
+安装 Windows OCR 语言识别器的机器可在“智能解析”提交本机画面文字识别。从证据快照核对采样帧与镜头后，可将人工修订文字采纳为固定剧本。 [本机 OCR 验收](docs/P6B_OCR_ACCEPTANCE.md)
+
 ## P7 故事圣经
 
 在漫剧定制保存总剧本、分集和分镜，进入“故事圣经”固定各版本，填写目标时长与角色跨集状态。保存后可查看规则检查和镜头计划，用审核说明批准指定版本。生成式分镜与视频画面一致性等待模型接入和实测。 [P7 验收](docs/P7_ACCEPTANCE.md)

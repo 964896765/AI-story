@@ -127,6 +127,7 @@ def create_revision(asset_id: str, body: RevisionInput, db=Depends(session)):
     shots = shot_timeline(scenes[0].payload['shots'] if scenes else [], body.cuts_us)
     duration_candidates = [shot['end_us'] for shot in shots]
     subtitles = []
+    ocr_samples = []
     for task_id, row in results.items():
         media = row.payload.get('media', {})
         duration = media.get('format', {}).get('duration')
@@ -134,6 +135,11 @@ def create_revision(asset_id: str, body: RevisionInput, db=Depends(session)):
             duration_candidates.append(converted)
         if row.payload.get('duration_us'):
             duration_candidates.append(row.payload['duration_us'])
+        for frame in row.payload.get('ocr', {}).get('frames', []):
+            if frame['text']:
+                time = frame['time_us']
+                ocr_samples.append({'start_us': time, 'end_us': time+1, 'artifact': frame['artifact'],
+                                    'text': frame['text'], 'task_id': task_id, 'origin': 'ocr_sample'})
         for track in row.payload.get('subtitle_tracks', []):
             if len(subtitles) + len(track['cues']) > 20000:
                 raise HTTPException(422, '单个快照最多对齐 20000 条字幕，请选较少轨道')
@@ -161,6 +167,8 @@ def create_revision(asset_id: str, body: RevisionInput, db=Depends(session)):
                'scene_task_id': scenes[0].task_id if scenes else None, 'cuts_us': body.cuts_us,
                'shots': shots, 'evidence': align_to_shots(items, shots), 'subtitle_cues': align_to_shots(subtitles, shots),
                'candidates': candidates, 'note': body.note, 'duration_us': end, 'origin': 'human_review'}
+    if ocr_samples:
+        payload['ocr_samples'] = align_to_shots(ocr_samples, shots)
     if len(json.dumps(payload, ensure_ascii=False).encode()) > 8 * 1024**2:
         raise HTTPException(422, '审核快照超过 8 MiB，请选较少字幕与证据')
     row = AnalysisRevision(asset_id=asset.id, number=latest+1, request_key=body.idempotency_key,

@@ -4,7 +4,7 @@ from pydantic import Field, model_validator
 
 from .story_schemas import Strict
 
-Operation = Literal['inspect', 'split', 'remux', 'transcode', 'frames', 'scenes', 'subtitles', 'waveform']
+Operation = Literal['inspect', 'split', 'remux', 'transcode', 'frames', 'scenes', 'subtitles', 'waveform', 'ocr']
 
 
 class AnalysisOptions(Strict):
@@ -23,6 +23,7 @@ class AnalysisOptions(Strict):
     minimum_shot_seconds: float = Field(default=0.30, ge=0.1, le=60)
     silence_db: int = Field(default=-40, ge=-99, le=-10)
     silence_seconds: float = Field(default=0.4, ge=0.1, le=60)
+    ocr_language: str | None = Field(default=None, pattern=r'^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$', max_length=48)
 
     @model_validator(mode='after')
     def stream_options(self):
@@ -37,6 +38,7 @@ class AnalysisOptions(Strict):
             'frames': {'frame_mode', 'frame_interval', 'frame_time'},
             'scenes': {'scene_threshold', 'minimum_shot_seconds'},
             'waveform': {'silence_db', 'silence_seconds'},
+            'ocr': {'frame_interval', 'ocr_language'},
         }
         return self.model_dump(include={'operation', 'stream'} | fields.get(self.operation, set()))
 

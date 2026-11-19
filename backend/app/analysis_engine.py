@@ -15,6 +15,7 @@ import sys
 import time
 
 from .analysis_schemas import AnalysisOptions
+from .perception_ocr import recognize, recognizer
 from .process_guard import attach
 from .render import display_size, file_hash, stop_process, write_manifest
 
@@ -23,6 +24,7 @@ FORMATS = 'mov,matroska,webm,avi,wav,mp3'
 MAX_BYTES = 5 * 1024**3
 MAX_LOG = 16 * 1024**2
 MAX_FRAMES = 240
+MAX_OCR_FRAMES = 120
 MEDIA_TYPES = {'.mkv': 'video/x-matroska', '.mka': 'audio/x-matroska',
                '.mp4': 'video/mp4', '.srt': 'text/plain; charset=utf-8', '.jpg': 'image/jpeg'}
 TEXT_CODECS = {'subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text'}
@@ -266,21 +268,23 @@ def transcode(commands, source, info, options):
 def capture_frames(commands, source, info, options):
     stream = require_video(info, options.stream)
     width, height = stream['display_size']
-    ratio = min(1, 480 / max(width, height))
+    ocr = options.operation == 'ocr'
+    ratio = min(1, (1440 if ocr else 480) / max(width, height))
     size = [max(2, round(edge * ratio / 2) * 2) for edge in (width, height)]
     scene_mode = options.operation == 'scenes'
     if scene_mode:
         expression = f'isnan(prev_selected_t)+gte(t-prev_selected_t,{options.minimum_shot_seconds})*gt(scene,{options.scene_threshold})'
-    elif options.frame_mode == 'keyframe':
+    elif not ocr and options.frame_mode == 'keyframe':
         expression = 'key'
-    elif options.frame_mode == 'at':
+    elif not ocr and options.frame_mode == 'at':
         expression = f'gte(t,{options.frame_time})'
     else:
         expression = f'isnan(prev_selected_t)+gte(t-prev_selected_t,{options.frame_interval})'
     filters = f"select='{expression}',showinfo,scale={size[0]}:{size[1]},setsar=1"
     if scene_mode:
         filters += ',metadata=mode=print:key=lavfi.scene_score:file=scores.txt'
-    cap = 1 if options.operation == 'frames' and options.frame_mode == 'at' else MAX_FRAMES + 1
+    limit = MAX_OCR_FRAMES if ocr else MAX_FRAMES
+    cap = 1 if options.operation == 'frames' and options.frame_mode == 'at' else limit + 1
     log = commands.ffmpeg(source, ['-map', f"0:{stream['index']}", '-vf', filters, '-frames:v', str(cap),
                                    '-c:v', 'mjpeg', '-threads:v', '2', '-q:v', '3', '-fps_mode', 'passthrough',
                                    name_for(commands.output / 'frame-%05d.jpg')], info=True)
@@ -296,7 +300,7 @@ def capture_frames(commands, source, info, options):
         raise ValueError('素材时间戳异常，无法生成可靠时间轴')
     if scene_mode and len(paths) > MAX_FRAMES:
         raise ValueError('检测到超过 240 个镜头，请提高阈值或最短镜头时长')
-    truncated = len(paths) > MAX_FRAMES
+    truncated = len(paths) > limit
     if truncated:
         paths.pop().unlink()
     artifacts = []
@@ -424,8 +428,16 @@ def waveform(commands, source, info, options):
             'bin_us': block * 125, 'duration_us': samples * 125, 'stream_offset_us': offset, 'start_us': 0}
 
 
+def recognize_screen_text(commands, source, info, options):
+    adapter = recognizer(options.ocr_language)
+    payload = capture_frames(commands, source, info, options)
+    payload['ocr'] = {**adapter, 'frames': recognize(commands, payload['artifacts'], adapter)}
+    payload['duration_us'] = probe_duration(info)
+    return payload
+
+
 OPERATIONS = {'split': media_copy, 'remux': media_copy, 'transcode': transcode, 'frames': capture_frames,
-              'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform}
+              'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform, 'ocr': recognize_screen_text}
 
 
 def analyze(source: Path, work: Path, options: AnalysisOptions, update):

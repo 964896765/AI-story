@@ -18,11 +18,14 @@ const checked = ref<Operation[]>(['inspect'])
 const operations = Object.keys(operationLabels) as Operation[]
 const error = ref(''), notice = ref(''), busy = ref(false), loading = ref(false)
 const logFiles = ref<{name:string;tail:string}[] | null>(null)
-const capabilities = ref<{id:string;label:string;available:boolean}[]>([])
+const capabilities = ref<{id:string;label:string;available:boolean;languages?:string[]}[]>([])
+const ocrLanguages = computed(() => capabilities.value.find(item => item.id==='ocr')?.languages || [])
+const pendingModels = computed(() => capabilities.value.filter(item => !item.available).map(item => item.label).join('、'))
 const options = reactive({
   container:'mkv', max_edge:720, crf:20, fps:null as number|null, sample_rate:48000,
   channels:null as number|null, frame_mode:'interval', frame_interval:5, frame_time:0,
   scene_threshold:0.30, minimum_shot_seconds:0.30, silence_db:-40, silence_seconds:0.4,
+  ocr_language:'', ocr_interval:2,
 })
 const audioOnly = computed(() => /\.(wav|mp3)$/i.test(currentAsset.value?.name || ''))
 const queuePath = computed(() => `/analysis/projects/${props.projectId}/assets/${assetId.value}/tasks`)
@@ -84,6 +87,7 @@ function payload(operation: Operation) {
     const {silence_db,silence_seconds} = options
     return {...common,silence_db,silence_seconds}
   }
+  if (operation === 'ocr') return {...common, ocr_language:options.ocr_language, frame_interval:options.ocr_interval}
   return common
 }
 async function submit() {
@@ -101,6 +105,7 @@ async function submit() {
   })
 }
 function disabled(operation: Operation) {
+  if (operation === 'ocr') return audioOnly.value || !ocrLanguages.value.length
   return audioOnly.value && ['frames','scenes','transcode','subtitles'].includes(operation)
 }
 async function openJob(job: Job) {
@@ -146,6 +151,7 @@ onMounted(() => {
   void run(async () => {
     const status = await request<{capabilities:typeof capabilities.value}>('/analysis/capabilities')
     capabilities.value = status.capabilities
+    options.ocr_language = ocrLanguages.value[0] || ''
     await refresh()
   })
   timer = setInterval(() => { if (!busy.value) void refresh().catch(failure => { error.value=String(failure) }) }, 3000)
@@ -199,6 +205,10 @@ onUnmounted(() => clearInterval(timer))
                   <label>静音阈值（dB）<input v-model.number="options.silence_db" type="number" min="-99" max="-10"></label>
                   <label>最短静音（秒）<input v-model.number="options.silence_seconds" type="number" min="0.1" max="60" step="0.01"></label>
                 </template>
+                <template v-if="checked.includes('ocr')">
+                  <label>OCR 语言<select v-model="options.ocr_language"><option v-for="language in ocrLanguages" :key="language">{{ language }}</option></select></label>
+                  <label>OCR 采样间隔（秒）<input v-model.number="options.ocr_interval" type="number" min="0.25" max="3600" step="0.01"></label>
+                </template>
               </div>
             </details>
             <button class="primary" :disabled="busy || !currentAsset || !checked.some(op => !disabled(op))">提交本地解析</button>
@@ -211,7 +221,7 @@ onUnmounted(() => clearInterval(timer))
           <p>{{ clock(playhead) }}</p>
           <button v-if="viewSource" @click="viewSource=''">返回原素材</button>
           <AnalysisWaveform v-if="activeResult?.operation === 'waveform'" :result="activeResult" :playhead="playhead" @seek="seek" />
-          <p v-if="capabilities.length" class="hint">模型待接入：{{ capabilities.filter(item => !item.available).map(item => item.label).join('、') }}。</p>
+          <p v-if="pendingModels" class="hint">本机暂不可用的能力包括{{ pendingModels }}。</p>
         </section>
       </div>
       <section>
@@ -261,6 +271,14 @@ onUnmounted(() => clearInterval(timer))
             <button @click="seek(cue.start_us)">{{ clock(cue.start_us) }}</button><span>{{ cue.text }}</span>
           </div></div>
         </div>
+        <section v-if="activeResult.ocr" class="ocr-result">
+          <h3>画面文字 · {{ activeResult.ocr.language }}</h3>
+          <p class="hint">{{ activeResult.ocr.frames.length }} 个采样帧。请到证据审核中核对画面文字。</p>
+          <p v-if="!activeResult.ocr.frames.some(frame=>frame.text)">在采样帧中未识别到文字。</p>
+          <div v-for="frame in activeResult.ocr.frames.filter(frame=>frame.text)" :key="frame.artifact" class="actions">
+            <button @click="seek(frame.time_us)">{{ clock(frame.time_us) }}</button><span>{{ frame.text }}</span>
+          </div>
+        </section>
       </section>
       <AnalysisReview v-if="currentAsset" :key="assetId" :asset-id="assetId" :results="results" :playhead="playhead"
         @seek="seek" @adaptation="emit('adaptation',$event)" @assets-changed="emit('assetsChanged')" />

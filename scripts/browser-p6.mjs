@@ -37,7 +37,7 @@ try {
   await click('智能解析')
   await wait(() => contains('灯塔样本.mkv'), 'material selected')
   await evaluate(`(async () => {
-    for (const box of document.querySelectorAll('.analysis-choices input')) {
+    for (const box of document.querySelectorAll('.analysis-choices input:not([value="ocr"])')) {
       if (!box.checked) box.click()
       await Promise.resolve()
     }

@@ -1,11 +1,12 @@
 export const operationLabels = {
   inspect: '流清单', split: '音视频分轨', remux: '转封装', transcode: 'MP4 转码 / 代理',
-  frames: '抽帧', scenes: '自动切镜', subtitles: '软字幕提取', waveform: '波形与静音',
+  frames: '抽帧', scenes: '自动切镜', subtitles: '软字幕提取', waveform: '波形与静音', ocr: '本机画面文字识别',
 }
 export type Operation = keyof typeof operationLabels
 export type Interval = { start_us: number; end_us: number }
 export type Shot = Interval & { score: number | null; artifact: number | null; origin?: string }
 export type Cue = Interval & { text: string }
+export type OcrFrame = { artifact: number; time_us: number; text: string; lines: string[] }
 export interface Artifact {
   id: number; name: string; role: string; size_bytes: number; time_us?: number; stream_index?: number
   source_streams?: number[]; media_type: string; width?: number; height?: number
@@ -21,6 +22,7 @@ export interface Result {
   media?: { format: { duration?: string; format_name: string }; streams: Stream[] }
   cadence?: Record<string, { status: string; sample_frames: number }>
   subtitle_tracks?: { stream_index: number; language: string | null; status: string; cues: Cue[] }[]
+  ocr?: { engine: string; language: string; frames: OcrFrame[] }
   bins?: number[]; silences?: Interval[]; bin_us?: number; duration_us?: number; audio_status?: string
 }
 export interface Job {
@@ -32,7 +34,7 @@ export interface Version { version_id: string; title: string; version: number; k
 export const statusLabels: Record<string,string> = {
   queued:'排队中', running:'处理中', succeeded:'已验证', failed:'失败', cancelled:'已取消',
   analysis_hash:'核对源文件', analysis_probe:'探测媒体流', analysis_process:'FFmpeg 处理中',
-  analysis_verify:'检查输出', analysis_waveform:'统计音频采样', analysis_publish:'保存产物',
+  analysis_verify:'检查输出', analysis_waveform:'统计音频采样', analysis_publish:'保存产物', analysis_ocr:'Windows 本机识别画面文字',
   analysis_cache:'检查缓存', retry_wait:'等待重试', recovered:'中断恢复', inspecting:'检查输入',
 }
 export const clock = (us: number) => {

@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-19T12:16:20.879Z",
+  "browser": "Installed Chrome headless",
+  "engine": "windows-ocr-v1",
+  "language": "zh-Hans-CN",
+  "raw_text": "灯 塔 坐 标",
+  "reviewed_text": "灯塔坐标（已按画面校正）",
+  "sampled_time_us": 0,
+  "aligned_shots": [
+    1
+  ],
+  "verified_script_reference": true,
+  "original_sha256": "388b6c9d77473ed87ae0297eb403978b1a4241caf90b16389b1eef67d144bda8",
+  "paid_model_calls": 0,
+  "js_errors": []
+}
