@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-11-19T01:57:51.403Z",
+  "browser": "Installed Chrome headless",
+  "native_voice_locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "verified_task": "5557d0fd-e6fb-479d-a9bf-e4a30bbff37a",
+  "storyboard_version_id": "aa9a0373-2ae7-4bf3-8410-e9f0c90b9739",
+  "cues": [
+    [
+      0,
+      2345
+    ],
+    [
+      5000,
+      6450
+    ]
+  ],
+  "wav_range_status": 206,
+  "adopted_assets": [
+    "晚安港口配音.srt",
+    "晚安港口配音.wav"
+  ],
+  "keyboard_adoption": true,
+  "external_cost_micros": 0,
+  "javascript_errors": []
+}

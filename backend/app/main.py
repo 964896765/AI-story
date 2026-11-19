@@ -25,15 +25,17 @@ from .analysis_routes import router as analysis_router
 from .analysis_review import router as analysis_review_router
 from .series import router as series_router
 from .generation import router as generation_router
+from .voice import router as voice_router
 from fastapi.exceptions import RequestValidationError
 
-app = FastAPI(title='AI 漫剧工厂', version='0.8.0')
+app = FastAPI(title='AI 漫剧工厂', version='0.9.0')
 app.include_router(creative_router)
 app.include_router(text_router)
 app.include_router(analysis_router)
 app.include_router(analysis_review_router)
 app.include_router(series_router)
 app.include_router(generation_router)
+app.include_router(voice_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]

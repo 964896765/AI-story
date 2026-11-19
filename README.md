@@ -120,3 +120,7 @@ P4实机验收：`.\.venv\Scripts\python scripts/p4_smoke.py`；浏览器验收�
 ## P8 本地静图运镜
 
 进入“生成候选”选择自有或已授权参考图、画幅、帧数和运镜方式。可用本机 CPU 生成候选，再预览并采纳至项目视频素材。供应商 AI 和远程 GPU 仍不可用。 [P8 验收](docs/P8_ACCEPTANCE.md)
+
+## P9 本机配音与字幕
+
+在分镜里固定对白说话者后，进入“配音与字幕”绑定已安装的离线系统音色。验证通过后试听 WAV，导出 SRT/VTT，或把语音和 SRT 采纳为项目素材。 [P9 验收](docs/P9_ACCEPTANCE.md)
