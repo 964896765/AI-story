@@ -3,6 +3,8 @@
   border: 1px solid var(--line); background: var(--surface-panel); border-radius: var(--radius); padding: 17px;
 }
 .workspace-main details { margin-bottom: 14px }
+.workspace-main details > summary { color:var(--ink-secondary); font-weight:620 }
+.workspace-main details[open] > summary { color:var(--accent) }
 .workspace-main fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 16px 0; padding: 15px; min-width: 0 }
 .workspace-main legend { font-size: 13px; color: var(--ink-secondary); padding: 0 6px }
 .workspace-main textarea, .workspace-main select, .workspace-main input { max-width: 100%; min-width: 0 }
@@ -25,7 +27,8 @@
 .task p { margin: 4px 0 }
 .task details { margin: 10px 0 0; max-width: 650px }
 .mono { font: 12px/1.6 ui-monospace, Consolas, monospace; color: var(--ink-muted) }
-.status { font-size: 12px; padding: 4px 9px; border-radius: 12px; background: var(--surface-raised) }
+.status { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:3px 8px; border:1px solid var(--line-soft); border-radius:6px; background:var(--surface-raised) }
+.status::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; flex:0 0 auto }
 .failed { color: var(--negative) }
 .succeeded { color: var(--positive) }
 .running { color: var(--accent) }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Aperture, ChevronDown, ChevronRight, Menu, RefreshCw, X } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Aperture, ArrowUpRight, ChevronDown, ChevronRight, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, X } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { destinations, navigation, workspaces, type Destination } from '../router/navigation'
 import { useWorkspace } from '../router/workspace'
@@ -10,9 +10,38 @@ const router = useRouter()
 const menuOpen = ref(false)
 const menuTrigger = ref<HTMLButtonElement | null>(null)
 const sidebar = ref<HTMLElement | null>(null)
+const navigator = ref<HTMLDialogElement|null>(null)
+const commandInput = ref<HTMLInputElement|null>(null)
+const commandQuery = ref('')
+const compact = ref(false)
 const name = computed(() => route.name as Destination)
 const group = computed(() => workspaces.find(item => item.pages.includes(name.value)))
 const title = computed(() => name.value === 'overview' ? '项目总览' : group.value?.label || String(route.meta.title))
+const descriptions: Partial<Record<Destination,string>> = {
+  assets:'查找、预览和导入项目素材，随时核对授权来源。',
+  analysis:'在同一时间轴核对镜头、字幕、波形和画面文字。',
+  story:'整理剧本和分集，比较版本后再交给制作。',
+  adaptation:'固定原稿和模型配置，逐稿审核后保存新版本。',
+  characters:'管理角色、场景和固定参考。',
+  storyboard:'编辑镜头描述、时长和角色场景引用。',
+  bible:'核对角色、道具和跨集状态。',
+  generation:'比较本地生成候选，预览并采纳合适的片段。',
+  voice:'试听本机配音，校对字幕再纳入制作。',
+  timeline:'编辑剪辑点与轨道，保存版本后渲染。',
+  video:'批量设置裁剪、画幅、字幕和音轨。',
+  production:'查看批次、运行中的任务和失败原因，按需返工。',
+  quality:'预览和下载经过技术验证的成片。',
+  library:'核对素材授权，整理和下载交付文件。',
+  operations:'管理发行记录、推广文件和结算。',
+  system:'检查数据库、视频工具与后台进程。',
+  models:'配置文本供应商和项目预算，查看用量记录。',
+}
+const commandResults = computed(() => workspaces.flatMap(workspace => workspace.pages.map(page => ({
+  page, label:destinations[page].label, group:workspace.label, icon:workspace.icon,
+}))).filter(item => {
+  const value = commandQuery.value.trim().toLocaleLowerCase()
+  return (item.label + item.group + destinations[item.page].path).toLocaleLowerCase().includes(value)
+}))
 const statusText = computed(() => workbench.health === 'ready' && workbench.initialized ? '服务就绪' :
   workbench.health === 'unavailable' ? '服务未就绪' : '检查服务中')
 
@@ -45,30 +74,66 @@ function closeMenu() {
   menuTrigger.value?.focus()
 }
 
-onMounted(() => { void workbench.initialize() })
+function toggleCompact() {
+  compact.value = !compact.value
+  try { localStorage.setItem('ai-story:compact-navigation', String(compact.value)) } catch { /* optional */ }
+}
+
+async function openNavigator() {
+  if (!navigator.value || navigator.value.open) return
+  commandQuery.value = ''
+  navigator.value.showModal()
+  await nextTick()
+  commandInput.value?.focus()
+}
+
+async function openCommand(page: Destination) {
+  navigator.value?.close()
+  await router.push(link(page))
+  document.getElementById('workspace-main')?.focus()
+}
+
+function keyboard(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    void openNavigator()
+  }
+}
+
+onMounted(() => {
+  try { compact.value = localStorage.getItem('ai-story:compact-navigation') === 'true' } catch { /* optional */ }
+  window.addEventListener('keydown',keyboard)
+  void workbench.initialize()
+})
+onUnmounted(() => window.removeEventListener('keydown',keyboard))
 </script>
 
 <template>
-  <div class="app-shell" @keydown.esc="closeMenu">
+  <div class="app-shell" :class="{ 'is-compact': compact }" @keydown.esc="closeMenu">
     <a class="skip-link" href="#workspace-main">跳到工作区</a>
     <button v-if="menuOpen" type="button" class="mobile-scrim" aria-label="关闭导航" @click="closeMenu"></button>
     <aside ref="sidebar" class="app-sidebar" :class="{ 'is-open': menuOpen }" id="workbench-nav">
       <RouterLink class="app-brand" :to="link('overview')">
         <span class="brand-mark"><Aperture :size="22" aria-hidden="true" /></span>
-        <span><strong>AI Story</strong><small>漫剧制作工作台</small></span>
+        <span class="brand-text"><strong>AI Story</strong><small>漫剧制作工作台</small></span>
       </RouterLink>
       <button class="icon-button mobile-close" type="button" aria-label="关闭导航" @click="closeMenu"><X :size="18" /></button>
       <nav aria-label="工作区">
         <div v-for="section in navigation" :key="section.label" class="nav-group">
           <p>{{ section.label }}</p>
           <RouterLink v-for="item in section.links" :key="item.label" class="nav-item"
-            :class="{ 'nav-active': group?.label === item.label }" :to="link(item.pages[0])" :data-workspace="item.label">
+            :class="{ 'nav-active': group?.label === item.label }" :to="link(item.pages[0])" :data-workspace="item.label"
+            :aria-label="item.label" :title="item.label">
             <component :is="item.icon" :size="17" :stroke-width="1.7" aria-hidden="true" />
-            <span>{{ item.label }}</span><ChevronRight v-if="group?.label === item.label" class="nav-arrow" :size="13" aria-hidden="true" />
+            <span class="nav-label">{{ item.label }}</span><ChevronRight v-if="group?.label === item.label" class="nav-arrow" :size="13" aria-hidden="true" />
           </RouterLink>
         </div>
       </nav>
-      <div class="sidebar-footer"><span class="connection-dot" :class="workbench.health"></span><span>本机工作区</span><span class="app-version">V3.0</span></div>
+      <div class="sidebar-footer"><span class="connection-dot" :class="workbench.health"></span><span class="footer-label">本机工作区</span>
+        <button class="icon-button compact-nav" type="button" :aria-label="compact ? '展开侧栏' : '收起侧栏'" :title="compact ? '展开侧栏' : '收起侧栏'" @click="toggleCompact">
+          <PanelLeftOpen v-if="compact" :size="15" aria-hidden="true" /><PanelLeftClose v-else :size="15" aria-hidden="true" />
+        </button>
+      </div>
     </aside>
     <div class="app-main">
       <div class="app-topbar">
@@ -78,6 +143,9 @@ onMounted(() => { void workbench.initialize() })
           <RouterLink :to="link('overview')">工作台</RouterLink><ChevronRight :size="14" aria-hidden="true" /><span>{{ title }}</span>
         </div>
         <div class="topbar-controls">
+          <button type="button" class="command-trigger" aria-label="搜索工作区" title="搜索工作区 (Ctrl+K)" @click="openNavigator">
+            <Search :size="16" aria-hidden="true" /><span>搜索工作区</span><kbd>Ctrl K</kbd>
+          </button>
           <label class="project-picker">当前项目<select :value="workbench.projectId" :disabled="!workbench.initialized" @change="switchProject">
             <option value="">选择项目</option><option v-for="project in workbench.projects" :key="project.id" :value="project.id">{{ project.name }}</option>
           </select><ChevronDown :size="14" aria-hidden="true" /></label>
@@ -86,15 +154,33 @@ onMounted(() => { void workbench.initialize() })
         </div>
       </div>
       <main id="workspace-main" class="workspace-main" tabindex="-1">
-        <div v-if="group && group.pages.length > 1" class="route-tabs" aria-label="工作区页面">
-          <RouterLink v-for="page in group.pages" :key="page" :to="link(page)" :data-page="page">{{ destinations[page].label }}</RouterLink>
-        </div>
-        <h1 v-if="name !== 'overview'" class="workspace-title">{{ route.meta.title }}</h1>
+        <header v-if="name !== 'overview'" class="workspace-masthead">
+          <div class="workspace-heading">
+            <div v-if="group" class="workspace-icon"><component :is="group.icon" :size="23" :stroke-width="1.7" aria-hidden="true" /></div>
+            <div><h1 class="workspace-title">{{ route.meta.title }}</h1><p v-if="descriptions[name]">{{ descriptions[name] }}</p></div>
+          </div>
+          <div v-if="group && group.pages.length > 1" class="route-tabs" aria-label="工作区页面">
+            <RouterLink v-for="page in group.pages" :key="page" :to="link(page)" :data-page="page">{{ destinations[page].label }}</RouterLink>
+          </div>
+        </header>
         <p v-if="workbench.error" class="error" role="alert">{{ workbench.error }} <button @click="workbench.error = ''">关闭</button></p>
         <p v-else-if="workbench.initialized && route.query.project && !workbench.projectId" class="error" role="alert">链接中的项目不可用，请选择现有项目。</p>
         <slot v-if="workbench.initialized" />
         <p v-else-if="!workbench.error" class="empty" role="status">正在读取项目…</p>
       </main>
     </div>
+    <dialog ref="navigator" class="workspace-command" aria-labelledby="workspace-command-title">
+      <header><h2 id="workspace-command-title">前往工作区</h2><button type="button" class="icon-button" aria-label="关闭搜索" @click="navigator?.close()"><X :size="16" aria-hidden="true" /></button></header>
+      <form @submit.prevent="commandResults[0] && openCommand(commandResults[0].page)">
+        <label>搜索页面<input ref="commandInput" v-model="commandQuery" type="search" placeholder="输入名称，例如 多轨时间轴" autocomplete="off"></label>
+      </form>
+      <p v-if="!commandResults.length" class="empty">没有匹配的工作区。</p>
+      <div v-else class="command-list">
+        <button v-for="item in commandResults" :key="item.page" type="button" @click="openCommand(item.page)">
+          <component :is="item.icon" :size="16" aria-hidden="true" /><span>{{ item.label }}</span>
+          <small>{{ item.group }}</small><ArrowUpRight :size="14" aria-hidden="true" />
+        </button>
+      </div>
+    </dialog>
   </div>
 </template>

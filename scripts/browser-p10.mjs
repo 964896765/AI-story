@@ -31,6 +31,7 @@ async function addClip(index,id){
   await setField('片段素材',id)
 }
 async function dragFrames(selector,frames){
+  await wait(()=>evaluate(`!!document.querySelector(${JSON.stringify(selector)})`),'clip control rendered')
   const {x,y,width}=await evaluate(`(() => {
     const node=document.querySelector(${JSON.stringify(selector)})
     node.scrollIntoView({block:'center'})
@@ -62,7 +63,9 @@ try{
   await addClip(0,clip.id)
   await setField('时长（帧）','24')
   await addClip(0,clip.id)
-  await dragFrames('.lane:first-child .clip:first-child',10)
+  await wait(()=>evaluate("document.querySelector('.timeline-monitor-media video')?.readyState>=1"),'source monitor decodes selected clip')
+  await screenshot('v3-ui-timeline.png')
+  await dragFrames('.lane[data-role="main"] .clip:first-child',10)
   assert.equal(await fieldValue('时间轴位置（帧）'),'0','drag cannot overlap the next clip')
   await setField('附加轨道','dialogue')
   await click('添加轨道')
@@ -77,7 +80,7 @@ try{
   await click('渲染已保存版本')
   await wait(()=>contains('已提交固定版本多轨渲染'),'render queued')
   await click('预览多轨成片')
-  await wait(()=>evaluate("document.querySelector('.timeline-workbench video')?.readyState>=1"),'Chrome decoded verified MP4')
+  await wait(()=>evaluate("document.querySelector('.timeline-output video')?.readyState>=1"),'Chrome decoded verified MP4')
   const [render]=await api('/timeline'+path+'/renders')
   assert.equal(render.output.frames,48)
   assert.equal(render.output.has_audio,true)
@@ -87,7 +90,7 @@ try{
   await screenshot('p10-multitrack.png')
 
   await click('owned-captions.srt')
-  const lane='.lane:nth-child(3)', caption=lane+' .clip'
+  const lane='.lane[data-role="caption"]', caption=lane+' .clip'
   await dragFrames(lane+' [aria-label="裁剪片段出点"]',-8)
   assert.equal(await fieldValue('时长（帧）'),'40')
   await dragFrames(caption,5)

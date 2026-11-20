@@ -190,9 +190,20 @@ def media(asset_id: str, db: DBDep):
     return FileResponse(path,headers={'X-Content-Type-Options':'nosniff'})
 
 @app.get('/api/projects/{project_id}/tasks')
-def tasks(project_id: str, db: DBDep, offset: int = Query(0,ge=0), limit: int | None = Query(None,ge=1,le=200)):
+def tasks(project_id: str, db: DBDep, offset: int = Query(0,ge=0), limit: int | None = Query(None,ge=1,le=200),
+          view: Literal['all', 'active', 'issues', 'completed', 'renders'] = 'all'):
     require(db, Project, project_id)
-    result = select(Task).where(Task.project_id==project_id).order_by(Task.created_at.desc(),Task.id).offset(offset)
+    result = select(Task).where(Task.project_id == project_id)
+    if view == 'active':
+        result = result.where(Task.status.in_(('queued', 'running')))
+    elif view == 'issues':
+        result = result.where(Task.status.in_(('failed', 'cancelled')))
+    elif view == 'completed':
+        result = result.where(Task.status == 'succeeded')
+    elif view == 'renders':
+        result = result.where(Task.status == 'succeeded', Task.kind.in_(('render', 'timeline_render')),
+                              Task.output['storage_key'].as_string().is_not(None))
+    result = result.order_by(Task.created_at.desc(), Task.id).offset(offset)
     return db.scalars(result.limit(limit) if limit is not None else result).all()
 
 def prepare_task(project_id: str, body: TaskInput, db):

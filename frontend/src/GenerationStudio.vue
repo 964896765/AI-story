@@ -109,6 +109,7 @@ onUnmounted(()=>clearInterval(timer))
       <section>
         <h2>候选预览</h2>
         <video v-if="selected?.status==='succeeded'" :key="selected.id" controls preload="metadata" :src="`/api/generation/candidates/${selected.id}/video`"></video>
+        <figure v-else-if="assetId" class="generation-reference"><img :src="`/api/assets/${assetId}/media`" alt="运镜参考图"><figcaption>输入参考图</figcaption></figure>
         <p v-else class="empty">从记录中选择已验证候选。</p>
         <p v-if="selected?.selected_asset_id">已采纳为项目素材。</p>
         <form v-else-if="selected?.status==='succeeded'" class="create" @submit.prevent="accept">
@@ -140,4 +141,7 @@ onUnmounted(()=>clearInterval(timer))
 <style scoped>
 .generation-workbench { display:grid; gap:18px }
 .generation-workbench fieldset,.generation-workbench details { margin:0 }
+.generation-reference { margin:0 0 10px; position:relative; background:#10181e; border-radius:8px; overflow:hidden }
+.generation-reference img { width:100%; max-height:320px; object-fit:contain; display:block }
+.generation-reference figcaption { padding:8px 10px; color:var(--ink-muted) }
 </style>

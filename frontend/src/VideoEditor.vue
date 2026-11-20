@@ -8,7 +8,10 @@ const audioMode=ref('keep'),audio=ref(''),subtitle=ref(''),volume=ref(1),busy=re
 const keys=new Map<string,string>()
 const videos=computed(()=>props.assets.filter(a=>/\.(mp4|mov|mkv|webm|avi)$/i.test(a.name)))
 const subtitles=computed(()=>props.assets.filter(a=>/\.srt$/i.test(a.name)))
-const audioAssets=computed(()=>props.assets.filter(a=>!/\.srt$/i.test(a.name)))
+const audioAssets=computed(()=>props.assets.filter(a=>/\.(mp4|mov|mkv|webm|avi|wav|mp3)$/i.test(a.name)))
+const mediaQuery=ref('')
+const visibleVideos=computed(()=>videos.value.filter(video=>video.name.toLocaleLowerCase().includes(mediaQuery.value.trim().toLocaleLowerCase())))
+const selectedClip=computed(()=>videos.value.find(video=>video.id===chosen.value[0]))
 const storageKey=()=>`ai-story:p3:batch-keys:${props.projectId}`
 function newBatch(){keys.clear();sessionStorage.removeItem(storageKey());message.value='已开始新批次；下次提交将新建任务。'}
 watch(()=>props.projectId,()=>{chosen.value=[];audio.value='';subtitle.value='';keys.clear();message.value='';error.value='';try{for(const [signature,key] of Object.entries(JSON.parse(sessionStorage.getItem(storageKey())||'{}')))if(typeof key==='string')keys.set(signature,key)}catch{}},{immediate:true})
@@ -36,8 +39,10 @@ async function submit(){
   <p v-if="storyVersionId" class="hint">本批次固定引用创作版本 {{storyVersionId}}。镜头与对白仍按已有视频及下列参数处理，不自动生成画面。</p>
   <p class="hint">选择授权视频并统一设置参数。字幕时间以裁剪后的片段 00:00 为起点；替换音轨从音频开头使用，过短补静音、过长截断。</p>
   <p v-if="!projectId" class="empty">请先选择项目。</p>
-  <form v-else @submit.prevent="submit">
-   <fieldset :disabled="busy"><legend>输入视频</legend><p v-if="!videos.length" class="hint">请先在素材资产中心导入视频。</p><label v-for="video in videos" :key="video.id" class="check"><input v-model="chosen" type="checkbox" :value="video.id">{{video.name}}</label></fieldset>
+  <form v-else class="render-desk" @submit.prevent="submit">
+   <div class="render-controls">
+   <label v-if="videos.length">查找输入视频<input v-model="mediaQuery" type="search" placeholder="按文件名筛选"></label>
+   <fieldset :disabled="busy" class="input-clips"><legend>输入视频 · 已选 {{chosen.length}}</legend><p v-if="!visibleVideos.length" class="hint">{{videos.length ? '没有匹配的视频。' : '请先在素材资产中心导入视频。'}}</p><label v-for="video in visibleVideos" :key="video.id" class="check"><input v-model="chosen" type="checkbox" :value="video.id">{{video.name}}</label></fieldset>
    <fieldset :disabled="busy"><legend>时间与画面</legend><div class="editor-grid">
     <label>开始时间（秒）<input v-model.number="start" type="number" min="0" max="86400" step="0.001" required></label>
     <label>结束时间（可空）<input v-model.number="end" type="number" min="0.001" max="86400" step="0.001" :disabled="duration!==''"></label>
@@ -56,6 +61,29 @@ async function submit(){
    </div><p class="hint">SRT 须为 UTF-8，最大 2 MiB。在素材资产中心导入字幕或音轨并记录授权来源。</p></fieldset>
    <div class="actions"><button class="primary" :disabled="busy||!chosen.length">{{busy?'正在提交…':`提交 ${chosen.length} 项剪辑任务`}}</button><button type="button" :disabled="busy" @click="newBatch">开始新批次</button></div>
    <p v-if="error" role="alert" class="error">{{error}}</p><p v-if="message" role="status">{{message}}</p>
+   </div>
+   <div class="render-profile">
+     <h3>输入预览与输出设置</h3>
+     <video v-if="selectedClip" :key="selectedClip.id" controls preload="metadata" :src="`/api/assets/${selectedClip.id}/media`"></video>
+     <p v-else class="empty">选择视频后可预览第一项。</p>
+     <dl>
+       <div><dt>输入</dt><dd>{{chosen.length}} 项</dd></div>
+       <div><dt>画幅</dt><dd>{{aspect==='original' ? '沿用源画幅' : aspect}}</dd></div>
+       <div><dt>输出</dt><dd>{{format.toUpperCase()}} · CRF {{crf}}</dd></div>
+       <div><dt>音轨</dt><dd>{{audioMode==='keep' ? '保留' : audioMode==='replace' ? '替换' : '移除'}}</dd></div>
+     </dl>
+     <p v-if="selectedClip" class="hint">{{selectedClip.name}} · 输入源</p>
+   </div>
   </form>
  </section>
 </template>
+<style scoped>
+.render-desk { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(230px,1fr); align-items:start; gap:16px }
+.render-profile { padding:13px; border:1px solid var(--line-soft); border-radius:8px; background:#131d26; min-width:0 }
+.render-profile dl { display:grid; grid-template-columns:1fr 1fr; gap:8px }
+.render-profile dt { color:var(--ink-muted); font-size:12px }
+.render-profile dd { margin:3px 0 0 }
+.render-controls { min-width:0 }
+.input-clips { max-height:250px; overflow:auto }
+@media(max-width:1000px) { .render-desk { grid-template-columns:1fr } }
+</style>

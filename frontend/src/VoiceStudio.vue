@@ -114,7 +114,9 @@ onUnmounted(()=>clearInterval(timer))
         <p v-if="!selected" class="hint">选择已完成的配音任务。</p>
         <p v-else-if="selected.status!=='succeeded'">{{ stages[selected.stage] || statusLabels[selected.status] || selected.status }} {{ selected.error || '' }}</p>
         <template v-else>
-          <audio :key="selected.id" controls :src="file('dialogue.wav')"></audio>
+          <div class="voice-player"><audio :key="selected.id" controls :src="file('dialogue.wav')"></audio>
+            <p class="hint">{{ selected.output.cues?.length || 0 }} 条字幕 · 已验证音轨</p>
+          </div>
           <div class="actions downloads"><a :href="file('dialogue.wav',true)">WAV</a><a :href="file('dialogue.srt',true)">SRT</a><a :href="file('dialogue.vtt',true)">VTT</a></div>
           <details>
             <summary>字幕时间 · {{ selected.output.cues?.length || 0 }} 条</summary>
@@ -147,4 +149,7 @@ onUnmounted(()=>clearInterval(timer))
 .voice-workbench fieldset { margin:0 }
 .voice-workbench fieldset label { margin:8px 0 }
 .downloads { margin:16px 0 }
+.voice-player { padding:11px; background:#111c25; border:1px solid var(--line-soft); border-radius:8px }
+.voice-player audio { display:block; width:100% }
+.voice-player p { margin:6px 0 0 }
 </style>

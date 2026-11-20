@@ -39,6 +39,10 @@ onUnmounted(()=>clearInterval(timer))
         <div><dt>已登记素材大小</dt><dd>{{ metrics.recorded_asset_count }} 条 · {{ bytes(metrics.recorded_asset_bytes) }}</dd></div>
         <div><dt>已记录任务尝试</dt><dd>{{ metrics.observed_attempts }} 次 · {{ metrics.observed_task_seconds.toFixed(1) }} 秒</dd></div>
       </dl>
+      <label v-if="metrics.disk && metrics.disk.total>0" class="disk-usage">存储使用量
+        <meter :value="metrics.disk.used" :max="metrics.disk.total"></meter>
+        <span class="hint">已用 {{ bytes(metrics.disk.used) }} / {{ bytes(metrics.disk.total) }}</span>
+      </label>
       <h2>任务状态计数</h2>
       <div class="row" v-for="item in metrics.tasks" :key="item.kind+':'+item.status">
         <span>{{ names[item.kind] || item.kind }} · {{ statusLabels[item.status] || item.status }}</span><strong>{{ item.count }}</strong>
@@ -50,8 +54,10 @@ onUnmounted(()=>clearInterval(timer))
 </template>
 <style scoped>
 .diagnostics { display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px }
-.diagnostics div { border:1px solid #343e4e;border-radius:6px;padding:12px }
-dt { color:#abb8c8;font-size:13px }
-dd { margin:9px 0 0 }
+.diagnostics div { border:1px solid var(--line); border-radius:8px; padding:12px; background:#111d25 }
+dt { color:var(--ink-muted); font-size:13px }
+dd { margin:7px 0 0; font-size:18px; font-variant-numeric:tabular-nums }
+.disk-usage { max-width:600px; margin:16px 0 }
+.disk-usage meter { width:100%; height:12px; }
 .row { display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #343e4e }
 </style>

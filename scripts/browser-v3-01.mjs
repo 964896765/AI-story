@@ -119,6 +119,68 @@ try {
   await wait(()=>evaluate("[...document.querySelectorAll('.asset')].some(item=>item.textContent.includes('码头夜景.mp4'))"),'owned video available in original asset page')
   await click('读取媒体信息')
   await wait(()=>evaluate("[...document.querySelectorAll('.asset')].find(item=>item.textContent.includes('码头夜景.mp4'))?.textContent.includes('已解析')"),'Worker probe refreshed in asset view',25000)
+
+  await evaluate("document.querySelector('.asset-filters button:nth-child(2)').click()")
+  await wait(()=>evaluate("document.querySelectorAll('.asset-row').length===1 && document.querySelector('.asset-row').textContent.includes('码头夜景.mp4')"),'asset type filter')
+  await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="搜索素材"]')
+    input.value = '没有此文件'
+    input.dispatchEvent(new Event('input',{bubbles:true}))
+  })()`)
+  await wait(()=>contains('没有符合筛选条件的素材'),'asset search empty state')
+  await evaluate(`(() => {
+    const input = document.querySelector('input[aria-label="搜索素材"]')
+    input.value = '码头'
+    input.dispatchEvent(new Event('input',{bubbles:true}))
+  })()`)
+  await wait(()=>evaluate("document.querySelector('.asset-inspector video')?.readyState>=1"),'asset inspector decodes actual source')
+  await screenshot('v3-ui-assets.png')
+  await click('导入素材')
+  await setField('授权来源','浏览器验收自编文本')
+  const notePath = join(qaRoot,'ui-note.txt')
+  await writeFile(notePath,'素材检查器的原创验收文本。')
+  const rootNode = (await command('DOM.getDocument')).root.nodeId
+  const fileNode = (await command('DOM.querySelector',{nodeId:rootNode,selector:'.import-panel input[type=file]'})).nodeId
+  assert(fileNode)
+  await command('DOM.setFileInputFiles',{nodeId:fileNode,files:[notePath]})
+  await wait(()=>contains('已导入 1 项素材'),'browser uploaded a real text asset')
+  await wait(()=>evaluate("document.querySelector('.asset-inspector pre')?.textContent.includes('素材检查器的原创验收文本')"),'inspector displays uploaded UTF-8')
+
+  await evaluate("document.querySelector('button[aria-label=\"收起侧栏\"]').click()")
+  await wait(()=>evaluate("document.querySelector('.app-shell').classList.contains('is-compact')"),'desktop sidebar collapses')
+  await command('Page.reload')
+  await wait(()=>evaluate("document.querySelector('.app-shell')?.classList.contains('is-compact')"),'compact sidebar survives reload')
+  await evaluate("document.querySelector('button[aria-label=\"展开侧栏\"]').click()")
+  await command('Input.dispatchKeyEvent',{type:'keyDown',key:'k',code:'KeyK',modifiers:2,windowsVirtualKeyCode:75})
+  await command('Input.dispatchKeyEvent',{type:'keyUp',key:'k',code:'KeyK',modifiers:2,windowsVirtualKeyCode:75})
+  await wait(()=>evaluate("document.activeElement===document.querySelector('.workspace-command[open] input')"),'keyboard opens and focuses workspace search')
+  await setField('搜索页面','批量生产')
+  await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13})
+  await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13})
+  await wait(()=>contains('持久化任务队列'),'keyboard search navigates to production')
+  await click('排队与运行')
+  await wait(()=>contains('没有符合当前条件的任务'),'queue filter shows no active jobs')
+  await click('已完成')
+  await wait(()=>evaluate("document.querySelectorAll('.task-record').length>=2"),'queue filter returns completed tasks')
+  await screenshot('v3-ui-production.png')
+  await click('质检与导出')
+  await wait(()=>evaluate("document.querySelectorAll('.render-gallery .render-item').length===1"),'gallery lists only published renders')
+  await click('预览成片')
+  await wait(()=>evaluate("document.querySelector('.output-modal-video')?.readyState>=1"),'gallery plays actual output')
+  await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27})
+  await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27})
+  await wait(()=>evaluate("!document.querySelector('.output-modal-video')"),'gallery preview closes')
+  await screenshot('v3-ui-quality.png')
+  const mobileChecks = []
+  await size(390,844,true)
+  for (const route of ['/project/assets','/creative/script','/edit/timeline','/production','/delivery/review']) {
+    await command('Page.navigate',{url:`${base}${route}?project=${project.id}`})
+    await wait(()=>evaluate("innerWidth===390 && document.querySelector('.workspace-masthead') && !document.querySelector('.route-loading')"),'mobile route '+route)
+    await wait(()=>evaluate("document.querySelector('.workspace-masthead')?.nextElementSibling"),'mobile route content')
+    assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true,route)
+    mobileChecks.push(route)
+    if (route==='/project/assets') await screenshot('v3-ui-mobile.png')
+  }
   assert.deepEqual(errors,[])
   const spec = await (await fetch(`http://127.0.0.1:${process.env.AI_STORY_QA_API_PORT}/openapi.json`)).json()
   const methods = new Set(['get','post','put','patch','delete','head','options'])
@@ -128,6 +190,12 @@ try {
     additional_pages_reached:['角色与场景','分镜编辑','文本模型与预算'],actual_render_playback:true,deep_link_reload:true,project_isolation:true,
     actual_project_creation:true, asset_probe_auto_refresh:true,
     model_calls:{simulated:1,live:0,paid_micros:0},unknown_cost_count:0,openapi_operations:paths,javascript_errors:errors},null,2)+'\n')
+  await writeFile(join(evidenceDir,'v3-ui-acceptance.json'),JSON.stringify({
+    checked_at:new Date().toISOString(), asset_filter:true, browser_upload_and_utf8_preview:true,
+    compact_sidebar_persists:true, keyboard_route_search:true, server_task_filter:true,
+    render_gallery_playback:true, mobile_viewports:mobileChecks, reachable_routes:legacyPages.length+4,
+    real_paid_requests:0, js_errors:errors,
+  },null,2)+'\n')
   console.log('V3 overview: real project, FFmpeg output, recorded tasks, mock draft, deep links, and 12 navigation groups verified.')
 } catch (error) {
   console.error(await evaluate('document.body.innerText.slice(-5000)'))

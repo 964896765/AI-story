@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed,onMounted,onUnmounted,reactive,ref,watch } from 'vue'
+import { BookOpen, Download, FilePlus, Search } from 'lucide-vue-next'
 import ShotDetails, { type Shot } from './ShotDetails.vue'
 type Kind='novel'|'script'|'character'|'scene'|'relationship'|'episode'|'storyboard'|'generation_plan'
 interface Entry {id:string;project_id:string;kind:Kind;current_version:number;version:number;version_id:string;title:string;content:Record<string,any>;content_hash:string;note:string;provenance:Record<string,unknown>}
@@ -12,10 +13,14 @@ const startingKind=props.initialKind || 'novel'
 const form=reactive(defaults(startingKind)),items=ref<Entry[]>([]),history=ref<Entry[]>([]),selected=ref<Entry|null>(null),pinned=ref<Record<string,Entry>>({})
 const filter=ref<Kind>(startingKind),busy=ref(false),error=ref(''),message=ref(''),cache=ref(''),estimate=ref(''),unitChars=ref(800),total=ref(0),offset=ref(0)
 const diffLeft=ref(1),diffText=ref('')
+const librarySearch=ref('')
 const requestKey=ref(crypto.randomUUID()),currentProject=ref(props.projectId),deriveKeys=new Map<string,string>()
 let restoring=false,initialized=false,cacheTimer:ReturnType<typeof setTimeout>|undefined
 const historical=computed(()=>!!selected.value&&selected.value.version<selected.value.current_version)
 const choices=computed(()=>Array.from(new Map([...items.value,...Object.values(pinned.value)].map(i=>[i.version_id,i])).values()))
+const libraryEntries=computed(()=>items.value.filter(item=>item.kind===filter.value &&
+  item.title.toLocaleLowerCase().includes(librarySearch.value.trim().toLocaleLowerCase())))
+const editorTitle=computed(()=>selected.value?.title || ('新建'+kinds[form.kind]))
 const ofKind=(...types:Kind[])=>choices.value.filter(i=>types.includes(i.kind))
 const imageAssets=computed(()=>props.assets.filter(a=>/\.(png|jpe?g|webp)$/i.test(a.name)))
 const audioAssets=computed(()=>props.assets.filter(a=>/\.(wav|mp3)$/i.test(a.name)))
@@ -56,13 +61,26 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
 <template>
  <p v-if="!projectId" class="empty">先选择或创建项目，再建立创作资产。</p>
  <div v-else class="story-studio">
-  <div class="actions"><h2>创作资产与版本</h2><button :disabled="busy" @click="run(refresh)">刷新资产库</button><a :href="`/api/projects/${projectId}/story/export`">导出创作包 JSON</a></div>
-  <p class="hint">小说、剧本、角色、场景和分镜均保存独立版本。规则整理保留或拆分原文。</p>
   <p v-if="error" class="error" role="alert">{{error}}</p><p v-if="message" role="status">{{message}}</p>
-  <div class="story-layout">
-   <section class="story-library"><label>资产类型<select v-model="filter"><option v-for="(label,key) in kinds" :key="key" :value="key">{{label}}</option></select></label><button :disabled="busy" @click="fresh(filter)">新建{{kinds[filter]}}</button><p v-if="!items.some(i=>i.kind===filter)" class="hint">此页暂无{{kinds[filter]}}。</p><button v-for="item in items.filter(i=>i.kind===filter)" :key="item.id" :class="['story-item',{active:selected?.id===item.id}]" :disabled="busy" @click="run(()=>load(item))"><strong>{{item.title}}</strong><span>v{{item.version}} · {{kinds[item.kind]}}</span></button><p class="hint">共 {{total}} 项，当前第 {{Math.floor(offset/200)+1}} 页</p><div class="actions"><button :disabled="busy||offset===0" @click="offset-=200;run(refresh)">上一页</button><button :disabled="busy||offset+200>=total" @click="offset+=200;run(refresh)">下一页</button></div></section>
+  <div class="story-layout creative-layout">
+   <section class="story-library creative-library">
+     <h2><BookOpen :size="17" aria-hidden="true" />创作资产</h2>
+     <label>资产类型<select v-model="filter" @change="librarySearch=''"><option v-for="(label,key) in kinds" :key="key" :value="key">{{label}}</option></select></label>
+     <button class="primary creative-create" :disabled="busy" @click="fresh(filter)"><FilePlus :size="16" aria-hidden="true" />新建{{kinds[filter]}}</button>
+     <label class="creative-search"><Search :size="15" aria-hidden="true" /><input v-model="librarySearch" type="search" aria-label="搜索当前页创作资产" placeholder="按标题筛选"></label>
+     <p v-if="!libraryEntries.length" class="hint">当前页没有符合条件的{{kinds[filter]}}。</p>
+     <button v-for="item in libraryEntries" :key="item.id" :class="['story-item',{active:selected?.id===item.id}]"
+       :aria-pressed="selected?.id===item.id" :disabled="busy" @click="run(()=>load(item))"><strong>{{item.title}}</strong><span>v{{item.version}} · {{kinds[item.kind]}}</span></button>
+     <p class="hint">全部资产 {{total}} 项 · 第 {{Math.floor(offset/200)+1}} 页</p>
+     <div v-if="total>200" class="actions"><button :disabled="busy||offset===0" @click="offset-=200;run(refresh)">上一页</button><button :disabled="busy||offset+200>=total" @click="offset+=200;run(refresh)">下一页</button></div>
+     <button :disabled="busy" @click="run(refresh)">刷新资产库</button>
+     <a :href="`/api/projects/${projectId}/story/export`" class="creative-export"><Download :size="14" aria-hidden="true" />导出创作包 JSON</a>
+   </section>
    <section class="story-editor">
-    <h2>{{selected?'编辑':'新建'}}{{kinds[form.kind]}} <span v-if="selected">查看 v{{selected.version}} / 当前 v{{selected.current_version}}</span></h2><p class="hint">{{cache}}</p><p v-if="historical" class="hint">当前为历史版本。可查看或追加恢复版本，不会覆盖旧记录。</p>
+    <header class="creative-heading"><div><p v-if="selected" class="hint">{{kinds[form.kind]}}</p><h2>{{editorTitle}}</h2></div>
+      <span v-if="selected" class="status" :class="historical ? 'running' : 'succeeded'">v{{selected.version}} · {{historical ? '历史版本' : '当前版本'}}</span>
+    </header>
+    <p v-if="cache" class="hint creative-cache">{{cache}}</p><p v-if="historical" class="hint">当前为历史版本。当前数据库版本为 v{{selected?.current_version}}。</p>
     <form @submit.prevent="save"><fieldset :disabled="busy||historical"><label>标题<input v-model="form.title" required maxlength="200"></label>
      <template v-if="form.kind==='novel'"><label>素材授权来源<textarea v-model="form.authorization" required maxlength="10000" placeholder="自有原创声明或授权协议来源"></textarea></label><label>导入 UTF-8 TXT<input type="file" accept=".txt" :disabled="!form.authorization.trim()" @change="importText"></label><label>小说原文<textarea v-model="form.text" class="long-text" required maxlength="1000000"></textarea></label></template>
      <template v-if="form.kind==='character'"><label>角色说明<textarea v-model="form.description" maxlength="20000"></textarea></label><label>外貌与固定特征<textarea v-model="form.appearance" maxlength="20000"></textarea></label><label>性格与行为约束<textarea v-model="form.personality" maxlength="20000"></textarea></label><label>声音说明（仅配置，未生成）<textarea v-model="form.voice_description" maxlength="10000"></textarea></label><label>声音标识<input v-model="form.voice_id" maxlength="200" placeholder="后续适配器使用；当前不调用模型"></label><label>已授权声音参考<select v-model="form.reference_audio_asset_id"><option :value="null">不关联</option><option v-for="a in audioAssets" :key="a.id" :value="a.id">{{a.name}}</option></select></label></template>
@@ -80,3 +98,22 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
   </div>
  </div>
 </template>
+
+<style scoped>
+.creative-layout { grid-template-columns:minmax(205px,.7fr) minmax(0,2.6fr) }
+.creative-library h2,.creative-create,.creative-export { display:flex; align-items:center; gap:8px }
+.creative-library h2,.creative-library p { margin:0 }
+.creative-library h2 svg,.creative-search svg { color:var(--accent) }
+.creative-library .story-item { margin:0; background:#151e27; border-color:var(--line-soft) }
+.creative-library .story-item.active { background:var(--accent-surface); border-color:var(--accent-strong) }
+.creative-search { display:flex; align-items:center; gap:7px; padding:0 8px; border:1px solid var(--line); border-radius:7px }
+.creative-search input { flex:1; padding-inline:0; border:0; background:transparent }
+.creative-export { text-decoration:none; padding:7px 0 }
+.creative-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-bottom:11px; border-bottom:1px solid var(--line-soft) }
+.creative-heading h2 { font-size:24px; margin:0; overflow-wrap:anywhere }
+.creative-heading p { margin:0 0 3px }
+.creative-cache { margin:9px 0 0 }
+.story-editor .long-text { background:#111b24; min-height:300px; padding:14px; }
+.story-editor textarea,.story-editor input { line-height:1.65 }
+@media(max-width:1000px) { .creative-layout { grid-template-columns:1fr } }
+</style>

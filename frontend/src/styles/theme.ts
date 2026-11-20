@@ -4,9 +4,9 @@ export const workbenchTheme = createTheme('dark', [buttonDark, cardDark, modalDa
 
 export const componentTheme: GlobalThemeOverrides = {
   common: {
-    primaryColor: '#afa1f0', primaryColorHover: '#c1b6fa', primaryColorPressed: '#9987e8', primaryColorSuppl: '#afa1f0',
-    bodyColor: '#16171b', cardColor: '#202127', modalColor: '#202127', borderColor: '#34353f',
-    textColorBase: '#f4f2fa', textColor1: '#f4f2fa', textColor2: '#d9d6e0', textColor3: '#a7a5b2',
+    primaryColor: '#83ded1', primaryColorHover: '#a0ece0', primaryColorPressed: '#53bfb1', primaryColorSuppl: '#83ded1',
+    bodyColor: '#11161d', cardColor: '#172029', modalColor: '#172029', borderColor: '#324150',
+    textColorBase: '#f0f5fa', textColor1: '#f0f5fa', textColor2: '#d3dfe9', textColor3: '#a0b1c2',
     successColor: '#8fd0b3', warningColor: '#e6bd81', errorColor: '#f3a1ab',
     borderRadius: '8px', borderRadiusSmall: '6px',
     fontFamily: '"Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif',
