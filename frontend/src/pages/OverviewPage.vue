@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { LocationQueryRaw } from 'vue-router'
 import { ArrowDownToLine, ArrowRight, Clapperboard, ClipboardCheck, Film, FolderOpen, Image, Layers3,
   ListChecks, Play, Plus, ScrollText, SquarePen, Upload, Wallet } from 'lucide-vue-next'
 import { NButton, NTag } from 'naive-ui'
@@ -36,9 +37,27 @@ const stageLinks = computed(() => {
     { label: '授权交付', value: `${data?.delivery_count || 0} 份`, icon: ArrowDownToLine, page: 'library' },
   ] as const
 })
-const nextPage = computed<Destination>(() => latest.value ? 'production' : overview.value?.render_count ? 'quality' :
-  overview.value?.story_counts.timeline ? 'timeline' : overview.value?.story_counts.storyboard ? 'storyboard' :
-    overview.value?.story_counts.script ? 'story' : 'assets')
+const nextStep = computed<{ page:Destination; label:string; query?:LocationQueryRaw }>(() => {
+  const batch = latest.value
+  if (batch) {
+    const delivery = overview.value?.latest_delivery
+    if (batch.status === 'passed') {
+      if (delivery?.status === 'succeeded') return {
+        page:'operations', label:'打开人工发行', query:{package:delivery.id},
+      }
+      const label = delivery && ['queued','running'].includes(delivery.status) ? '查看交付任务' : '核对授权与交付'
+      return {page:'library',label,query:{run:batch.id}}
+    }
+    const first = batch.attention_episodes?.[0]
+    return {page:'production', label:first ? '查看待处理分集' : '查看生产批次',
+      query:first ? {run:batch.id,episode:String(first.number)} : {run:batch.id}}
+  }
+  const draft = overview.value?.draft_reviews[0]
+  if (draft) return {page:'adaptation', label:'审核改编稿', query:{call:draft.id}}
+  const page = overview.value?.render_count ? 'quality' : overview.value?.story_counts.timeline ? 'timeline' :
+    overview.value?.story_counts.storyboard ? 'storyboard' : overview.value?.story_counts.script ? 'story' : 'assets'
+  return {page,label:'继续制作'}
+})
 
 function money(micros: string, currency: string) {
   const value = BigInt(micros)
@@ -97,7 +116,7 @@ onUnmounted(() => { clearInterval(timer); request?.abort() })
           <div v-if="latest" class="feature-batch"><Clapperboard :size="15" />最近批次 {{ latest.passed }} / {{ latest.episode_count }} 集通过</div>
           <div v-else class="feature-batch"><FolderOpen :size="15" />{{ overview.asset_count }} 项素材 · {{ overview.render_count }} 部已验证成片</div>
           <div class="feature-actions">
-            <NButton type="primary" @click="go(nextPage, latest ? { run: latest.id } : {})">继续制作 <ArrowRight :size="15" /></NButton>
+            <NButton type="primary" @click="go(nextStep.page,nextStep.query)">{{nextStep.label}} <ArrowRight :size="15" /></NButton>
             <RouterLink :to="link('assets', { import:'1' })"><Upload :size="15" aria-hidden="true" />导入素材</RouterLink>
           </div>
         </div>
@@ -159,6 +178,12 @@ onUnmounted(() => { clearInterval(timer); request?.abort() })
           <div v-if="reviews || rework" class="review-list">
             <RouterLink v-if="latest && (latest.reviews || latest.rework)" :to="link('production', { run: latest.id })">
               <ClipboardCheck :size="18" /><span><strong>最近批次</strong><small>{{ latest.reviews }} 集待复核 · {{ latest.rework }} 集待返工</small></span><ArrowRight :size="14" />
+            </RouterLink>
+            <RouterLink v-for="episode in latest?.attention_episodes || []" :key="'episode-'+episode.number"
+              :to="link('production',{run:latest!.id,episode:String(episode.number)})">
+              <Film :size="18" aria-hidden="true" /><span><strong>第 {{episode.number}} 集</strong>
+                <small>{{episode.status==='needs_rework' ? '需返工' : '待人工复核'}} · {{episode.issue_count}} 项发现</small>
+              </span><ArrowRight :size="14" aria-hidden="true" />
             </RouterLink>
             <RouterLink v-for="item in overview.draft_reviews" :key="item.id" :to="link('adaptation', { call: item.id })">
               <SquarePen :size="18" /><span><strong>{{ item.title }}</strong><small>{{ item.simulated ? '模拟改编 · 待审' : '模型改编 · 待审' }}</small></span><ArrowRight :size="14" />

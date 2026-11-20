@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { request, statusLabels } from './analysisApi'
 
 interface Version { version_id:string; title:string; version:number; provenance?:{series_approved?:boolean} }
@@ -13,13 +13,24 @@ interface Run {
   id:string;plan_version_id:string;created_at:string;status:string;episode_count:number;passed:number;reused:number
   episodes:Episode[]|null;policy:{require_audio:boolean;require_subtitles:boolean}
 }
-const props=defineProps<{projectId:string;initialRun?:string}>()
-const emit=defineEmits<{ inspectTimeline:[versionId:string,runId:string,clipId?:string] }>()
+const props=defineProps<{projectId:string;initialRun?:string;initialEpisode?:string}>()
+const emit=defineEmits<{
+  inspectTimeline:[versionId:string,runId:string,episode:number,clipId?:string];
+  openDelivery:[runId:string]
+}>()
 const plans=ref<Version[]>([]), timelines=ref<Version[]>([]), runs=ref<Run[]>([]), active=ref<Run|null>(null)
 const plan=ref(''), prior=ref(''), links=ref<{number:number;title:string;timeline_version_id:string}[]>([])
 const requireAudio=ref(false), requireSubtitles=ref(false)
 const error=ref(''), notice=ref(''), busy=ref(false), reviewed=ref<Record<number,string>>({})
 const selectedId=ref(props.initialRun||''), preview=ref('')
+const player=ref<HTMLVideoElement|null>(null), previewPosition=ref<number|null>(null)
+const compose=ref<HTMLDetailsElement|null>(null)
+const episodeFilter=ref<'all'|'attention'>('all')
+const linkedEpisode = /^\d{1,2}$/.test(props.initialEpisode || '') ? Number(props.initialEpisode) : null
+const visibleEpisodes=computed(() => (active.value?.episodes || []).filter(episode =>
+  episodeFilter.value==='all' || ['needs_rework','needs_review'].includes(episode.status)))
+const attentionCount=computed(() => (active.value?.episodes || []).filter(episode =>
+  ['needs_rework','needs_review'].includes(episode.status)).length)
 const keys=new Map<string,string>()
 const states:Record<string,string>={processing:'执行中',needs_rework:'需返工',needs_review:'待人工复核',passed:'通过',cancelled:'已停止'}
 let refreshing=false
@@ -43,13 +54,8 @@ async function refresh(){
   try{
     runs.value=await request<Run[]>(path)
     const id=selectedId.value
-    if(id && !runs.value.some(batch=>batch.id===id) && active.value?.id!==id){
-      selectedId.value=''
-      error.value='链接中的批次不在当前项目的最近批次列表中。'
-      return
-    }
     if(id){
-      const current=await request<Run>('/production/runs/'+id)
+      const current=await request<Run>(path+'/'+encodeURIComponent(id))
       if(id===selectedId.value)active.value=current
     }
   }finally{refreshing=false}
@@ -69,8 +75,9 @@ async function loadPlan(){
 }
 watch(plan,()=>void run(loadPlan))
 async function open(id:string){
-  selectedId.value=id;preview.value='';reviewed.value={}
-  await run(async()=>{const result=await request<Run>('/production/runs/'+id);if(selectedId.value===id)active.value=result})
+  selectedId.value=id;preview.value='';previewPosition.value=null;reviewed.value={};episodeFilter.value='all'
+  active.value=null
+  await run(async()=>{const result=await request<Run>(path+'/'+id);if(selectedId.value===id)active.value=result})
 }
 async function submit(){
   await run(async()=>{
@@ -91,6 +98,7 @@ function startRework(batch:Run){
   requireAudio.value=batch.policy.require_audio
   requireSubtitles.value=batch.policy.require_subtitles
   notice.value='选择需要替换时间轴的分集。其余分集按原产物校验并复用。'
+  if(compose.value)compose.value.open=true
 }
 async function approve(episode:Episode){
   if(!active.value || !episode.qc)return
@@ -104,10 +112,32 @@ async function approve(episode:Episode){
   })
 }
 function inspect(episode:Episode, clipId?:string){
-  if(active.value)emit('inspectTimeline',episode.timeline_version_id,active.value.id,clipId)
+  if(active.value)emit('inspectTimeline',episode.timeline_version_id,active.value.id,episode.number,clipId)
+}
+function positionPreview() {
+  if (player.value && previewPosition.value !== null && Number.isFinite(player.value.duration)) {
+    player.value.currentTime = Math.min(previewPosition.value, player.value.duration)
+    previewPosition.value = null
+  }
+}
+async function previewEpisode(episode:Episode, startMs=0) {
+  if (episode.render_status !== 'succeeded') return
+  previewPosition.value = Math.max(0,startMs)/1000
+  preview.value = episode.render_task_id
+  await nextTick()
+  positionPreview()
+  player.value?.scrollIntoView({block:'nearest'})
 }
 onMounted(()=>{
-  void run(async()=>{await loadVersions();await refresh()})
+  void run(async()=>{
+    await Promise.all([loadVersions(),refresh()])
+    if (linkedEpisode && active.value?.episodes?.some(episode=>episode.number===linkedEpisode)) {
+      await nextTick()
+      const article = document.getElementById('production-episode-'+linkedEpisode)
+      article?.scrollIntoView({block:'center'})
+      article?.focus({preventScroll:true})
+    }
+  })
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3500)
 })
 onUnmounted(()=>clearInterval(timer))
@@ -117,7 +147,7 @@ onUnmounted(()=>clearInterval(timer))
     <h2>整剧生产与技术质检</h2>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <details>
+    <details ref="compose">
       <summary>{{ prior ? '提交局部返工' : '提交整剧批次' }}</summary>
       <form class="form-grid" @submit.prevent="submit">
         <label>已批准制作计划<select v-model="plan" :disabled="!!prior" required>
@@ -148,16 +178,22 @@ onUnmounted(()=>clearInterval(timer))
       </button>
     </div>
     <template v-if="active">
-      <div class="actions">
-        <p>批次 {{ states[active.status] }} · {{ active.passed }}/{{ active.episode_count }} 集通过 · {{ active.reused }} 集复用</p>
+      <div class="actions run-summary">
+        <div><strong>批次 {{ states[active.status] }}</strong><p>{{ active.passed }}/{{ active.episode_count }} 集通过 · {{ active.reused }} 集复用</p></div>
         <button v-if="active.status==='processing'" :disabled="busy" @click="run(async()=>{await request('/production/runs/'+active!.id+'/cancel',{});await refresh()})">停止批次</button>
         <button v-else :disabled="busy" @click="startRework(active)">按此批次局部返工</button>
+        <button v-if="active.status==='passed'" class="primary" @click="emit('openDelivery',active.id)">核对授权与交付</button>
       </div>
-      <video v-if="preview" :key="preview" controls :src="`/api/tasks/${preview}/output`"></video>
-      <article v-for="episode in active.episodes" :key="episode.number" class="episode">
+      <div v-if="attentionCount" class="actions episode-filter" aria-label="分集状态">
+        <button type="button" :aria-pressed="episodeFilter==='all'" @click="episodeFilter='all'">全部分集</button>
+        <button type="button" :aria-pressed="episodeFilter==='attention'" @click="episodeFilter='attention'">待复核与返工 · {{ attentionCount }}</button>
+      </div>
+      <video v-if="preview" :key="preview" ref="player" controls preload="metadata" :src="`/api/tasks/${preview}/output`" @loadedmetadata="positionPreview"></video>
+      <article v-for="episode in visibleEpisodes" :id="'production-episode-'+episode.number" :key="episode.number" tabindex="-1"
+        class="episode" :class="{ 'linked-episode':active.id===initialRun && episode.number===linkedEpisode }">
         <div class="actions">
           <strong>第 {{ episode.number }} 集</strong><span>{{ states[episode.status] }}<template v-if="episode.reused"> · 已校验复用</template></span>
-          <button v-if="episode.render_status==='succeeded'" @click="preview=episode.render_task_id">预览本集</button>
+          <button v-if="episode.render_status==='succeeded'" @click="previewEpisode(episode)">预览本集</button>
           <button @click="inspect(episode)">打开固定时间轴</button>
         </div>
         <p class="hint">渲染 {{ statusLabels[episode.render_status] || episode.render_status }} · 质检 {{ episode.qc_stage==='dependency_failed'?'上游失败未执行':statusLabels[episode.qc_status] || episode.qc_status }}</p>
@@ -165,6 +201,7 @@ onUnmounted(()=>clearInterval(timer))
         <ul v-if="episode.qc?.issues.length">
           <li v-for="(issue,i) in episode.qc.issues" :key="i" :class="{failed:issue.severity==='error'}">
             {{ issue.detail }} <template v-if="issue.start_ms!==null">· {{ issue.start_ms/1000 }}–{{ (issue.end_ms||0)/1000 }} 秒</template>
+            <button v-if="issue.start_ms!==null && episode.render_status==='succeeded'" class="finding-preview" @click="previewEpisode(episode,issue.start_ms)">预览问题位置</button>
             <div v-if="issue.clips?.length" class="actions finding-clips">
               <button v-for="(clip,index) in issue.clips" :key="clip" @click="inspect(episode,clip)">定位关联片段{{ issue.clips.length>1 ? ' '+(index+1) : '' }}</button>
             </div>
@@ -185,4 +222,11 @@ onUnmounted(()=>clearInterval(timer))
 .episode { padding:14px 0; border-top:1px solid #334050 }
 .production video { max-height:59vh }
 .finding-clips { margin:5px 0 }
+.run-summary { background:#101d25; border:1px solid var(--line-soft); border-radius:8px; padding:12px; margin:13px 0 }
+.run-summary > div { margin-right:auto }
+.run-summary p { margin:4px 0 0; color:var(--ink-muted) }
+.episode-filter { margin:10px 0 }
+.episode-filter button[aria-pressed=true] { color:var(--accent); background:var(--accent-surface) }
+.linked-episode { box-shadow:inset 3px 0 var(--accent); padding-left:11px; background:#122530 }
+.finding-preview { margin:5px 0 5px 8px; font-size:12px }
 </style>

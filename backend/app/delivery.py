@@ -17,7 +17,7 @@ from .creative import require
 from .db import session
 from .library import Region, Slug, latest_rights, restriction
 from .models import Asset, ProductionRun, Project, StoryReference, Task, TaskEvent, now
-from .production import public as run_public
+from .production import project_run, public as run_public
 from .render import file_hash, write_manifest
 from .story_schemas import Strict
 
@@ -62,11 +62,15 @@ def source_lineage(db,project,asset_ids,versions):
     return items
 
 
-def authorization_manifest(db,run,units,platform,region):
+def authorization_snapshot(db,run,units,platform,region):
     assets=set()
     versions={run.plan_version_id}
+    renders = {task.id: task for task in db.scalars(select(Task).where(
+        Task.id.in_({unit['render_task_id'] for unit in units}), Task.project_id == run.project_id))}
     for unit in units:
-        task=require(db,Task,unit['render_task_id'])
+        task = renders.get(unit['render_task_id'])
+        if task is None or not task.story_version_id or not isinstance(task.input_snapshot.get('assets'), dict):
+            raise HTTPException(409, '成片的固定来源记录不完整')
         versions.add(task.story_version_id)
         assets.update(task.input_snapshot['assets'])
     items=source_lineage(db,run.project_id,assets,versions)
@@ -87,17 +91,36 @@ def authorization_manifest(db,run,units,platform,region):
             'expires_at':right.expires_at.isoformat() if right.expires_at else None,
             'platform':platform,'region':region,'scope':right.scope,
         })
-    if blockers:
-        raise HTTPException(409,{'message':'交付授权尚未通过','assets':blockers})
-    return result
+    return result, blockers
+
+
+def readiness_report(db, run, report, platform, region):
+    episodes = report['episodes']
+    pending = [{'number': unit['number'], 'status': unit['status'], 'issue_count': unit['issue_count']}
+               for unit in episodes if unit['status'] != 'passed']
+    result = {
+        'run_id': run.id, 'status': report['status'], 'passed_episodes': report['passed'],
+        'episode_count': report['episode_count'], 'pending_episodes': pending, 'ready': False,
+        'rights_checked': False, 'source_count': None, 'authorized_sources': None,
+        'authorization_revision': None, 'blockers': [],
+    }
+    if pending or not episodes:
+        return result, []
+    rights, blockers = authorization_snapshot(db, run, episodes, platform, region)
+    result.update(ready=not blockers, rights_checked=True, source_count=len(rights)+len(blockers),
+                  authorized_sources=len(rights), blockers=blockers,
+                  authorization_revision=fingerprint(rights) if not blockers else None)
+    return result, rights
 
 
 def eligible(db,params,expected=None):
     run=require(db,ProductionRun,params['run_id'])
     report=run_public(db,run)
-    if report['status']!='passed':
+    readiness, rights = readiness_report(db, run, report, params['platform'], params['region'])
+    if not readiness['rights_checked']:
         raise HTTPException(409,'整剧须通过全部技术质检和要求的人工复核')
-    rights=authorization_manifest(db,run,report['episodes'],params['platform'],params['region'])
+    if not readiness['ready']:
+        raise HTTPException(409,{'message':'交付授权尚未通过','assets':readiness['blockers']})
     if expected is not None and rights!=expected:
         raise HTTPException(409,'授权记录已更新，请重新提交交付')
     return run,report,rights
@@ -138,6 +161,21 @@ def packages(project_id:str,db=Depends(session)):
     require(db,Project,project_id)
     return [public(task) for task in db.scalars(select(Task).where(Task.project_id==project_id,
         Task.kind=='delivery').order_by(Task.created_at.desc()).limit(100))]
+
+
+@router.get('/projects/{project_id}/runs/{run_id}/readiness')
+def readiness(project_id: str, run_id: str, platform: Slug, region: Region, db=Depends(session)):
+    run = project_run(db, project_id, run_id)
+    result, _ = readiness_report(db, run, run_public(db, run), platform, region)
+    return result
+
+
+@router.get('/projects/{project_id}/packages/{task_id}')
+def scoped_package(project_id: str, task_id: str, db=Depends(session)):
+    task = db.get(Task, task_id)
+    if task is None or task.kind != 'delivery' or task.project_id != project_id:
+        raise HTTPException(404, '当前项目中没有此交付包')
+    return public(task)
 
 
 @router.get('/packages/{task_id}/file')

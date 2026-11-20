@@ -59,7 +59,9 @@ export interface ProjectOverview {
   recent_renders: RecentRender[]
   draft_review_count: number
   draft_reviews: { id: string; title: string; simulated: boolean }[]
-  latest_run: { id: string; status: string; passed: number; episode_count: number; reviews: number; rework: number } | null
+  latest_run: { id: string; status: string; passed: number; episode_count: number; reviews: number; rework: number;
+    attention_episodes?: {number:number;status:string;issue_count:number}[] } | null
+  latest_delivery?: {id:string;run_id:string;status:string;title:string|null} | null
   costs: { currency: string; amount_micros: string; unknown: number }[]
   live_authorized: boolean
   live_budgets: { currency: string; limit_micros: string; reserved_micros: string; halted: boolean }[]

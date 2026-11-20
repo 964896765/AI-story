@@ -63,6 +63,12 @@ try{
   const initialDetail=await api('/production/runs/'+initial.id)
   const finding=initialDetail.episodes[0].qc.issues.find(issue=>issue.code==='black_frames')
   assert.deepEqual(finding.clips,['repair-me'])
+  await click('项目总览')
+  await click('查看待处理分集')
+  await wait(()=>evaluate("document.activeElement?.id==='production-episode-1'"),'overview deep link focuses affected episode')
+  await evaluate("Array.from(document.querySelectorAll('.production li')).find(item=>item.textContent.includes('检测到连续黑场')).querySelector('.finding-preview').click()")
+  await wait(()=>evaluate(`(() => {const video=document.querySelector('.production video');
+    return video?.readyState>=1 && Math.abs(video.currentTime-${finding.start_ms/1000})<.08})()`),'real playback seeks to black-frame start')
   await screenshot('p11-qc.png')
   await click('定位关联片段')
   await wait(()=>evaluate("document.activeElement?.dataset.clipId==='repair-me'"),'focused exactly the implicated clip')
@@ -78,11 +84,12 @@ try{
   const [good]=(await api(path+'/story/entities?kind=timeline')).items
   await click('返回原质检批次')
   await wait(()=>contains('检测到连续黑场'),'returned to the original batch')
+  await wait(()=>evaluate("document.activeElement?.id==='production-episode-1'"),'timeline return restores episode focus')
   assert.equal(await evaluate("document.querySelector('.production .version-list button[aria-pressed=true]')!==null"),true)
   await click('按此批次局部返工')
   await choose(good.version_id)
   await click('提交渲染和质检')
-  await wait(()=>contains('批次 通过 · 1/1 集通过'),'real rerender and QC passed')
+  await wait(()=>evaluate("document.querySelector('.run-summary')?.textContent.includes('批次 通过') && document.querySelector('.run-summary')?.textContent.includes('1/1 集通过')"),'real rerender and QC passed')
   const [result]=await api('/production'+path+'/runs')
   assert.equal(result.status,'passed')
   const checked=await api('/production/runs/'+result.id)
@@ -95,6 +102,7 @@ try{
     checked_at:new Date().toISOString(),browser:'Installed Chrome headless',initial_run:initial.id,
     fixed_run:result.id,detection:['missing_audio','black_frames'],actual_rerender:true,verified_preview:true,
     linked_clip:finding.clips[0],black_range_ms:[finding.start_ms,finding.end_ms],returned_to_batch:true,
+    overview_deep_link_focused:true, finding_preview_seek:true,
     fixed_timeline_version:good.version_id,
     checks_after_fix:checked.episodes[0].qc.issues.length,javascript_errors:errors,
   },null,2)+'\n')

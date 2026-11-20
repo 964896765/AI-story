@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { request, statusLabels } from './analysisApi'
 
 interface Channel {id:string;label:string;platform:string;region:string;verified:boolean;rule_version:number}
-interface Delivery {id:string;status:string;parameters:{title:string;platform:string;region:string}}
+interface Delivery {id:string;status:string;parameters:{run_id:string;title:string;platform:string;region:string}}
 interface Publication {
   id:string;title:string;channel:Channel;status:string;events:{status:string;evidence:string;created_at:string}[]
 }
@@ -11,12 +11,23 @@ interface Promo {id:string;title:string;episode:number;status:string;sha256:stri
 interface Settlement {id:string;channel:string;external_id:string;currency:string;kind:string;status:string;amount_micros:string|null}
 interface Total {currency:string;recorded_cash_difference_micros:string;unknown_entries:number;estimate_entries:number;
   unknown_model_charges:number;amounts_micros:Record<string,string>}
-const props=defineProps<{projectId:string}>()
+const props=defineProps<{projectId:string;initialPackage?:string}>()
+const emit=defineEmits<{backToDelivery:[run:string]}>()
 const channels=ref<Channel[]>([]), deliveries=ref<Delivery[]>([]), publications=ref<Publication[]>([]), promos=ref<Promo[]>([])
 const ledger=ref<Settlement[]>([]), totals=ref<Total[]>([])
 const error=ref(''), notice=ref(''), busy=ref(false)
 const channelForm=ref({label:'',organization:'',account_label:'',platform:'',region:'CN',rules_url:'',verification_note:'',verified:false})
 const publication=ref({title:'',channel_id:'',delivery_task_id:'',planned_for:''})
+const linkedPackage=ref<Delivery|null>(null), linkError=ref('')
+const publicationPanel=ref<HTMLElement|null>(null)
+const availablePackages=computed(()=>linkedPackage.value && !deliveries.value.some(item=>item.id===linkedPackage.value?.id)
+  ? [linkedPackage.value,...deliveries.value] : deliveries.value)
+const selectedPackage=computed(()=>availablePackages.value.find(item=>item.id===publication.value.delivery_task_id))
+const publicationChannels=computed(()=>selectedPackage.value ? channels.value.filter(item=>
+  item.platform===selectedPackage.value!.parameters.platform && item.region===selectedPackage.value!.parameters.region) : channels.value)
+watch(publicationChannels, channels => {
+  if (publication.value.channel_id && !channels.some(item=>item.id===publication.value.channel_id)) publication.value.channel_id=''
+})
 const promo=ref({delivery_task_id:'',title:'',description:'',episode:1,start_seconds:0,duration_seconds:1})
 const current=ref(''), eventStatus=ref(''), eventProof=ref(''), ledgerChannel=ref(''), csv=ref('')
 const keys=new Map<string,string>()
@@ -50,6 +61,21 @@ async function refresh(){
   ])
   channels.value=a;deliveries.value=b.filter(item=>item.status==='succeeded');publications.value=c;promos.value=d
   ledger.value=e;totals.value=f.by_currency
+}
+async function restorePackage() {
+  if (!props.projectId || !props.initialPackage) return
+  try {
+    const item=await request<Delivery>(`/delivery/projects/${props.projectId}/packages/${encodeURIComponent(props.initialPackage)}`)
+    if (item.status!=='succeeded') throw new Error('交付任务尚未完成验证')
+    linkedPackage.value=item
+    publication.value.delivery_task_id=item.id
+    publication.value.title=item.parameters.title
+    await nextTick()
+    publicationPanel.value?.scrollIntoView({block:'start'})
+    publicationPanel.value?.focus({preventScroll:true})
+  } catch (failure) {
+    linkError.value=String(failure)
+  }
 }
 async function saveChannel(){
   await execute(async()=>{
@@ -97,7 +123,7 @@ async function importLedger(){
   })
 }
 onMounted(()=>{
-  void execute(refresh)
+  void execute(async()=>{await Promise.all([refresh(),restorePackage()])})
   timer=setInterval(()=>{if(!busy.value && promos.value.some(item=>['queued','running'].includes(item.status)))void refresh().catch(failure=>{error.value=String(failure)})},4000)
 })
 onUnmounted(()=>clearInterval(timer))
@@ -107,6 +133,7 @@ onUnmounted(()=>clearInterval(timer))
   <p v-if="!projectId" class="empty">选择项目以登记发行和结算。</p>
   <div v-else class="operations">
     <p v-if="error" role="alert" class="error">{{ error }}</p>
+    <p v-if="linkError" role="alert" class="error">{{ linkError }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
     <div class="workspace">
       <section>
@@ -132,13 +159,18 @@ onUnmounted(()=>clearInterval(timer))
           </form>
         </details>
       </section>
-      <section>
+      <section ref="publicationPanel" class="publication-panel" tabindex="-1">
         <h2>人工发行记录</h2>
+        <div v-if="linkedPackage" class="operations-handoff actions">
+          <span>{{linkedPackage.parameters.title}} · {{linkedPackage.parameters.platform}} / {{linkedPackage.parameters.region}}</span>
+          <button type="button" @click="emit('backToDelivery',linkedPackage.parameters.run_id)">回到交付批次</button>
+        </div>
         <form class="form-grid" @submit.prevent="createPublication">
           <label>发行渠道<select v-model="publication.channel_id" required><option value="">选择渠道</option>
-            <option v-for="item in channels" :key="item.id" :value="item.id">{{ item.label }} · v{{ item.rule_version }}</option></select></label>
+            <option v-for="item in publicationChannels" :key="item.id" :value="item.id">{{ item.label }} · v{{ item.rule_version }}</option></select></label>
           <label>授权交付包<select v-model="publication.delivery_task_id" required><option value="">选择完成交付包</option>
-            <option v-for="item in deliveries" :key="item.id" :value="item.id">{{ item.parameters.title }} · {{ item.parameters.platform }}</option></select></label>
+            <option v-for="item in availablePackages" :key="item.id" :value="item.id">{{ item.parameters.title }} · {{ item.parameters.platform }} / {{ item.parameters.region }}</option></select></label>
+          <p v-if="selectedPackage && !publicationChannels.length" class="hint">请先登记匹配 {{selectedPackage.parameters.platform}} / {{selectedPackage.parameters.region}} 的渠道。</p>
           <label>发行标题<input v-model="publication.title" required maxlength="180"></label>
           <label>计划时间<input v-model="publication.planned_for" type="datetime-local"></label>
           <button :disabled="busy || !publication.channel_id || !publication.delivery_task_id">保存发行草稿</button>
@@ -162,7 +194,7 @@ onUnmounted(()=>clearInterval(timer))
       <h2>推广素材</h2>
       <form class="form-grid" @submit.prevent="queuePromo">
         <label>推广来源交付包<select v-model="promo.delivery_task_id" required><option value="">选择完成交付包</option>
-          <option v-for="item in deliveries" :key="item.id" :value="item.id">{{ item.parameters.title }}</option></select></label>
+          <option v-for="item in availablePackages" :key="item.id" :value="item.id">{{ item.parameters.title }}</option></select></label>
         <div class="editor-grid">
           <label>推广标题<input v-model="promo.title" required maxlength="180"></label>
           <label>推广分集<input v-model.number="promo.episode" required type="number" min="1" max="60"></label>
@@ -198,6 +230,8 @@ onUnmounted(()=>clearInterval(timer))
   </div>
 </template>
 <style scoped>
+.publication-panel { scroll-margin-top:calc(var(--topbar-height) + 12px) }
+.operations-handoff { padding:10px; background:#122730; border:1px solid #36615e; border-radius:8px; overflow-wrap:anywhere }
 .operations,.form-grid { display:grid;gap:14px }
 .operations section { min-width:0 }
 .operations details,.form-grid { margin:12px 0 }

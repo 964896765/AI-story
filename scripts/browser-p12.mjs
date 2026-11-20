@@ -33,21 +33,26 @@ const run=await post('/production'+path+'/runs',{plan_version_id:approved.versio
   timelines:[{number:1,timeline_version_id:edit.version_id}]})
 await wait(async()=>(await api('/production/runs/'+run.id)).status==='passed','production QC passed')
 
-const { evaluate,contains,click,setField,screenshot,errors,close}=await openChrome(19232)
+const { command,evaluate,contains,click,setField,screenshot,errors,close}=await openChrome(19232)
 try{
   await wait(()=>contains('服务就绪'),'workbench ready')
   await setField('当前项目',project.id)
-  await click('资源与交付')
+  await click('核对授权与交付')
   await wait(()=>evaluate(`document.querySelector('.library option[value="${run.id}"]')!==null`),'passed batch visible')
-  await setField('通过质检的批次',run.id)
+  await wait(()=>evaluate(`document.querySelector('.package-panel select')?.value==='${run.id}'`),'overview hands off fixed run')
+  await command('Page.reload')
+  await wait(()=>evaluate(`document.querySelector('.package-panel select')?.value==='${run.id}'`),'delivery reload preserves run')
   await setField('交付包名称','海湾交付 ZIP')
   await setField('目标平台标识','local-test')
   await setField('目标地域','CN')
-  await click('核对授权并创建交付包')
+  await click('检查交付条件')
   await wait(()=>contains('交付授权尚未通过'),'rights gate blocks missing record')
+  assert.equal((await api('/delivery'+path+'/packages')).length,0)
+  await screenshot('v3-04-preflight.png')
 
-  await setField('授权素材',asset.id)
+  await click('核对这项授权')
   await wait(()=>contains('权利方'),'rights form available')
+  assert.equal(await evaluate("document.querySelector('.rights-panel select').value"),asset.id)
   await setField('核验状态','approved')
   await setField('权利方','自有样本制作者')
   await setField('授权或核验证据','确认这是本机为交付验证自行生成的测试素材。')
@@ -56,6 +61,7 @@ try{
   await evaluate("Array.from(document.querySelectorAll('label')).find(l=>l.textContent.trim()==='包含商用交付').querySelector('input').click()")
   await click('保存授权版本')
   await wait(()=>contains('已追加授权版本'),'rights persisted')
+  await wait(()=>contains('质检与当前授权通过'),'readiness refresh after rights change')
   await click('核对授权并创建交付包')
   await wait(()=>contains('下载已验证 ZIP'),'real ZIP published')
   await evaluate("Array.from(document.querySelectorAll('a')).find(a=>a.textContent.trim()==='下载已验证 ZIP').scrollIntoView({block:'center'})")
@@ -66,10 +72,17 @@ try{
   const bytes=Buffer.from(await file.arrayBuffer())
   assert.equal(bytes.subarray(0,2).toString(),'PK')
   assert.equal(createHash('sha256').update(bytes).digest('hex'),delivery.sha256)
+  await click('打开人工发行')
+  await wait(()=>evaluate(`document.querySelector('.publication-panel select option[value="${delivery.id}"]')?.selected`),'same package preselected for manual registration')
+  assert.equal((await api('/distribution'+path+'/publications')).length,0)
+  await screenshot('v3-04-operations.png')
+  await click('回到交付批次')
+  await wait(()=>evaluate(`document.querySelector('.package-panel select')?.value==='${run.id}'`),'manual registration returns to the same run')
   assert.deepEqual(errors,[])
   await writeFile(join(evidenceDir,'p12-browser-acceptance.json'),JSON.stringify({
     checked_at:new Date().toISOString(),browser:'Installed Chrome headless',checked_run:run.id,package_task:delivery.id,
     missing_rights_blocked:true,recorded_rights_then_downloaded:true,zip_sha256_verified:true,zip_bytes:bytes.length,
+    fixed_run_reloaded:true,read_only_preflight_verified:true,manual_package_handoff:true,
     javascript_errors:errors,
   },null,2)+'\n')
   console.log('P12 browser: missing rights blocked, rights confirmed, actual verified archive downloaded.')

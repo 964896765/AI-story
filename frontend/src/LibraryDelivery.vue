@@ -1,22 +1,40 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ArrowRight, ClipboardCheck, PackageCheck, ShieldAlert } from 'lucide-vue-next'
 import { request, statusLabels } from './analysisApi'
 
 interface Work {id:string;title:string;origin:string;tags:string[];archived:boolean;episodes?:{number:number;title:string;asset_id:string;name:string;sha256:string}[]}
 interface Rights {id:string;revision:number;status:string;holder:string;expires_at:string|null;scope:{regions:string[];platforms:string[];commercial:boolean};evidence:string}
 interface Batch {id:string;plan_version_id:string;status:string;episode_count:number;created_at:string}
 interface Package {id:string;status:string;stage:string;parameters:{title:string;platform:string;region:string};sha256:string|null;error:string|null}
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+interface Readiness {
+  run_id:string;ready:boolean;rights_checked:boolean;source_count:number|null;authorized_sources:number|null
+  passed_episodes:number;episode_count:number;authorization_revision:string|null
+  blockers:{asset_id:string;name:string;reason:string}[]
+  pending_episodes:{number:number;status:string;issue_count:number}[]
+}
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialRun?:string}>()
+const emit=defineEmits<{openRun:[id:string,episode?:number];openOperations:[id:string]}>()
 const works=ref<Work[]>([]), work=ref<Work|null>(null), grants=ref<Rights[]>([]), runs=ref<Batch[]>([]), packages=ref<Package[]>([])
 const query=ref(''), tag=ref(''), total=ref(0), offset=ref(0), workTitle=ref(''), origin=ref(''), tags=ref('')
 const episodes=ref<{number:number;title:string;asset_id:string}[]>([])
 const asset=ref(''), holder=ref(''), evidence=ref(''), grantStatus=ref('pending'), grantType=ref('owned')
 const commercial=ref(false), allowedPlatforms=ref(''), regions=ref(''), expires=ref('')
 const runId=ref(''), packageTitle=ref(''), platform=ref(''), region=ref('CN')
+const linkedRun=ref<Batch|null>(null), linkedError=ref('')
+const readiness=ref<Readiness|null>(null), checkedTarget=ref('')
+const packageSection=ref<HTMLElement|null>(null), rightsSection=ref<HTMLElement|null>(null)
 const error=ref(''), notice=ref(''), busy=ref(false), keys=new Map<string,string>()
 const stage:Record<string,string>={delivery_pack:'打包成片及清单',delivery_verify:'核对文件哈希',delivery_publish:'保存交付包'}
 const scope=`/projects/${props.projectId}`
 const library='/library'+scope+'/works', delivery='/delivery'+scope+'/packages'
+const target=computed(()=>({run_id:runId.value,platform:platform.value.trim(),region:region.value.toUpperCase().trim()}))
+const targetKey=computed(()=>JSON.stringify(target.value))
+const validTarget=computed(()=>!!target.value.run_id && /^[a-z0-9_-]{1,40}$/.test(target.value.platform) && /^(?:[A-Z]{2}|WORLD)$/.test(target.value.region))
+const lastCheck=computed(()=>checkedTarget.value===targetKey.value ? readiness.value : null)
+const runChoices=computed(()=>linkedRun.value?.status==='passed' && !runs.value.some(run=>run.id===linkedRun.value?.id)
+  ? [linkedRun.value,...runs.value] : runs.value)
+const episodeLabels:Record<string,string>={processing:'处理中',needs_review:'待人工复核',needs_rework:'需返工',cancelled:'已取消'}
 const videoAssets=computed(()=>props.assets.filter(item=>/\.(mp4|mov|mkv|webm|avi)$/i.test(item.name)))
 let timer:ReturnType<typeof setInterval>|undefined
 function key(body:object){const hash=JSON.stringify(body);if(!keys.has(hash))keys.set(hash,crypto.randomUUID());return keys.get(hash)!}
@@ -36,6 +54,35 @@ async function refresh(){
   const [production,deliverables]=await Promise.all([request<Batch[]>('/production'+scope+'/runs'),request<Package[]>(delivery)])
   runs.value=production.filter(item=>item.status==='passed')
   packages.value=deliverables
+}
+async function restoreRun(){
+  if(!props.initialRun) return
+  try {
+    linkedRun.value=await request<Batch>(`/production${scope}/runs/${encodeURIComponent(props.initialRun)}`)
+    if(linkedRun.value.status==='passed') runId.value=linkedRun.value.id
+    await nextTick()
+    packageSection.value?.scrollIntoView({block:'start'})
+    packageSection.value?.focus({preventScroll:true})
+  } catch (failure) {
+    linkedError.value=String(failure)
+  }
+}
+async function check() {
+  if (!validTarget.value) return null
+  const requested=target.value
+  const signature=targetKey.value
+  const query=new URLSearchParams({platform:requested.platform,region:requested.region})
+  const report=await request<Readiness>(`/delivery${scope}/runs/${requested.run_id}/readiness?${query}`)
+  if (signature!==targetKey.value) return null
+  readiness.value=report
+  checkedTarget.value=signature
+  return report
+}
+async function reviewAsset(id:string) {
+  asset.value=id
+  await nextTick()
+  rightsSection.value?.scrollIntoView({block:'start'})
+  rightsSection.value?.querySelector('select')?.focus({preventScroll:true})
 }
 async function loadRight(){
   const id=asset.value
@@ -58,19 +105,25 @@ async function saveRights(){
       regions:split(regions.value.toUpperCase()),platforms:split(allowedPlatforms.value),expires_at:expires.value?new Date(expires.value).toISOString():null}
     await request('/library/assets/'+id+'/rights',{...body,idempotency_key:key({...body,id})})
     await loadRight()
+    if (lastCheck.value) {
+      try { await check() } catch (failure) { readiness.value=null; error.value=String(failure) }
+    }
     notice.value='已追加授权版本'
   })
 }
 async function submit(){
   await execute(async()=>{
-    const body={run_id:runId.value,title:packageTitle.value,platform:platform.value.trim(),region:region.value.toUpperCase().trim()}
-    await request(delivery,{...body,idempotency_key:key(body)})
+    const preflight=await check()
+    if (!preflight?.ready) return
+    const body={...target.value,title:packageTitle.value}
+    await request(delivery,{...body,idempotency_key:key({...body,rights:preflight.authorization_revision})})
     await refresh()
     notice.value='交付任务已排队'
   })
 }
 onMounted(()=>{
-  void execute(async()=>{await list();await refresh()})
+  if (!props.projectId) return
+  void execute(async()=>{await Promise.all([list(),refresh(),restoreRun()])})
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},4000)
 })
 onUnmounted(()=>clearInterval(timer))
@@ -127,7 +180,7 @@ onUnmounted(()=>clearInterval(timer))
           </form>
         </details>
       </section>
-      <section>
+      <section ref="rightsSection" class="rights-panel">
         <h2>素材授权</h2>
         <label>授权素材<select v-model="asset" :disabled="busy"><option value="">选择项目素材</option>
           <option v-for="item in assets" :key="item.id" :value="item.id">{{ item.name }}</option>
@@ -156,23 +209,53 @@ onUnmounted(()=>clearInterval(timer))
         </form>
       </section>
     </div>
-    <section>
-      <h2>整剧交付</h2>
+    <section ref="packageSection" class="package-panel" tabindex="-1">
+      <h2><PackageCheck :size="19" aria-hidden="true" />整剧交付</h2>
+      <p v-if="linkedError" class="error" role="alert">{{linkedError}}</p>
+      <div v-if="linkedRun" class="linked-run actions">
+        <span>来自生产批次 {{linkedRun.id.slice(0,8)}} · {{linkedRun.episode_count}} 集 · {{linkedRun.status==='passed' ? '质检通过' : '须先通过质检'}}</span>
+        <button type="button" @click="emit('openRun',linkedRun.id)">查看固定批次</button>
+      </div>
       <form class="form-grid" @submit.prevent="submit">
         <label>通过质检的批次<select v-model="runId" required><option value="">选择已通过批次</option>
-          <option v-for="run in runs" :key="run.id" :value="run.id">{{ run.episode_count }} 集 · {{ new Date(run.created_at).toLocaleString('zh-CN') }} · {{ run.id.slice(0,8) }}</option>
+          <option v-for="run in runChoices" :key="run.id" :value="run.id">{{ run.episode_count }} 集 · {{ new Date(run.created_at).toLocaleString('zh-CN') }} · {{ run.id.slice(0,8) }}</option>
         </select></label>
         <div class="editor-grid">
           <label>交付包名称<input v-model="packageTitle" required maxlength="180"></label>
           <label>目标平台标识<input v-model="platform" required pattern="[a-z0-9_\-]+" maxlength="40"></label>
           <label>目标地域<input v-model="region" required maxlength="5"></label>
         </div>
-        <button class="primary" :disabled="busy || !runId">核对授权并创建交付包</button>
+        <div class="actions">
+          <button type="button" :disabled="busy || !validTarget" @click="execute(async()=>{await check()})"><ClipboardCheck :size="15" aria-hidden="true" />检查交付条件</button>
+          <button class="primary" :disabled="busy || !validTarget">核对授权并创建交付包</button>
+        </div>
       </form>
+      <div v-if="lastCheck" class="delivery-readiness" :class="{ blocked:!lastCheck.ready }" aria-live="polite">
+        <div class="actions">
+          <component :is="lastCheck.ready ? ClipboardCheck : ShieldAlert" :size="18" aria-hidden="true" />
+          <strong>{{lastCheck.ready ? '质检与当前授权通过' : lastCheck.rights_checked ? '交付授权尚未通过' : '整剧质检尚未通过'}}</strong>
+        </div>
+        <p>{{lastCheck.passed_episodes}} / {{lastCheck.episode_count}} 集通过
+          <template v-if="lastCheck.rights_checked"> · {{lastCheck.authorized_sources}} / {{lastCheck.source_count}} 项素材授权覆盖目标范围</template></p>
+        <ul v-if="lastCheck.blockers.length">
+          <li v-for="blocker in lastCheck.blockers" :key="blocker.asset_id">
+            <span><strong>{{blocker.name}}</strong> · {{blocker.reason}}</span>
+            <button type="button" @click="reviewAsset(blocker.asset_id)">核对这项授权</button>
+          </li>
+        </ul>
+        <ul v-if="lastCheck.pending_episodes.length">
+          <li v-for="episode in lastCheck.pending_episodes" :key="episode.number">
+            <span>第 {{episode.number}} 集 · {{episodeLabels[episode.status] || episode.status}} · {{episode.issue_count}} 项发现</span>
+            <button type="button" @click="emit('openRun',lastCheck.run_id,episode.number)">查看分集质检</button>
+          </li>
+        </ul>
+        <p v-if="lastCheck.ready" class="hint">提交、打包、下载均会再次校验对应授权与输出。</p>
+      </div>
       <article v-for="item in packages" :key="item.id" class="task">
         <div><strong>{{ item.parameters.title }}</strong><p>{{ statusLabels[item.status] || item.status }} · {{ stage[item.stage] || item.stage }}</p>
           <p v-if="item.sha256" class="mono">SHA-256 {{ item.sha256 }}</p><p v-if="item.error" class="error">{{ item.error }}</p></div>
         <a v-if="item.status==='succeeded'" :href="`/api/delivery/packages/${item.id}/file`">下载已验证 ZIP</a>
+        <button v-if="item.status==='succeeded'" type="button" class="handoff-button" @click="emit('openOperations',item.id)">打开人工发行 <ArrowRight :size="14" aria-hidden="true" /></button>
       </article>
     </section>
   </div>
@@ -184,4 +267,14 @@ onUnmounted(()=>clearInterval(timer))
 .form-grid { margin:14px 0 }
 .record,.pages { margin:14px 0 }
 .library fieldset label { margin:7px 0 }
+.package-panel,.rights-panel { scroll-margin-top:calc(var(--topbar-height) + 12px) }
+.package-panel h2,.handoff-button,.package-panel button svg { vertical-align:middle }
+.package-panel h2,.handoff-button { display:flex; align-items:center; gap:8px }
+.package-panel h2 svg { color:var(--accent) }
+.linked-run,.delivery-readiness { padding:12px; border:1px solid #36615e; border-radius:8px; background:#122730; overflow-wrap:anywhere }
+.delivery-readiness { color:var(--positive); margin-bottom:13px }
+.delivery-readiness.blocked { border-color:#76564a; background:#2b2528; color:var(--warning) }
+.delivery-readiness p { margin:7px 0 0; color:var(--ink-secondary) }
+.delivery-readiness ul { padding-left:0; margin:10px 0 0; list-style:none }
+.delivery-readiness li { display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center; padding:7px 0; border-top:1px solid var(--line-soft) }
 </style>

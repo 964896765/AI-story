@@ -10,5 +10,5 @@ const { version, pending, error } = useVersionLink('timeline', ['timeline'])
   <p v-if="pending" class="empty">正在读取固定时间轴…</p>
   <TimelineStudio v-else :project-id="workbench.projectId" :assets="workbench.assets" :initial-version="version?.version_id"
     :initial-clip="version ? query('clip') || '' : ''" :can-return="!!(version && query('run'))"
-    @return-to-production="go('production', { run: query('run') })" />
+    @return-to-production="go('production', { run: query('run'), episode: query('episode') || undefined })" />
 </template>

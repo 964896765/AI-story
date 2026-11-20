@@ -192,6 +192,18 @@ def run(run_id:str,db=Depends(session)):
     return public(db,require(db,ProductionRun,run_id))
 
 
+def project_run(db, project_id: str, run_id: str):
+    batch = db.get(ProductionRun, run_id)
+    if batch is None or batch.project_id != project_id:
+        raise HTTPException(404, '当前项目中没有此生产批次')
+    return batch
+
+
+@router.get('/projects/{project_id}/runs/{run_id}')
+def scoped_run(project_id: str, run_id: str, db=Depends(session)):
+    return public(db, project_run(db, project_id, run_id))
+
+
 @router.post('/runs/{run_id}/cancel')
 def cancel(run_id:str,db=Depends(session)):
     run = db.scalar(select(ProductionRun).where(ProductionRun.id==run_id).with_for_update())

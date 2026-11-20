@@ -2,6 +2,7 @@ from datetime import timedelta
 from hashlib import sha256
 from io import BytesIO
 import json
+from uuid import uuid4
 from zipfile import ZipFile
 
 import pytest
@@ -52,7 +53,18 @@ def test_real_delivery_rights_gates_and_verified_archive(delivery_fixture):
     assert made.status_code==201,made.text
     run=made.json()['id']
     package_route=f'/api/delivery/projects/{project}/packages'
+    readiness_route=f'/api/delivery/projects/{project}/runs/{run}/readiness'
     body={'run_id':run,'title':'灯塔交付包','platform':'local-test','region':'CN','idempotency_key':'delivery'}
+    target={'platform':'local-test','region':'CN'}
+    pending=client.get(readiness_route,params=target)
+    assert pending.status_code==200,pending.text
+    assert pending.json()['pending_episodes']==[{'number':1,'status':'processing','issue_count':0}]
+    assert not pending.json()['ready'] and not pending.json()['rights_checked']
+    assert client.get(path+'/'+run).json()['id']==run
+    foreign=f'/api/production/projects/{uuid4()}/runs/{run}'
+    assert client.get(foreign).status_code==404
+    assert client.get(readiness_route.replace(project,str(uuid4())),params=target).status_code==404
+    assert client.get(readiness_route,params={**target,'platform':'invalid slug'}).status_code==422
     assert client.post(package_route,json=body).status_code==409
     assert worker.run_once() and worker.run_once()
     assert client.get('/api/production/runs/'+run).json()['status']=='passed'
@@ -61,6 +73,11 @@ def test_real_delivery_rights_gates_and_verified_archive(delivery_fixture):
         response=client.post(package_route,json=body)
         assert response.status_code==409,response.text
         assert reason in response.json()['detail']['assets'][0]['reason']
+        report=client.get(readiness_route,params=target).json()
+        assert report['rights_checked'] and not report['ready']
+        assert report['blockers']==response.json()['detail']['assets']
+        assert report['source_count']==1 and report['authorized_sources']==0
+        assert client.get(package_route).json()==[]
 
     blocked('待核验')
     rights=f"/api/library/assets/{asset['id']}/rights"
@@ -74,9 +91,14 @@ def test_real_delivery_rights_gates_and_verified_archive(delivery_fixture):
     blocked('平台或地域')
     allowed=client.post(rights,json={**grant,'idempotency_key':'approved'})
     assert allowed.status_code==201,allowed.text
+    ready=client.get(readiness_route,params=target).json()
+    assert ready['ready'] and ready['authorized_sources']==1 and len(ready['authorization_revision'])==64
+    assert client.get(package_route).json()==[]
     created=client.post(package_route,json=body)
     assert created.status_code==201,created.text
     package=created.json()
+    assert client.get(package_route+'/'+package['id']).json()['id']==package['id']
+    assert client.get(package_route.replace(project,str(uuid4()))+'/'+package['id']).status_code==404
     assert client.post(package_route,json=body).json()['id']==package['id']
     assert worker.run_once()
     result=task(package['id'])
@@ -94,4 +116,8 @@ def test_real_delivery_rights_gates_and_verified_archive(delivery_fixture):
             assert sha256(archive.read(entry['path'])).hexdigest()==entry['sha256']
         assert json.loads(archive.read('rights.json'))[0]['right_id']==allowed.json()['id']
     assert client.post(rights,json={**grant,'status':'revoked','idempotency_key':'revoke'}).status_code==201
+    assert not client.get(readiness_route,params=target).json()['ready']
+    assert client.get(url).status_code==409
+    assert client.post(rights,json={**grant,'idempotency_key':'approve-again'}).status_code==201
+    assert client.get(readiness_route,params=target).json()['authorization_revision']!=ready['authorization_revision']
     assert client.get(url).status_code==409

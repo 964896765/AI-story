@@ -8,7 +8,9 @@ const { workbench, query, go } = useWorkspace()
 <template>
   <div class="production-desk">
   <ProductionStudio :project-id="workbench.projectId" :initial-run="query('run') || ''"
-    @inspect-timeline="(version, run, clip) => go('timeline', { timeline: version, run, clip })" />
+    :initial-episode="query('episode')"
+    @inspect-timeline="(version, run, episode, clip) => go('timeline', { timeline: version, run, episode: String(episode), clip })"
+    @open-delivery="run => go('library', { run })" />
   <QueuePanel :project-id="workbench.projectId" />
   </div>
   <TaskList />

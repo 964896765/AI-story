@@ -49,11 +49,22 @@ def overview(project_id: str, db=Depends(session)):
     batch = db.scalar(select(ProductionRun).where(ProductionRun.project_id == project.id)
                       .order_by(ProductionRun.created_at.desc(), ProductionRun.id).limit(1))
     batch_view = None
+    delivery_view = None
     if batch:
         result = production_summary(db, batch)
         batch_view = {key: result[key] for key in ('id', 'status', 'passed', 'episode_count')}
         batch_view['reviews'] = sum(episode['status'] == 'needs_review' for episode in result['episodes'])
         batch_view['rework'] = sum(episode['status'] == 'needs_rework' for episode in result['episodes'])
+        batch_view['attention_episodes'] = [
+            {'number': episode['number'], 'status': episode['status'], 'issue_count': episode['issue_count']}
+            for episode in result['episodes'] if episode['status'] in ('needs_review', 'needs_rework')
+        ][:8]
+        task = db.scalar(select(Task).where(Task.project_id == project.id, Task.kind == 'delivery',
+                         Task.parameters['run_id'].as_string() == batch.id).order_by(
+                             Task.created_at.desc(), Task.id).limit(1))
+        if task:
+            delivery_view = {'id': task.id, 'run_id': batch.id, 'status': task.status,
+                             'title': task.parameters.get('title')}
 
     budgets = db.scalars(select(ModelBudget).where(ModelBudget.project_id == project.id, ModelBudget.mode == 'live')
                          .order_by(ModelBudget.currency)).all()
@@ -61,6 +72,7 @@ def overview(project_id: str, db=Depends(session)):
     return {'asset_count': asset_count, 'cover': dict(cover) if cover else None, 'task_counts': task_counts,
             'story_counts': story_counts, 'render_count': render_count, 'delivery_count': delivery_count, 'recent_renders': outputs,
             'draft_review_count': draft_count, 'draft_reviews': draft_reviews, 'latest_run': batch_view,
+            'latest_delivery': delivery_view,
             'costs': [{'currency': item['currency'], 'amount_micros': item['amounts_micros']['booked_api'],
                        'unknown': item['unknown_model_charges']} for item in accounts],
             'live_authorized': live_gate(), 'live_budgets': [{'currency': row.currency,
