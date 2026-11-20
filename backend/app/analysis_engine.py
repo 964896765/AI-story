@@ -374,7 +374,8 @@ def subtitles(commands, source, info, options):
         cues = read_cues(path)
         tracks.append({**entry, 'status': 'extracted', 'artifact': len(artifacts), 'cues': cues})
         artifacts.append(descriptor(commands, path, 'subtitles', **entry))
-    return {'artifacts': artifacts, 'subtitle_tracks': tracks}
+    duration_us = micros(info['format'].get('duration'))
+    return {'artifacts': artifacts, 'subtitle_tracks': tracks, 'duration_us': duration_us}
 
 
 def waveform(commands, source, info, options):

@@ -14,5 +14,6 @@ function reviewLink(asset: string, task: string, time: number, proxy: string) {
   <MediaAnalysis :project-id="workbench.projectId" :assets="workbench.assets" :initial-asset-id="query('asset') || ''"
     :initial-task-id="query('task')" :initial-time="query('at')" :initial-proxy="query('preview')"
     :review-link="reviewLink"
-    @assets-changed="workbench.loadAssets()" @adaptation="version => go('adaptation', { source: version.version_id })" />
+    @assets-changed="workbench.loadAssets()" @adaptation="version => go('adaptation', { source: version.version_id })"
+    @edit-video="(asset, subtitle) => go('video', { asset, subtitle })" />
 </template>

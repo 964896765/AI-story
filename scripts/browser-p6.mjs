@@ -150,7 +150,86 @@ try {
   assert(adopted.content.body.includes('验收字幕 52'))
   const source=await fetch(base+'/api/assets/'+asset.id+'/media')
   assert.equal(sha256(Buffer.from(await source.arrayBuffer())), asset.sha256)
+
+  await command('Page.navigate', {url:reviewLink})
+  await wait(()=>evaluate("!!document.querySelector('.subtitle-draft textarea')"), 'fixed subtitle review loads')
+  const revisionRoute = route+'/'+results.subtitles.task_id+'/subtitle-tracks/3/revisions'
+  await setField('字幕文本', '灯塔字幕校对版 CUT')
+  await setField('开始（毫秒）', 350)
+  await setField('结束（毫秒）', 1700)
+  await click('保存字幕素材')
+  await wait(()=>contains('字幕时间重叠'), 'overlapping subtitle blocked by API')
+  assert.deepEqual(await api(revisionRoute), [])
+  await setField('结束（毫秒）', 850)
+  await click('保存字幕素材')
+  await wait(()=>contains('字幕素材 v1 已保存'), 'first revision saved')
+  await click('保存字幕素材')
+  await wait(()=>contains('字幕素材 v1 已保存'), 'same subtitle revision reused')
+  const [firstSubtitle] = await api(revisionRoute)
+  assert.equal((await api(revisionRoute)).length, 1)
+  await setField('字幕文本', '灯塔字幕最终校对 CUT')
+  await click('保存字幕素材')
+  await wait(()=>contains('字幕素材 v2 已保存'), 'second immutable subtitle revision')
+  const [subtitle, prior] = await api(revisionRoute)
+  assert.equal(prior.id, firstSubtitle.id)
+  assert.equal(subtitle.media_info.derived_from_asset, asset.id)
+  assert.equal(subtitle.media_info.cue_count, 52)
+  await evaluate("document.querySelector('.subtitle-draft').scrollIntoView({block:'center'})")
+  await screenshot('v3-05-subtitle-review.png')
+
+  await command('Page.reload')
+  await wait(()=>evaluate("document.querySelectorAll('.subtitle-revisions article').length===2"), 'subtitle history survives reload')
+  const fileLink = await evaluate("document.querySelector('.subtitle-revisions article a').href")
+  assert(fileLink.endsWith('/api/assets/'+subtitle.id+'/media'))
+  const savedSrt = Buffer.from(await (await fetch(fileLink)).arrayBuffer())
+  assert.equal(sha256(savedSrt), subtitle.sha256)
+  assert(savedSrt.toString().includes('00:00:00,350 --> 00:00:00,850\n灯塔字幕最终校对 CUT'))
+  const previousSrt = await (await fetch(base+'/api/assets/'+prior.id+'/media')).text()
+  assert(previousSrt.includes('灯塔字幕校对版 CUT'))
+  assert(!previousSrt.includes('灯塔字幕最终校对 CUT'))
+  await evaluate("document.querySelector('.subtitle-revisions article button').click()")
+  await wait(()=>evaluate(`document.querySelector('.input-clips input:checked')?.value==='${asset.id}' &&
+    [...document.querySelectorAll('select')].some(field=>field.value==='${subtitle.id}')`), 'fixed source and revision carried into editor')
+  await click('提交 1 项剪辑任务')
+  await wait(()=>contains('已确认 1 项任务入队'), 'subtitle render queued by form')
+  let render
+  await wait(async ()=>{
+    render=(await api(projectPath+'/tasks')).find(task=>task.kind==='render')
+    if (render?.status==='failed') throw new Error(render.error)
+    return render?.status === 'succeeded'
+  }, 'Worker encoded verified hard subtitles')
+  assert.equal(render.input_snapshot.subtitle.id, subtitle.id)
+  assert.equal(render.input_snapshot.subtitle.sha256, subtitle.sha256)
+  const exportUrl = base+'/api/tasks/'+render.id+'/output'
+  const exportResponse = await fetch(exportUrl)
+  assert.equal(exportResponse.status, 200)
+  const outputBytes = Buffer.from(await exportResponse.arrayBuffer())
+  const outputPath = join(qaRoot,'v3-05-reviewed-subtitles.mp4')
+  await writeFile(outputPath,outputBytes)
+  const probe = JSON.parse(execFileSync('ffprobe',['-v','error','-show_streams','-show_format','-of','json',outputPath],
+    {encoding:'utf8',timeout:20000}))
+  assert.equal(probe.streams.find(stream=>stream.codec_type==='video')?.codec_name,'h264')
+  assert(!probe.streams.some(stream=>stream.codec_type==='subtitle'))
+  assert(Math.abs(Number(probe.format.duration)-2)<0.15)
+  const frame = seconds => execFileSync('ffmpeg',['-v','error','-ss',seconds,'-i',outputPath,'-frames:v','1',
+    '-vf','crop=320:75:0:165,format=gray','-threads','1','-f','rawvideo','pipe:1'],{timeout:20000})
+  const before = frame('0.16'), during = frame('0.55'), after = frame('0.95')
+  assert.equal(during.length, 320*75)
+  const brightPixels = pixels => pixels.filter(value=>value>100).length
+  assert.equal(brightPixels(before),0)
+  assert(brightPixels(during)>40)
+  assert.equal(brightPixels(after),0)
+  const unmodifiedSource = await fetch(base+'/api/assets/'+asset.id+'/media')
+  assert.equal(sha256(Buffer.from(await unmodifiedSource.arrayBuffer())), asset.sha256)
   assert.deepEqual(errors,[])
+  await writeFile(join(evidenceDir,'v3-05-subtitle-browser.json'),JSON.stringify({
+    checked_at:new Date().toISOString(),browser:'Installed Chrome headless',subtitle_versions:[prior.version,subtitle.version],
+    overlapping_cues_blocked:true,identical_save_reuses_version:true,history_reloaded:true,
+    source_original_sha256_verified:true,selected_subtitle_sha256:subtitle.sha256,
+    worker_render:render.id,video_sha256:sha256(outputBytes),video_duration_seconds:Number(probe.format.duration),
+    bright_pixels_before_during_after:[brightPixels(before),brightPixels(during),brightPixels(after)],
+    real_paid_calls:0,js_errors:errors,
+  },null,2)+'\n')
   await writeFile(join(evidenceDir,'p6-browser-acceptance.json'),JSON.stringify({
     checked_at:new Date().toISOString(),browser:'Installed Chrome headless',operations:Object.keys(results),
     streams:results.inspect.media.streams.length,split_files:results.split.artifacts.length,
@@ -166,7 +245,7 @@ try {
     immutable_review_revision:revision.id, fixed_script_version:adopted.version_id,
     source_hash_verified:true, paid_model_calls:0, js_errors:errors,
   },null,2)+'\n')
-  console.log('P6 browser: eight local FFmpeg steps, seekable proxy, immutable review and P5 handoff passed.')
+  console.log('P6 browser: eight local FFmpeg steps, P5 handoff, subtitle revisions and verified hard-subtitle render passed.')
 } catch (error) {
   console.error(await evaluate('document.body.innerText.slice(-6000)'))
   throw error

@@ -1,0 +1,73 @@
+{
+  "checked_at": "2026-11-20T19:37:00.888Z",
+  "browser": "Installed Chrome headless",
+  "subtitle_versions": [
+    1,
+    2
+  ],
+  "overlapping_cues_blocked": true,
+  "identical_save_reuses_version": true,
+  "history_reloaded": true,
+  "source_original_sha256_verified": true,
+  "selected_subtitle_sha256": "5762f1078a1f9e98759bf4bdde3c13b548125b6e3cf2f8eed3abb3f233f84ca0",
+  "worker_render": "b482b979-7a84-409e-a84b-0daf0a8a2c98",
+  "video_sha256": "ba040ec7e7c41cfae626e2766f6ac4b5e035119eb3caccd22008dd3966b1fbc9",
+  "video_duration_seconds": 2,
+  "bright_pixels_before_during_after": [
+    0,
+    422,
+    0
+  ],
+  "real_paid_calls": 0,
+  "js_errors": [],
+  "production_regression": [
+    {
+      "flow": "v3-01",
+      "checked_at": "2026-11-20T19:36:31.695Z"
+    },
+    {
+      "flow": "p5",
+      "checked_at": "2026-11-20T19:36:39.299Z"
+    },
+    {
+      "flow": "p6",
+      "checked_at": "2026-11-20T19:37:00.892Z"
+    },
+    {
+      "flow": "p6-ocr",
+      "checked_at": "2026-11-20T19:37:10.117Z"
+    },
+    {
+      "flow": "p7",
+      "checked_at": "2026-11-20T19:37:13.895Z"
+    },
+    {
+      "flow": "p8",
+      "checked_at": "2026-11-20T19:37:20.133Z"
+    },
+    {
+      "flow": "p9",
+      "checked_at": "2026-11-20T19:37:29.62Z"
+    },
+    {
+      "flow": "p10",
+      "checked_at": "2026-11-20T19:37:38.552Z"
+    },
+    {
+      "flow": "p11",
+      "checked_at": "2026-11-20T19:37:49.371Z"
+    },
+    {
+      "flow": "p12",
+      "checked_at": "2026-11-20T19:37:58.958Z"
+    },
+    {
+      "flow": "p13",
+      "checked_at": "2026-11-20T19:38:08.585Z"
+    },
+    {
+      "flow": "p14",
+      "checked_at": "2026-11-20T19:38:11.43Z"
+    }
+  ]
+}

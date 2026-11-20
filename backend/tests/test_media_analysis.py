@@ -105,6 +105,58 @@ def test_vfr_rotation_and_no_audio(analysis, tmp_path):
     assert (stream['width'],stream['height']) == (240,360)
 
 
+def test_reviewed_subtitles_are_validated_versioned_and_immutable(analysis, tmp_path):
+    client, project, original, upload, _, resolve, _, submit, complete = analysis
+    original_srt = tmp_path/'original.srt'
+    original_srt.write_text('1\n00:00:00,250 --> 00:00:00,900\n原始台词\n\n'
+                            '2\n00:00:01,000 --> 00:00:01,800\n请保留第二句\n', encoding='utf-8')
+    source = tmp_path/'with-subtitles.mkv'
+    ffmpeg('-i', resolve(original['storage_key']), '-i', original_srt, '-map', '0:v:0',
+           '-map', '1:s:0', '-c', 'copy', source)
+    asset = upload('验证样片.mkv', source.read_bytes())
+    job = submit([{'operation': 'subtitles'}], asset['id']).json()[0]
+    scoped = f"/api/analysis/projects/{project}/assets/{asset['id']}/tasks/{job['id']}"
+    route = scoped + '/subtitle-tracks/1/revisions'
+    assert client.post(route, json={}).status_code == 404
+    result = complete(job['id'])
+    assert result['subtitle_tracks'][0]['stream_index'] == 1
+    assert client.get(route).json() == []
+    assert client.get(route.replace(asset['id'], original['id'])).status_code == 404
+    assert client.post(route.replace(project, str(uuid4())), json={}).status_code == 404
+    assert client.get(scoped+'/subtitle-tracks/0/revisions').status_code == 404
+    cue = {'start_ms': 300, 'end_ms': 950, 'text': '校对台词\n第二行'}
+    for index, invalid in [('2', cue), ('0', cue | {'end_ms': 1400}), ('0', cue | {'end_ms': 2500}),
+                           ('0', cue | {'text': '第一行\n \n另一行'}), ('0', cue | {'start_ms': 0.5})]:
+        assert client.post(route, json={'edits': {index: invalid}}).status_code == 422
+    assert client.post(route, json={'edits': {'0': None, '1': None}}).status_code == 422
+    assert client.get(route).json() == []
+
+    saved = client.post(route, json={'edits': {'0': cue}})
+    assert saved.status_code == 201, saved.text
+    first = saved.json()
+    first_file = f"/api/assets/{first['id']}/media"
+    first_bytes = client.get(first_file).content
+    assert '00:00:00,300 --> 00:00:00,950\n校对台词\n第二行' in first_bytes.decode()
+    assert first['media_info']['derived_from_asset'] == asset['id']
+    assert first['media_info']['source_sha256'] == asset['sha256']
+    assert first['media_info']['analysis_task_id'] == job['id']
+    assert first['media_info']['cue_count'] == 2
+    assert first['authorization'] == asset['authorization']
+    assert hashlib.sha256(first_bytes).hexdigest() == first['sha256']
+    assert client.post(route, json={'edits': {'0': cue}}).json()['id'] == first['id']
+
+    second = client.post(route, json={'edits': {'0': cue, '1': None}}).json()
+    assert [row['id'] for row in client.get(route).json()] == [second['id'], first['id']]
+    assert (first['version'], second['version']) == (1, 2)
+    assert second['media_info']['cue_count'] == 1
+    assert client.get(first_file).content == first_bytes
+    assert resolve(asset['storage_key']).read_bytes() == source.read_bytes()
+    assert client.get(f"/api/analysis/tasks/{job['id']}/result").json() == result
+    assert client.get(f"/api/analysis/tasks/{job['id']}/artifacts/0").content.decode().find('原始台词') >= 0
+    resolve(first['storage_key']).write_bytes(b'changed')
+    assert client.post(route, json={'edits': {'0': cue}}).status_code == 409
+
+
 def test_cache_verification_and_additive_retry(analysis):
     client, _, _, _, task, resolve, factory, submit, complete=analysis
     job=submit([{'operation':'frames'}]).json()[0]

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[];storyVersionId?:string}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];storyVersionId?:string;initialAsset?:string;initialSubtitle?:string}>()
 const emit=defineEmits<{submitted:[]}>()
 const chosen=ref<string[]>([]),start=ref(0),end=ref<number|''>(''),duration=ref<number|''>('')
 const aspect=ref('original'),strategy=ref('pad'),resolution=ref('source'),format=ref('mp4'),crf=ref(18)
@@ -15,6 +15,18 @@ const selectedClip=computed(()=>videos.value.find(video=>video.id===chosen.value
 const storageKey=()=>`ai-story:p3:batch-keys:${props.projectId}`
 function newBatch(){keys.clear();sessionStorage.removeItem(storageKey());message.value='已开始新批次；下次提交将新建任务。'}
 watch(()=>props.projectId,()=>{chosen.value=[];audio.value='';subtitle.value='';keys.clear();message.value='';error.value='';try{for(const [signature,key] of Object.entries(JSON.parse(sessionStorage.getItem(storageKey())||'{}')))if(typeof key==='string')keys.set(signature,key)}catch{}},{immediate:true})
+let linkedVideo = props.initialAsset
+let linkedSubtitle = props.initialSubtitle
+watch([videos, subtitles], ([projectVideos, projectSubtitles]) => {
+  if (linkedVideo && projectVideos.some(item => item.id === linkedVideo)) {
+    chosen.value = [linkedVideo]
+    linkedVideo = undefined
+  }
+  if (linkedSubtitle && projectSubtitles.some(item => item.id === linkedSubtitle)) {
+    subtitle.value = linkedSubtitle
+    linkedSubtitle = undefined
+  }
+}, { immediate: true })
 async function submit(){
  busy.value=true;message.value='';error.value=''
  const project=props.projectId

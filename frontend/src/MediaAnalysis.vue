@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { AudioLines, Film, Link2, List, RefreshCw, ScanLine, Subtitles } from 'lucide-vue-next'
 import AnalysisReview from './AnalysisReview.vue'
 import AnalysisWaveform from './AnalysisWaveform.vue'
+import SubtitleDraft from './SubtitleDraft.vue'
 import {
   artifactUrl, clock, operationLabels, request, statusLabels,
   type Job, type Operation, type Result, type Version,
@@ -17,7 +18,7 @@ const props = defineProps<{
   initialProxy: string
   reviewLink: (asset:string, task:string, time:number, proxy:string) => string
 }>()
-const emit = defineEmits<{ adaptation: [version: Version]; assetsChanged: [] }>()
+const emit = defineEmits<{ adaptation: [version: Version]; assetsChanged: []; editVideo: [source: string, subtitle: string] }>()
 const supported = computed(() => props.assets.filter(asset => /\.(mp4|mov|mkv|webm|avi|wav|mp3)$/i.test(asset.name)))
 const assetId = ref('')
 const currentAsset = computed(() => supported.value.find(asset => asset.id === assetId.value))
@@ -25,7 +26,7 @@ const jobs = ref<Job[]>([]), results = ref<Result[]>([]), activeResult = ref<Res
 const selectedJob = ref(''), viewSource = ref(''), playing = ref<HTMLMediaElement | null>(null), playhead = ref(0)
 const playerDuration = ref(0), pendingSeek = ref<number|null>(null), playbackError = ref(false)
 const linkError = ref(''), previewTask = ref(''), pendingProxy = ref(''), pendingTask = ref('')
-const subtitleTrack = ref(0), subtitlePage = ref(0)
+const subtitleTrack = ref(0), subtitlePage = ref(0), draftCue = ref(0)
 const taskFilter = ref<'all'|'running'|'issues'>('all')
 const checked = ref<Operation[]>(['inspect'])
 const operations = Object.keys(operationLabels) as Operation[]
@@ -266,6 +267,7 @@ function seekCue(index: number) {
   const cue = currentTrack.value?.cues[index]
   if (!cue) return
   subtitlePage.value = Math.floor(index/pageSize)
+  draftCue.value = index
   seek(cue.start_us)
 }
 function initialPosition() {
@@ -276,8 +278,9 @@ function initialPosition() {
 watch(activeResult, result => {
   subtitleTrack.value = result?.subtitle_tracks?.[0]?.stream_index ?? 0
   subtitlePage.value = 0
+  draftCue.value = 0
 })
-watch(subtitleTrack, () => { subtitlePage.value = 0 })
+watch(subtitleTrack, () => { subtitlePage.value = 0; draftCue.value = 0 })
 watch(assetId, () => {
   scope++
   loading.value = false
@@ -493,14 +496,25 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <button type="button" :disabled="activeCue<0" @click="seekCue(activeCue)">定位当前字幕</button>
           </div>
           <p class="hint">{{ currentTrack.cues.length }} 条<span v-if="currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
-          <div class="cue-list">
-            <button v-for="(cue,index) in cuePage" :key="index" type="button" :aria-pressed="activeCue===subtitlePage*pageSize+index"
-              @click="seek(cue.start_us)"><time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span></button>
-          </div>
-          <div v-if="currentTrack.cues.length>pageSize" class="actions cue-pager">
-            <button type="button" :disabled="subtitlePage===0" @click="subtitlePage--">上一页</button>
-            <span>{{ subtitlePage+1 }} / {{ Math.ceil(currentTrack.cues.length/pageSize) }}</span>
-            <button type="button" :disabled="(subtitlePage+1)*pageSize>=currentTrack.cues.length" @click="subtitlePage++">下一页</button>
+          <div v-if="currentTrack.cues.length" class="subtitle-workspace">
+            <div class="cue-browser">
+              <div class="cue-list">
+                <button v-for="(cue,index) in cuePage" :key="subtitlePage*pageSize+index" type="button"
+                  :aria-pressed="draftCue===subtitlePage*pageSize+index" :data-playing="activeCue===subtitlePage*pageSize+index"
+                  @click="seekCue(subtitlePage*pageSize+index)">
+                  <time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span>
+                </button>
+              </div>
+              <div v-if="currentTrack.cues.length>pageSize" class="actions cue-pager">
+                <button type="button" :disabled="subtitlePage===0" @click="subtitlePage--">上一页</button>
+                <span>{{ subtitlePage+1 }} / {{ Math.ceil(currentTrack.cues.length/pageSize) }}</span>
+                <button type="button" :disabled="(subtitlePage+1)*pageSize>=currentTrack.cues.length" @click="subtitlePage++">下一页</button>
+              </div>
+            </div>
+            <SubtitleDraft :key="activeResult.task_id+':'+subtitleTrack" :project-id="projectId" :asset-id="assetId"
+              :task-id="activeResult.task_id" :stream="subtitleTrack" :cues="currentTrack.cues"
+              :cue-index="Math.min(draftCue,currentTrack.cues.length-1)"
+              @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',assetId,$event)" />
           </div>
         </div>
         <section v-if="activeResult.ocr" class="ocr-result">
@@ -566,10 +580,14 @@ onUnmounted(() => { scope++; clearInterval(timer) })
 .artifacts article p { font-size:12px; margin:6px 0 }
 .frame { width:100%; padding:5px }
 .frame img { display:block; width:100%; height:84px; object-fit:contain; margin-bottom:3px; background:#111216 }
+.subtitle-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(275px,.9fr); gap:12px; align-items:start }
+.cue-browser { min-width:0 }
 .cue-list { display:grid; gap:5px; max-height:360px; overflow:auto; }
 .cue-list button { display:flex; flex-wrap:wrap; text-align:left; gap:7px 14px; white-space:pre-wrap; overflow-wrap:anywhere }
 .cue-list time { color:var(--ink-muted); font:12px Consolas,monospace; padding-top:3px }
+.cue-list button[data-playing=true] time { color:var(--accent) }
 .cue-pager { margin-top:9px }
+@media (max-width:900px) { .subtitle-workspace { grid-template-columns:1fr } }
 .stream-list details { margin:12px 0 }
 [aria-pressed="true"] { border-color:var(--accent); background:var(--accent-surface); color:var(--ink) }
 @media(max-width:1120px) { .analysis-desk { grid-template-columns:1fr } }
