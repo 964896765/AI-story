@@ -1,0 +1,18 @@
+{
+  "before_revision": "0013",
+  "tested_revision": "0013",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "2017e07105a665849a6a643ef7fb2614869addb9fb323159a51a867c86a9e90a",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/v3-01-before-a55b62249dc4",
+  "production_database_modified": false
+}

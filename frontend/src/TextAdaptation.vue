@@ -18,14 +18,14 @@ interface Draft {
   dialogues: { speaker: string; text: string }[]
 }
 interface Call {
-  id: string; simulated: boolean; status: string; budget_status: string
+  id: string; project_id: string; simulated: boolean; status: string; budget_status: string
   source_version_id: string; accepted_version_id: string | null; draft_revision: number
   provider_snapshot: { label: string; currency: string }
   created_at: string; reserved_micros: number; calculated_cost_micros: number | null
   actual_cost_micros: number | null; draft: Draft | null; error_code: string | null
 }
 interface LedgerEntry { id: number; call_id: string | null; mode: string; currency: string; kind: string; amount_micros: number }
-const props = defineProps<{ projectId: string; source: Version | null }>()
+const props = defineProps<{ projectId: string; source: Version | null; initialCall?: string; settingsOnly?: boolean }>()
 const emit = defineEmits<{ sourcePicker: []; production: [version: Version] }>()
 
 const providers = ref<Provider[]>([]), budgets = ref<Budget[]>([]), calls = ref<Call[]>([])
@@ -158,7 +158,9 @@ async function submit() {
 }
 async function openCall(id: string) {
   await run(async () => {
-    show(await request<Call>(callPath(id)))
+    const call = await request<Call>(callPath(encodeURIComponent(id)))
+    if (call.project_id !== props.projectId) throw new Error('链接中的改编调用不属于当前项目。')
+    show(call)
     reviewNote.value = ''
     evidence.value = ''
     invoice.value = ''
@@ -244,7 +246,7 @@ async function cancelCall() {
   })
 }
 onMounted(() => {
-  void run(refresh)
+  void run(refresh).then(() => { if (props.projectId && props.initialCall) void openCall(props.initialCall) })
   timer = setInterval(() => {
     if (!busy.value) void refresh().catch(failure => { error.value = String(failure) })
   }, 3000)
@@ -257,8 +259,8 @@ onUnmounted(() => clearInterval(timer))
   <div v-else class="text-workspace">
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <div class="workspace">
-      <section>
+    <div :class="{ workspace: !settingsOnly }">
+      <section v-if="!settingsOnly">
         <h2>剧情改编</h2>
         <p v-if="source">固定原稿 {{ source.title }} · v{{ source.version }}</p>
         <p v-else class="hint">先从漫剧定制选取已保存的小说、剧本或分集版本。</p>

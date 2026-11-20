@@ -43,6 +43,11 @@ async function refresh(){
   try{
     runs.value=await request<Run[]>(path)
     const id=selectedId.value
+    if(id && !runs.value.some(batch=>batch.id===id) && active.value?.id!==id){
+      selectedId.value=''
+      error.value='链接中的批次不在当前项目的最近批次列表中。'
+      return
+    }
     if(id){
       const current=await request<Run>('/production/runs/'+id)
       if(id===selectedId.value)active.value=current

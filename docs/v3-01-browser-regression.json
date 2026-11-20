@@ -1,0 +1,715 @@
+{
+  "browser_paths": 12,
+  "api_operation_check": {
+    "previous": 104,
+    "current": 105,
+    "added": [
+      "GET /api/projects/{project_id}/overview"
+    ],
+    "missing": []
+  },
+  "phases": {
+    "v3-01": {
+      "browser": "Installed Chrome headless",
+      "checked_at": "2026-11-20T02:10:07.963Z",
+      "viewports": [
+        [
+          1920,
+          1080
+        ],
+        [
+          1440,
+          900
+        ],
+        [
+          1280,
+          800
+        ],
+        [
+          390,
+          844
+        ]
+      ],
+      "primary_navigation_entries": 12,
+      "legacy_pages_reached": [
+        "素材资产中心",
+        "智能解析",
+        "智能二创",
+        "剧情改编",
+        "漫剧定制",
+        "故事圣经",
+        "生成候选",
+        "配音与字幕",
+        "多轨时间轴",
+        "批量生产",
+        "质检与导出",
+        "资源与交付",
+        "运营中心",
+        "运行诊断"
+      ],
+      "additional_pages_reached": [
+        "角色与场景",
+        "分镜编辑",
+        "文本模型与预算"
+      ],
+      "actual_render_playback": true,
+      "deep_link_reload": true,
+      "project_isolation": true,
+      "actual_project_creation": true,
+      "asset_probe_auto_refresh": true,
+      "model_calls": {
+        "simulated": 1,
+        "live": 0,
+        "paid_micros": 0
+      },
+      "unknown_cost_count": 0,
+      "openapi_operations": [
+        {
+          "path": "/api/projects/{project_id}/story/entities",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/story/entities",
+          "method": "POST"
+        },
+        {
+          "path": "/api/story/entities/{entity_id}/versions",
+          "method": "GET"
+        },
+        {
+          "path": "/api/story/entities/{entity_id}/versions",
+          "method": "POST"
+        },
+        {
+          "path": "/api/story/versions/{version_id}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/story/entities/{entity_id}/compare",
+          "method": "GET"
+        },
+        {
+          "path": "/api/story/entities/{entity_id}/restore",
+          "method": "POST"
+        },
+        {
+          "path": "/api/projects/{project_id}/story/derive",
+          "method": "POST"
+        },
+        {
+          "path": "/api/model-capabilities",
+          "method": "GET"
+        },
+        {
+          "path": "/api/story/entities/{entity_id}/model-estimate",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/story/export",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/status",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/providers",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/providers",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/providers/{provider_id}/availability",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/providers/{provider_id}/quote",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/projects/{project_id}/budgets",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/projects/{project_id}/budgets",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/projects/{project_id}/calls",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/projects/{project_id}/calls",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/calls/{call_id}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/cancel",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/retry",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/settle",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/reconcile",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/billing",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/draft",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/drafts",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/review",
+          "method": "POST"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/drafts/{number}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/calls/{call_id}/compare",
+          "method": "GET"
+        },
+        {
+          "path": "/api/text/projects/{project_id}/ledger",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/projects/{project_id}/tasks",
+          "method": "POST"
+        },
+        {
+          "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/tasks/{task_id}/result",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/tasks/{task_id}/artifacts/{number}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/tasks/{task_id}/logs/{attempt}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/capabilities",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/assets/{asset_id}/revisions",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/assets/{asset_id}/revisions",
+          "method": "POST"
+        },
+        {
+          "path": "/api/analysis/revisions/{revision_id}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/analysis/revisions/{revision_id}/adopt",
+          "method": "POST"
+        },
+        {
+          "path": "/api/series/versions/{version_id}/continuity",
+          "method": "GET"
+        },
+        {
+          "path": "/api/series/entities/{entity_id}/approve",
+          "method": "POST"
+        },
+        {
+          "path": "/api/generation/capabilities",
+          "method": "GET"
+        },
+        {
+          "path": "/api/generation/projects/{project_id}/still-motion",
+          "method": "POST"
+        },
+        {
+          "path": "/api/generation/projects/{project_id}/candidates",
+          "method": "GET"
+        },
+        {
+          "path": "/api/generation/candidates/{task_id}/video",
+          "method": "GET"
+        },
+        {
+          "path": "/api/generation/candidates/{task_id}/select",
+          "method": "POST"
+        },
+        {
+          "path": "/api/voice/capabilities",
+          "method": "GET"
+        },
+        {
+          "path": "/api/voice/projects/{project_id}/tasks",
+          "method": "POST"
+        },
+        {
+          "path": "/api/voice/projects/{project_id}/tasks",
+          "method": "GET"
+        },
+        {
+          "path": "/api/voice/tasks/{task_id}/files/{name}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/voice/tasks/{task_id}/select",
+          "method": "POST"
+        },
+        {
+          "path": "/api/timeline/projects/{project_id}/renders",
+          "method": "POST"
+        },
+        {
+          "path": "/api/timeline/projects/{project_id}/renders",
+          "method": "GET"
+        },
+        {
+          "path": "/api/timeline/versions/{version_id}/manifest",
+          "method": "GET"
+        },
+        {
+          "path": "/api/timeline/projects/{project_id}/assemble",
+          "method": "POST"
+        },
+        {
+          "path": "/api/production/projects/{project_id}/runs",
+          "method": "POST"
+        },
+        {
+          "path": "/api/production/projects/{project_id}/runs",
+          "method": "GET"
+        },
+        {
+          "path": "/api/production/runs/{run_id}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/production/runs/{run_id}/cancel",
+          "method": "POST"
+        },
+        {
+          "path": "/api/production/runs/{run_id}/episodes/{number}/review",
+          "method": "POST"
+        },
+        {
+          "path": "/api/library/projects/{project_id}/works",
+          "method": "GET"
+        },
+        {
+          "path": "/api/library/projects/{project_id}/works",
+          "method": "POST"
+        },
+        {
+          "path": "/api/library/works/{work_id}",
+          "method": "GET"
+        },
+        {
+          "path": "/api/library/works/{work_id}/archive",
+          "method": "POST"
+        },
+        {
+          "path": "/api/library/assets/{asset_id}/rights",
+          "method": "GET"
+        },
+        {
+          "path": "/api/library/assets/{asset_id}/rights",
+          "method": "POST"
+        },
+        {
+          "path": "/api/delivery/projects/{project_id}/packages",
+          "method": "POST"
+        },
+        {
+          "path": "/api/delivery/projects/{project_id}/packages",
+          "method": "GET"
+        },
+        {
+          "path": "/api/delivery/packages/{task_id}/file",
+          "method": "GET"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/channels",
+          "method": "GET"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/channels",
+          "method": "POST"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/publications",
+          "method": "GET"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/publications",
+          "method": "POST"
+        },
+        {
+          "path": "/api/distribution/publications/{publication_id}/events",
+          "method": "POST"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/promotions",
+          "method": "GET"
+        },
+        {
+          "path": "/api/distribution/projects/{project_id}/promotions",
+          "method": "POST"
+        },
+        {
+          "path": "/api/distribution/promotions/{task_id}/file",
+          "method": "GET"
+        },
+        {
+          "path": "/api/finance/projects/{project_id}/settlements/import",
+          "method": "POST"
+        },
+        {
+          "path": "/api/finance/projects/{project_id}/settlements",
+          "method": "POST"
+        },
+        {
+          "path": "/api/finance/projects/{project_id}/settlements",
+          "method": "GET"
+        },
+        {
+          "path": "/api/finance/projects/{project_id}/summary",
+          "method": "GET"
+        },
+        {
+          "path": "/api/system/metrics",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/overview",
+          "method": "GET"
+        },
+        {
+          "path": "/api/health",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects",
+          "method": "POST"
+        },
+        {
+          "path": "/api/projects/{project_id}/assets",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/assets",
+          "method": "POST"
+        },
+        {
+          "path": "/api/assets/{asset_id}/media",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/tasks",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/tasks",
+          "method": "POST"
+        },
+        {
+          "path": "/api/tasks/{task_id}/retry",
+          "method": "POST"
+        },
+        {
+          "path": "/api/tasks/{task_id}/cancel",
+          "method": "POST"
+        },
+        {
+          "path": "/api/tasks/{task_id}/output",
+          "method": "GET"
+        },
+        {
+          "path": "/api/tasks/{task_id}/events",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/costs",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/batches",
+          "method": "POST"
+        },
+        {
+          "path": "/api/queue",
+          "method": "GET"
+        },
+        {
+          "path": "/api/queue",
+          "method": "POST"
+        },
+        {
+          "path": "/api/tasks/{task_id}/attempts",
+          "method": "GET"
+        },
+        {
+          "path": "/api/tasks/{task_id}/attempts/{number}/logs",
+          "method": "GET"
+        },
+        {
+          "path": "/api/projects/{project_id}/production-summary",
+          "method": "GET"
+        }
+      ],
+      "javascript_errors": []
+    },
+    "p5": {
+      "browser": "Installed Chrome headless",
+      "project_id": "7d8d46cf-34e3-4449-83e9-6e8ec67b9d9c",
+      "source_version_id": "4b995084-9688-4409-88bc-62bfff289e53",
+      "checked_at": "2026-11-20T02:10:16.516Z",
+      "real_external_model_requests": 0,
+      "real_spent_micros": 0,
+      "duplicate_submission_same_call": true,
+      "ffprobe_verified": true,
+      "draft_revision": 2,
+      "simulated": true,
+      "compiled_version": "3f513b09-676e-402c-91de-4b7540532173",
+      "keyboard_review": true,
+      "render_task": "9e9cf316-b9ab-4046-98be-9fd1736515be",
+      "status": "succeeded",
+      "range": 206,
+      "render_duration": 1,
+      "actual_cost_micros": null,
+      "javascript_errors": []
+    },
+    "p6": {
+      "checked_at": "2026-11-20T02:10:28.618Z",
+      "browser": "Installed Chrome headless",
+      "operations": [
+        "waveform",
+        "subtitles",
+        "scenes",
+        "frames",
+        "transcode",
+        "remux",
+        "split",
+        "inspect"
+      ],
+      "streams": 4,
+      "split_files": 4,
+      "proxy_metadata_decoded": true,
+      "range_status": 206,
+      "shots": [
+        {
+          "start_us": 0,
+          "end_us": 1000000,
+          "score": null,
+          "artifact": 0
+        },
+        {
+          "start_us": 1000000,
+          "end_us": 2000000,
+          "score": 1,
+          "artifact": 1
+        }
+      ],
+      "source_sha256": "e8226975de2949b0e2ea98d1c58f0756d4bf431d42fdf581432eb1cbc115a7e0",
+      "source_hash_verified": true,
+      "review_revision_id": "a9316c39-9c43-4ee1-9e46-5e0154adc5b5",
+      "reviewed_script_version": "adf4af7b-e915-487e-87fc-25ddd9cba122",
+      "keyboard_adoption": true,
+      "real_external_calls": 0,
+      "js_errors": []
+    },
+    "p6-ocr": {
+      "checked_at": "2026-11-20T02:10:35.048Z",
+      "browser": "Installed Chrome headless",
+      "engine": "windows-ocr-v1",
+      "language": "zh-Hans-CN",
+      "raw_text": "灯 塔 坐 标",
+      "reviewed_text": "灯塔坐标（已按画面校正）",
+      "sampled_time_us": 0,
+      "aligned_shots": [
+        1
+      ],
+      "verified_script_reference": true,
+      "original_sha256": "388b6c9d77473ed87ae0297eb403978b1a4241caf90b16389b1eef67d144bda8",
+      "paid_model_calls": 0,
+      "js_errors": []
+    },
+    "p7": {
+      "checked_at": "2026-11-20T02:10:38.792Z",
+      "browser": "Installed Chrome headless",
+      "approved_version_id": "2bdbfdfa-458c-4f3c-a1a3-010cfaa84735",
+      "episode_count": 3,
+      "stable_shot_ids": [
+        "paper-lamp-1",
+        "paper-lamp-2",
+        "paper-lamp-3"
+      ],
+      "test_plan_durations_ms": [
+        3000,
+        3000,
+        3000
+      ],
+      "keyboard_approval": true,
+      "real_external_calls": 0,
+      "javascript_errors": []
+    },
+    "p8": {
+      "checked_at": "2026-11-20T02:10:44.444Z",
+      "browser": "Installed Chrome headless",
+      "actual_candidates": 2,
+      "selected_asset_id": "26d603c6-2675-456a-8010-e66cb680a39a",
+      "selected_task_id": "13fe3eb0-fdec-4017-b3ed-e824bb7faebc",
+      "sha256": "983c491e7534f31e6fe2cde55cec01408a376f5478aae5b0b0f51e16a1246591",
+      "browser_metadata_decoded": true,
+      "range_status": 206,
+      "downstream_asset_selectable": true,
+      "external_cost_micros": 0,
+      "physical_resource": "local_cpu",
+      "keyboard_adoption": true,
+      "javascript_errors": []
+    },
+    "p9": {
+      "checked_at": "2026-11-20T02:10:50.221Z",
+      "browser": "Installed Chrome headless",
+      "native_voice_locales": [
+        "zh-CN",
+        "en-US"
+      ],
+      "verified_task": "cefdea91-e0d0-494f-9d00-e46552c5044b",
+      "storyboard_version_id": "25c9ccbf-853f-4dc7-8a6c-afeb16800e8a",
+      "cues": [
+        [
+          0,
+          2345
+        ],
+        [
+          5000,
+          6450
+        ]
+      ],
+      "wav_range_status": 206,
+      "adopted_assets": [
+        "晚安港口配音.srt",
+        "晚安港口配音.wav"
+      ],
+      "keyboard_adoption": true,
+      "external_cost_micros": 0,
+      "javascript_errors": []
+    },
+    "p10": {
+      "checked_at": "2026-11-20T02:10:57.827Z",
+      "browser": "Installed Chrome headless",
+      "real_render_task": "940e6c64-2028-415c-b6d4-50f246e47915",
+      "source_version_id": "08013dec-98f5-4bf6-a160-f37a7de1912c",
+      "restored_version_id": "3aaebc59-6142-41da-b942-434d5d7f1c44",
+      "restored_version": 3,
+      "output_sha256": "19af7587b281ef872ac42fcc164f36bc1e58d53c19f164cd513a8246304fb2c9",
+      "output_frames": 48,
+      "real_browser_preview": true,
+      "range_status": 206,
+      "snapped_position": 6,
+      "keyboard_nudge_verified": true,
+      "locked_track_verified": true,
+      "overlap_blocked": true,
+      "edited_caption_frames": [
+        10,
+        4,
+        36
+      ],
+      "edited_output_sha256": "57afbe1f8c9ed51c22188065f4f829fdcf163e13873e8dd5f9f4da24652b10f6",
+      "tracks": [
+        "main",
+        "dialogue",
+        "caption"
+      ],
+      "javascript_errors": []
+    },
+    "p11": {
+      "checked_at": "2026-11-20T02:11:08.199Z",
+      "browser": "Installed Chrome headless",
+      "initial_run": "c8d65b35-9e19-4529-9cb4-8c138748fb27",
+      "fixed_run": "7b60fd76-30c2-45d6-9385-458315399c0d",
+      "detection": [
+        "missing_audio",
+        "black_frames"
+      ],
+      "actual_rerender": true,
+      "verified_preview": true,
+      "linked_clip": "repair-me",
+      "black_range_ms": [
+        0,
+        625
+      ],
+      "returned_to_batch": true,
+      "fixed_timeline_version": "50200185-2fb6-4ccc-a2a6-325fdebba2e4",
+      "checks_after_fix": 0,
+      "javascript_errors": []
+    },
+    "p12": {
+      "checked_at": "2026-11-20T02:11:16.733Z",
+      "browser": "Installed Chrome headless",
+      "checked_run": "1f4c7ba0-b971-4e27-a452-d321c59a6f71",
+      "package_task": "d9ca3765-0b0f-4212-a12d-126903122042",
+      "missing_rights_blocked": true,
+      "recorded_rights_then_downloaded": true,
+      "zip_sha256_verified": true,
+      "zip_bytes": 146204,
+      "javascript_errors": []
+    },
+    "p13": {
+      "checked_at": "2026-11-20T02:11:26.287Z",
+      "browser": "Installed Chrome headless",
+      "distribution_mode": "manual_record",
+      "recorded_status": "planned",
+      "promo_zip_downloaded": true,
+      "settlements_inserted": 2,
+      "duplicates_skipped": 2,
+      "fixture_cash_micros": 30000000,
+      "fixture_ad_credits_micros": 100000000,
+      "actual_external_publishes": 0,
+      "javascript_errors": []
+    },
+    "p14": {
+      "checked_at": "2026-11-20T02:11:29.078Z",
+      "browser": "Installed Chrome headless",
+      "build": "Vite production preview",
+      "keyboard_navigation": true,
+      "first_load_script_count": 5,
+      "dynamic_diagnostics_script_loaded": true,
+      "logical_cpus": 16,
+      "db_revision": "0013",
+      "disk_free_bytes": 136774496256,
+      "cross_site_write_blocked": true,
+      "request_id_attached": true,
+      "javascript_errors": []
+    }
+  }
+}

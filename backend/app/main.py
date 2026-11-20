@@ -33,6 +33,7 @@ from .delivery import router as delivery_router
 from .distribution import router as distribution_router
 from .accounting import router as accounting_router
 from .system_console import router as system_router
+from .overview import router as overview_router
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
@@ -50,6 +51,7 @@ app.include_router(delivery_router)
 app.include_router(distribution_router)
 app.include_router(accounting_router)
 app.include_router(system_router)
+app.include_router(overview_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]

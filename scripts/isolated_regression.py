@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
 BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)))
+V3_PHASE = 'v3-01'
 
 def run_browser(env, path, phases):
     api_port, browser_port = 18006, 15179
@@ -35,7 +36,7 @@ def run_browser(env, path, phases):
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10','p11'}.intersection(phases) else []),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10','p11',V3_PHASE}.intersection(phases) else []),
                   "--host", "127.0.0.1", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:
@@ -54,8 +55,9 @@ def main():
     parser.add_argument("--junitxml", type=Path)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--browser-only", action="store_true")
-    parser.add_argument("--browser-phase", choices=BROWSER_PHASES, default="p5")
+    parser.add_argument("--browser-phase", choices=(*BROWSER_PHASES,V3_PHASE), default="p5")
     parser.add_argument("--all-browsers", action="store_true", help="Run P5–P14 flows against the built frontend")
+    parser.add_argument("--v3-browsers", action="store_true", help="Run the V3 overview followed by the eleven V2 flows")
     parser.add_argument("--browser-evidence", type=Path, default=ROOT / "data" / "tmp")
     parser.add_argument("--test-file", help="Optional pytest path or node ID relative to backend")
     args = parser.parse_args()
@@ -86,13 +88,14 @@ def main():
             options = ("--junitxml", str(args.junitxml.resolve())) if args.junitxml else ()
             if not args.browser_only:
                 run("pytest", "-q", *options, *([args.test_file] if args.test_file else []))
-            if args.browser or args.browser_only or args.all_browsers:
+            if args.browser or args.browser_only or args.all_browsers or args.v3_browsers:
                 (ROOT / "data" / "tmp").mkdir(parents=True, exist_ok=True)
                 evidence = args.browser_evidence.resolve()
                 evidence.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(prefix="browser-qa-", dir=ROOT / "data" / "tmp", ignore_cleanup_errors=True) as folder:
                     run_browser({**env, "STORAGE_ROOT": folder, "AI_STORY_QA_ROOT": folder,
                                  "AI_STORY_QA_EVIDENCE": str(evidence)}, Path(folder),
+                                (V3_PHASE,*BROWSER_PHASES) if args.v3_browsers else
                                 BROWSER_PHASES if args.all_browsers else (args.browser_phase,))
         finally:
             connection.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(db_name)))

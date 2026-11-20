@@ -1,0 +1,21 @@
+{
+  "checked_at": "2026-11-20T02:11:07.2772249Z",
+  "url": "http://127.0.0.1:15173",
+  "database_revision": "0013",
+  "projects": 7,
+  "assets": 13,
+  "overview_projects_checked": 7,
+  "online_workers": 1,
+  "web_http": 200,
+  "direct_route_http": 200,
+  "frontend_bundle": "/assets/index-C7nETC30.js",
+  "existing_api_operations": 104,
+  "total_api_operations": 105,
+  "added": [
+    "GET /api/projects/{project_id}/overview"
+  ],
+  "missing": [],
+  "live_authorized": false,
+  "live_budget_micros": 0,
+  "frontend_bundle_http": 200
+}

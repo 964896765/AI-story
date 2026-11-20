@@ -4,12 +4,13 @@ import ShotDetails, { type Shot } from './ShotDetails.vue'
 type Kind='novel'|'script'|'character'|'scene'|'relationship'|'episode'|'storyboard'|'generation_plan'
 interface Entry {id:string;project_id:string;kind:Kind;current_version:number;version:number;version_id:string;title:string;content:Record<string,any>;content_hash:string;note:string;provenance:Record<string,unknown>}
 interface Relation {from_character_version_id:string;to_character_version_id:string;description:string}
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialKind?:Kind}>()
 const emit=defineEmits<{assetsChanged:[];production:[version:Entry];adaptation:[version:Entry]}>()
 const kinds:Record<Kind,string>={novel:'小说',script:'剧本',character:'角色',scene:'场景',relationship:'人物关系',episode:'分集',storyboard:'分镜',generation_plan:'模型输入计划'}
 function defaults(kind:Kind='novel'){return {kind,title:'',text:'',authorization:'',source_asset_id:null as string|null,description:'',appearance:'',personality:'',voice_description:'',voice_id:'',reference_audio_asset_id:null as string|null,reference_asset_ids:[] as string[],location:'',time_of_day:'',body:'',summary:'',source_version_id:null as string|null,character_version_ids:[] as string[],scene_version_ids:[] as string[],number:1,shots:[] as Shot[],relationships:[] as Relation[],capability:'text',prompt:'',input_version_ids:[] as string[],note:''}}
-const form=reactive(defaults()),items=ref<Entry[]>([]),history=ref<Entry[]>([]),selected=ref<Entry|null>(null),pinned=ref<Record<string,Entry>>({})
-const filter=ref<Kind>('novel'),busy=ref(false),error=ref(''),message=ref(''),cache=ref(''),estimate=ref(''),unitChars=ref(800),total=ref(0),offset=ref(0)
+const startingKind=props.initialKind || 'novel'
+const form=reactive(defaults(startingKind)),items=ref<Entry[]>([]),history=ref<Entry[]>([]),selected=ref<Entry|null>(null),pinned=ref<Record<string,Entry>>({})
+const filter=ref<Kind>(startingKind),busy=ref(false),error=ref(''),message=ref(''),cache=ref(''),estimate=ref(''),unitChars=ref(800),total=ref(0),offset=ref(0)
 const diffLeft=ref(1),diffText=ref('')
 const requestKey=ref(crypto.randomUUID()),currentProject=ref(props.projectId),deriveKeys=new Map<string,string>()
 let restoring=false,initialized=false,cacheTimer:ReturnType<typeof setTimeout>|undefined
@@ -21,7 +22,8 @@ const audioAssets=computed(()=>props.assets.filter(a=>/\.(wav|mp3)$/i.test(a.nam
 const label=(i:Entry)=>`${i.title} · v${i.version}${i.version<i.current_version?'（历史）':''}`
 async function api<T=any>(path:string,options:RequestInit={}):Promise<T>{const response=await fetch('/api'+path,options);const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data}
 function post(path:string,body:unknown){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
-function persist(){if(restoring||!currentProject.value)return;try{sessionStorage.setItem(`ai-story:creative-draft:${currentProject.value}`,JSON.stringify({form:{...form},selected:selected.value,requestKey:requestKey.value}));cache.value='当前浏览器草稿已缓存；保存后才写入数据库'}catch{cache.value='浏览器草稿缓存不可用，请及时保存到数据库'}}
+const draftKey=(project:string)=>`ai-story:creative-draft:${project}${startingKind==='novel'?'':`:${startingKind}`}`
+function persist(){if(restoring||!currentProject.value)return;try{sessionStorage.setItem(draftKey(currentProject.value),JSON.stringify({form:{...form},selected:selected.value,requestKey:requestKey.value}));cache.value='当前浏览器草稿已缓存；保存后才写入数据库'}catch{cache.value='浏览器草稿缓存不可用，请及时保存到数据库'}}
 watch(form,()=>{if(restoring)return;clearTimeout(cacheTimer);cacheTimer=setTimeout(persist,300)},{deep:true})
 async function run(fn:()=>Promise<void>){busy.value=true;error.value='';try{await fn()}catch(e){error.value=String(e)}finally{busy.value=false}}
 async function refresh(){if(!props.projectId){items.value=[];return}const data=await api<{items:Entry[];total:number}>(`/projects/${props.projectId}/story/entities?offset=${offset.value}&limit=200`);for(const entry of items.value)pinned.value[entry.version_id]=entry;items.value=data.items;total.value=data.total}
@@ -45,7 +47,7 @@ function addRelation(){form.relationships.push({from_character_version_id:'',to_
 async function compare(){if(!selected.value)return;await run(async()=>{const result=await api(`/story/entities/${selected.value!.id}/compare?left=${diffLeft.value}&right=${selected.value!.version}`);diffText.value=(result.truncated?'仅显示前262144字符\n':'')+(result.diff||'两个版本的标题与内容相同')})}
 async function moreHistory(){if(!selected.value)return;await run(async()=>{const result=await api<Entry[]>(`/story/entities/${selected.value!.id}/versions?offset=${history.value.length}&limit=100`);history.value=[...new Map([...history.value,...result].map(v=>[v.version_id,v])).values()]})}
 async function readEstimate(){if(!selected.value)return;await run(async()=>{const result=await api(`/story/entities/${selected.value!.id}/model-estimate?version=${selected.value!.version}`);estimate.value=`未执行模型调用；费用未知：${result.reason}`})}
-async function enterProject(project:string){clearTimeout(cacheTimer);if(initialized)persist();restoring=true;currentProject.value=project;items.value=[];history.value=[];pinned.value={};selected.value=null;offset.value=0;Object.assign(form,defaults());requestKey.value=crypto.randomUUID();try{const saved=JSON.parse(sessionStorage.getItem(`ai-story:creative-draft:${project}`)||'null');if(saved){Object.assign(form,saved.form);selected.value=saved.selected;requestKey.value=saved.requestKey;filter.value=form.kind;cache.value='已恢复浏览器草稿；数据库可能已有新版本，保存时会检查冲突'}}catch{cache.value='草稿恢复失败，可从数据库历史重新打开'}restoring=false;initialized=true;await refresh();if(selected.value){await loadPins(selected.value);history.value=await api(`/story/entities/${selected.value.id}/versions`)}}
+async function enterProject(project:string){clearTimeout(cacheTimer);if(initialized)persist();restoring=true;currentProject.value=project;items.value=[];history.value=[];pinned.value={};selected.value=null;offset.value=0;filter.value=startingKind;Object.assign(form,defaults(startingKind));requestKey.value=crypto.randomUUID();try{const saved=JSON.parse(sessionStorage.getItem(draftKey(project))||'null');if(saved){Object.assign(form,saved.form);selected.value=saved.selected;requestKey.value=saved.requestKey;filter.value=form.kind;cache.value='已恢复浏览器草稿；数据库可能已有新版本，保存时会检查冲突'}}catch{cache.value='草稿恢复失败，可从数据库历史重新打开'}restoring=false;initialized=true;await refresh();if(selected.value){await loadPins(selected.value);history.value=await api(`/story/entities/${selected.value.id}/versions`)}}
 watch(()=>props.projectId,project=>{void run(()=>enterProject(project))})
 onMounted(()=>{void run(()=>enterProject(props.projectId))})
 onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
@@ -55,7 +57,7 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
  <p v-if="!projectId" class="empty">先选择或创建项目，再建立创作资产。</p>
  <div v-else class="story-studio">
   <div class="actions"><h2>创作资产与版本</h2><button :disabled="busy" @click="run(refresh)">刷新资产库</button><a :href="`/api/projects/${projectId}/story/export`">导出创作包 JSON</a></div>
-  <p class="hint">小说、剧本、角色、场景和分镜均保存独立版本。规则整理保留或拆分原文；AI 改写、图像视频生成和配音尚未启用。</p>
+  <p class="hint">小说、剧本、角色、场景和分镜均保存独立版本。规则整理保留或拆分原文。</p>
   <p v-if="error" class="error" role="alert">{{error}}</p><p v-if="message" role="status">{{message}}</p>
   <div class="story-layout">
    <section class="story-library"><label>资产类型<select v-model="filter"><option v-for="(label,key) in kinds" :key="key" :value="key">{{label}}</option></select></label><button :disabled="busy" @click="fresh(filter)">新建{{kinds[filter]}}</button><p v-if="!items.some(i=>i.kind===filter)" class="hint">此页暂无{{kinds[filter]}}。</p><button v-for="item in items.filter(i=>i.kind===filter)" :key="item.id" :class="['story-item',{active:selected?.id===item.id}]" :disabled="busy" @click="run(()=>load(item))"><strong>{{item.title}}</strong><span>v{{item.version}} · {{kinds[item.kind]}}</span></button><p class="hint">共 {{total}} 项，当前第 {{Math.floor(offset/200)+1}} 页</p><div class="actions"><button :disabled="busy||offset===0" @click="offset-=200;run(refresh)">上一页</button><button :disabled="busy||offset+200>=total" @click="offset+=200;run(refresh)">下一页</button></div></section>

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { navigateWorkspace } from './chrome-qa.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const phase=process.env.QA_PHASE||'p2'
 if(!['p2','p3'].includes(phase))throw new Error('Unsupported QA phase')
@@ -21,13 +22,13 @@ const pending=new Map(),errors=[]
 socket.onmessage=event=>{const data=JSON.parse(event.data);if(data.id){const p=pending.get(data.id);if(p){pending.delete(data.id);data.error?p.reject(new Error(JSON.stringify(data.error))):p.resolve(data.result)}}else if(data.method==='Runtime.exceptionThrown')errors.push(data.params.exceptionDetails)}
 function command(method,params={}){return new Promise((resolve,reject)=>{const call=++id;pending.set(call,{resolve,reject});socket.send(JSON.stringify({id:call,method,params}))})}
 async function evaluate(expression){const data=await command('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(data.exceptionDetails)throw new Error(JSON.stringify(data.exceptionDetails));return data.result.value}
-async function nav(label){await evaluate(`Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent==='${label}').click()`);await delay(300)}
+async function nav(label){if(!await navigateWorkspace(evaluate,label))await evaluate(`Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent==='${label}').click()`);await delay(300)}
 async function screenshot(name){const result=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await writeFile(path.join(root,'docs',name),Buffer.from(result.data,'base64'))}
 try{
  await command('Runtime.enable');await command('Page.enable');await command('Page.navigate',{url:'http://127.0.0.1:15173/'})
  await wait(()=>evaluate("document.body.innerText.includes('服务就绪')"),'App health')
  const evidence=JSON.parse(await readFile(path.join(root,`docs/${phase}-http-acceptance.json`),'utf8'))
- await evaluate(`(()=>{const select=document.querySelector('.projectbar select');select.value='${evidence.project_id}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+ await evaluate(`(()=>{const select=document.querySelector('.project-picker select, .projectbar select');select.value='${evidence.project_id}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
  await delay(500);await nav('智能二创')
  await wait(()=>evaluate("!!document.querySelector('input[type=checkbox]')"),'Imported video selection')
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='开始新批次').click()")
@@ -61,12 +62,12 @@ try{
  }
  await nav('质检与导出')
  await evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='预览成片').click()")
- await wait(()=>evaluate("document.querySelector('.output-preview video')?.videoWidth>0"),'Output video metadata')
- await evaluate("(async()=>{const video=document.querySelector('.output-preview video');video.muted=true;await video.play()})()")
- await wait(()=>evaluate("document.querySelector('.output-preview video')?.readyState>=2"),'Decoded video frame')
+ await wait(()=>evaluate("document.querySelector('.output-modal-video, .output-preview video')?.videoWidth>0"),'Output video metadata')
+ await evaluate("(async()=>{const video=document.querySelector('.output-modal-video, .output-preview video');video.muted=true;await video.play()})()")
+ await wait(()=>evaluate("document.querySelector('.output-modal-video, .output-preview video')?.readyState>=2"),'Decoded video frame')
  await delay(400)
- await evaluate("document.querySelector('.output-preview video').pause()")
- const dimensions=await evaluate("({width:document.querySelector('.output-preview video').videoWidth,height:document.querySelector('.output-preview video').videoHeight})")
+ await evaluate("document.querySelector('.output-modal-video, .output-preview video').pause()")
+ const dimensions=await evaluate("(()=>{const video=document.querySelector('.output-modal-video, .output-preview video');return {width:video.videoWidth,height:video.videoHeight}})()")
  await screenshot(`${phase}-output.png`)
  if(errors.length)throw new Error(JSON.stringify(errors))
  await writeFile(path.join(root,`docs/${phase}-browser-acceptance.json`),JSON.stringify({browser:'Installed Chrome headless via CDP',task_id:rendered.id,status:rendered.status,dimensions,javascript_errors:errors},null,2))

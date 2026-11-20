@@ -1,0 +1,81 @@
+* { box-sizing: border-box }
+html { background: var(--surface-base) }
+body { margin: 0; color: var(--ink); font: 14px/1.5 var(--font-ui); font-synthesis: none }
+button, select, input, textarea { font: inherit }
+button:not(.n-button), select, input:not([type=checkbox]), textarea {
+  color: var(--ink-secondary); background: var(--surface-input); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 11px; transition: background var(--motion), border-color var(--motion);
+}
+button { cursor: pointer }
+button:disabled { opacity: .5; cursor: not-allowed }
+button:not(.n-button):enabled:hover { background: #33323f; border-color: #635a84 }
+button:not(.n-button).primary { color: #181322; background: #baaaf8; border-color: #baaaf8; font-weight: 650 }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px }
+textarea { min-height: 68px; width: 100%; resize: vertical }
+label { display: grid; gap: 6px; color: var(--ink-muted); font-size: 13px }
+h1, h2, h3, p { margin-top: 0 }
+h2 { font-size: 17px; font-weight: 650 }
+h3 { font-size: 15px }
+p { overflow-wrap: anywhere }
+a { color: var(--accent) }
+a:hover { color: #d0c5ff }
+summary { cursor: pointer }
+img, video { max-width: 100% }
+.skip-link { position: fixed; left: 12px; top: 8px; z-index: 20; padding: 10px; background: var(--surface-panel); transform: translateY(-150%) }
+.skip-link:focus { transform: none }
+.app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr) }
+.app-sidebar { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; padding: 24px 13px 14px; background: var(--surface-sidebar); border-right: 1px solid var(--line-soft); z-index: 5 }
+.app-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 24px; color: var(--ink); text-decoration: none }
+.brand-mark { width: 37px; height: 37px; flex: 0 0 37px; display: grid; place-items: center; color: #d9ceff; background: #443361; border: 1px solid #664f89; border-radius: 10px }
+.app-brand strong { display: block; font-size: 21px; font-weight: 680; line-height: 1.1; letter-spacing: -.4px }
+.app-brand small { display: block; margin-top: 5px; color: var(--ink-muted); font-size: 10px; letter-spacing: 1px }
+.app-sidebar nav { display: grid; align-content: start; gap: 14px; overflow: auto; padding: 2px 0 8px }
+.nav-group { display: grid; gap: 3px }
+.nav-group > p { color: var(--ink-muted); font-size: 11px; margin: 0 9px 4px; letter-spacing: .7px }
+.nav-item { display: flex; min-height: 36px; align-items: center; gap: 10px; position: relative; padding: 6px 9px; border: 1px solid transparent; border-radius: 8px; color: var(--ink-secondary); text-decoration: none; transition: var(--motion) }
+.nav-item:hover { background: var(--surface-raised); color: var(--ink) }
+.nav-item.nav-active { background: var(--accent-surface); color: #dfd6ff; border-color: #453b5d }
+.nav-item svg { flex: 0 0 auto }
+.nav-arrow { margin-left: auto }
+.sidebar-footer { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 13px 8px 1px; color: var(--ink-muted); border-top: 1px solid var(--line-soft); font-size: 11px }
+.app-version { margin-left: auto; color: #c7bfd6; font-variant-numeric: tabular-nums }
+.app-topbar { position: sticky; top: 0; min-height: var(--topbar-height); display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px var(--space-page); z-index: 3; background: var(--surface-base); border-bottom: 1px solid var(--line-soft) }
+.breadcrumb,.topbar-controls,.connection { display: flex; align-items: center; gap: 11px }
+.breadcrumb { color: var(--ink-secondary); white-space: nowrap }
+.breadcrumb a { color: var(--ink-muted); text-decoration: none }
+.breadcrumb svg { color: var(--ink-muted); flex-shrink: 0 }
+.project-picker { display: flex; align-items: center; gap: 8px; position: relative; white-space: nowrap; color: var(--ink-muted) }
+.project-picker select { width: clamp(132px, 16vw, 232px); background: var(--surface-panel); appearance: none; padding: 7px 29px 7px 10px; text-overflow: ellipsis }
+.project-picker svg { pointer-events: none; position: absolute; right: 9px }
+.connection { color: var(--ink-muted); font-size: 12px; gap: 6px; white-space: nowrap }
+.connection-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex: 0 0 7px }
+.connection-dot.ready { background: var(--positive) }
+.connection-dot.unavailable { background: var(--negative) }
+button.icon-button { display: inline-grid; place-items: center; padding: 0; width: 34px; height: 34px; background: var(--surface-panel); flex-shrink: 0 }
+.workspace-main { width: 100%; max-width: 1840px; margin: 0 auto; padding: 25px var(--space-page) 48px; min-width: 0 }
+.workspace-main:focus { outline: none }
+.workspace-title { font-size: 27px; margin: 0 0 18px; letter-spacing: -.45px }
+.route-tabs { display: flex; flex-wrap: wrap; gap: 21px; margin-bottom: 19px; border-bottom: 1px solid var(--line-soft) }
+.route-tabs a { padding: 1px 1px 10px; border-bottom: 2px solid transparent; color: var(--ink-muted); text-decoration: none }
+.route-tabs .router-link-exact-active { color: var(--accent); border-color: var(--accent) }
+button.mobile-menu, button.mobile-close, button.mobile-scrim { display: none }
+@media(max-width: 950px) {
+  :root { --sidebar-width: 186px; --space-page: 20px }
+  .topbar-controls { gap: 7px }
+  .project-picker select { width: 150px }
+}
+@media(max-width: 720px) {
+  :root { --space-page: 15px; --topbar-height: 58px }
+  .app-shell { display: block }
+  .app-sidebar { position: fixed; inset: 0 auto 0 0; width: 224px; transform: translateX(-100%); visibility: hidden }
+  .app-sidebar.is-open { transform: none; visibility: visible; transition: transform var(--motion) }
+  button.mobile-menu, button.mobile-close { display: inline-grid }
+  button.mobile-close { position: absolute; top: 11px; right: 7px; width: 27px; height: 27px }
+  button.mobile-scrim { display: block; position: fixed; inset: 0; z-index: 4; border: 0; border-radius: 0; background: #101014b8 }
+  .breadcrumb { gap: 6px }
+  .breadcrumb > a, .breadcrumb > svg, .connection { display: none }
+  .project-picker { font-size: 0; gap: 0 }
+  .project-picker select { font-size: 12px; width: clamp(95px, 30vw, 152px) }
+  .workspace-main { padding-top: 19px }
+}
+@media(prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; scroll-behavior: auto !important } }

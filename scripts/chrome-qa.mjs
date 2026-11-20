@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 
 export const qaRoot = process.env.AI_STORY_QA_ROOT
-if (!qaRoot) throw new Error('Run through scripts/isolated_regression.py --browser-only')
 export const base = 'http://127.0.0.1:' + process.env.AI_STORY_QA_WEB_PORT
 export const evidenceDir = process.env.AI_STORY_QA_EVIDENCE || qaRoot
 
@@ -25,7 +24,41 @@ export const post = (path, body) => api(path, {
   method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 })
 
+const workspaceTargets = {
+  '项目总览':['项目总览'], '素材资产中心':['项目与素材','assets'], '智能解析':['项目与素材','analysis'],
+  '漫剧定制':['剧本与创作','story'], '剧情改编':['剧本与创作','adaptation'], '角色与场景':['角色与场景'],
+  '分镜编辑':['分镜工作台','storyboard'], '故事圣经':['分镜工作台','bible'],
+  '生成候选':['AI 创作中心'], '配音与字幕':['配音与声音'], '多轨时间轴':['剪辑与时间轴','timeline'],
+  '智能二创':['剪辑与时间轴','video'], '批量生产':['批量生产'], '质检与导出':['质检与交付','quality'],
+  '资源与交付':['质检与交付','library'], '运营中心':['发行与运营'], '运行诊断':['模型与系统设置','system'],
+  '文本模型与预算':['模型与系统设置','models'],
+}
+
+export async function navigateWorkspace(evaluate, text) {
+  const target = workspaceTargets[text]
+  if (!target || !await evaluate("document.querySelector('nav a[data-workspace]')!==null")) return false
+  const [group,page] = target
+  const selector = JSON.stringify(`nav a[data-workspace="${group}"]`)
+  await wait(() => evaluate(`(() => {
+    const link=document.querySelector(${selector})
+    if (!link) return false
+    if (!link.classList.contains('nav-active')) link.click()
+    return true
+  })()`), 'workspace group: ' + group)
+  if (page) {
+    await wait(() => evaluate(`(() => {
+      const tab=document.querySelector('[data-page="${page}"]')
+      if (!tab) return false
+      if (tab.getAttribute('aria-current') !== 'page') tab.click()
+      return true
+    })()`), 'workspace page: ' + page)
+    await wait(() => evaluate(`document.querySelector('[data-page="${page}"]')?.getAttribute('aria-current') === 'page'`), 'route applied: ' + page)
+  }
+  return true
+}
+
 export async function openChrome(port) {
+  if (!qaRoot) throw new Error('Run through scripts/isolated_regression.py --browser-only')
   const cdp = 'http://127.0.0.1:' + port
   try { await fetch(cdp + '/json/version'); throw new Error('Chrome debug port in use') } catch(error) {
     if (error.message === 'Chrome debug port in use') throw error
@@ -53,6 +86,7 @@ export async function openChrome(port) {
   const lit = JSON.stringify
   const contains = text => evaluate('document.body.innerText.includes(' + lit(text) + ')')
   async function click(text) {
+    if (await navigateWorkspace(evaluate,text)) return
     await wait(() => evaluate(`(() => {
       const button = Array.from(document.querySelectorAll('button')).find(item => item.textContent.trim() === ${lit(text)} && !item.disabled)
       if (!button) return false

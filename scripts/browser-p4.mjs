@@ -3,6 +3,7 @@ import {spawn} from 'node:child_process'
 import {readFile,writeFile} from 'node:fs/promises'
 import path from 'node:path'
 import {fileURLToPath} from 'node:url'
+import {navigateWorkspace} from './chrome-qa.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),port=19224
 try{await fetch(`http://127.0.0.1:${port}/json/version`);throw new Error('QA port occupied')}catch(e){if(e.message==='QA port occupied')throw e}
 const browser=spawn('C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless=new','--disable-gpu',`--remote-debugging-port=${port}`,'--remote-debugging-address=127.0.0.1',`--user-data-dir=${path.join(root,'data/browser-p4')}`,'--window-size=1500,1100','--no-first-run','about:blank'],{windowsHide:true,stdio:'ignore'})
@@ -16,7 +17,7 @@ const pending=new Map(),errors=[];let nextId=0
 socket.onmessage=e=>{const data=JSON.parse(e.data);if(data.id){const call=pending.get(data.id);if(call){pending.delete(data.id);data.error?call.reject(new Error(JSON.stringify(data.error))):call.resolve(data.result)}}else if(data.method==='Runtime.exceptionThrown')errors.push(data.params.exceptionDetails)}
 function command(method,params={}){return new Promise((resolve,reject)=>{const id=++nextId;pending.set(id,{resolve,reject});socket.send(JSON.stringify({id,method,params}))})}
 async function evaluate(expression){const data=await command('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(data.exceptionDetails)throw new Error(JSON.stringify(data.exceptionDetails));return data.result.value}
-async function nav(label){await evaluate(`Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent==='${label}').click()`);await delay(250)}
+async function nav(label){if(!await navigateWorkspace(evaluate,label))await evaluate(`Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent==='${label}').click()`);await delay(250)}
 async function choose(kind,title){await evaluate(`(()=>{const select=document.querySelector('.story-library select');select.value='${kind}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);await delay(200);await evaluate(`Array.from(document.querySelectorAll('.story-item')).find(b=>b.textContent.includes(${JSON.stringify(title)})).click()`);await wait(()=>evaluate(`document.querySelector('.story-editor input')?.value===${JSON.stringify(title)}`),'Creative asset load');await delay(300)}
 async function field(label,value){await evaluate(`(()=>{const container=Array.from(document.querySelectorAll('.story-editor label')).find(l=>l.childNodes[0]?.textContent.trim()===${JSON.stringify(label)});const input=container.querySelector('input,textarea');input.value=${JSON.stringify(value)};input.dispatchEvent(new Event('input',{bubbles:true}))})()`)}
 async function screenshot(name){const result=await command('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});await writeFile(path.join(root,'docs',name),Buffer.from(result.data,'base64'))}
@@ -24,7 +25,7 @@ try{
  await command('Runtime.enable');await command('Page.enable');await command('Page.navigate',{url:'http://127.0.0.1:15173/'})
  await wait(()=>evaluate("document.body.innerText.includes('服务就绪')"),'App ready')
  const evidence=JSON.parse(await readFile(path.join(root,'docs/p4-http-acceptance.json'),'utf8'))
- await evaluate(`(()=>{const select=document.querySelector('.projectbar select');select.value='${evidence.project_id}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);await delay(400)
+ await evaluate(`(()=>{const select=document.querySelector('.project-picker select, .projectbar select');select.value='${evidence.project_id}';select.dispatchEvent(new Event('change',{bubbles:true}))})()`);await delay(400)
  await nav('漫剧定制');await wait(()=>evaluate("!!document.querySelector('.story-library select')"),'Creative studio')
  await choose('script','归城第一场')
  await field('剧本正文','浏览器真实编辑的剧本。\n\n这段内容经过人工编写，没有调用模型。')

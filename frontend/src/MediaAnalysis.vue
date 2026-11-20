@@ -145,7 +145,7 @@ watch(assetId, () => {
   if (assetId.value) void run(refresh)
 })
 watch(supported, assets => {
-  if (!assets.some(asset => asset.id === assetId.value)) assetId.value = assets[0]?.id || ''
+  if (!assets.some(asset => asset.id === assetId.value)) assetId.value = assets.find(asset => asset.id === props.initialAssetId)?.id || assets[0]?.id || ''
 }, {immediate:true})
 onMounted(() => {
   void run(async () => {
