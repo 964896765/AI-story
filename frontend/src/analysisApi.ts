@@ -15,6 +15,7 @@ export interface Stream {
   index: number; codec_type: string; codec_name: string; language?: string; width?: number; height?: number
   rotation?: number; display_size?: number[]; time_base?: string; source_start_us?: number
   avg_frame_rate?: string; color_transfer?: string
+  disposition?: { attached_pic?: number }
 }
 export interface Result {
   task_id: string; operation: Operation; algorithm: string; reused_from_task_id?: string

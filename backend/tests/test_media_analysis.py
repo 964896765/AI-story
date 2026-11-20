@@ -138,6 +138,17 @@ def test_bad_input_and_queued_cancel(analysis):
     assert worker.run_once() is False and task(queued['id'])['status']=='cancelled'
 
 
+def test_analysis_task_deep_link_is_scoped_to_asset_and_project(analysis):
+    client, project, asset, _, _, _, _, submit, complete = analysis
+    job = submit([{'operation':'inspect'}]).json()[0]
+    path = f'/api/analysis/projects/{project}/assets/{asset["id"]}/tasks/{job["id"]}'
+    assert client.get(path).json()['status'] == 'queued'
+    complete(job['id'])
+    assert client.get(path).json()['status'] == 'succeeded'
+    assert client.get(path.replace(project, str(uuid4()))).status_code == 404
+    assert client.get(path.replace(asset['id'], str(uuid4()))).status_code == 404
+
+
 def test_review_snapshot_alignment_source_isolation_and_adoption(analysis):
     client, project, asset, upload, _, _, _, submit, complete = analysis
     jobs = submit([{'operation':'inspect'},{'operation':'scenes'}]).json()

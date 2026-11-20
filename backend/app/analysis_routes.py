@@ -78,6 +78,15 @@ def result(task_id: str, db=Depends(session)):
     return analysis_public(require(db, MediaAnalysis, task_id))
 
 
+@router.get('/projects/{project_id}/assets/{asset_id}/tasks/{task_id}')
+def get_task(project_id: str, asset_id: str, task_id: str, db=Depends(session)):
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.kind == 'analyze',
+                                        Task.project_id == project_id, Task.asset_id == asset_id))
+    if task is None:
+        raise HTTPException(404, '该素材下找不到此解析任务')
+    return task
+
+
 @router.get('/tasks/{task_id}/artifacts/{number}')
 def artifact(task_id: str, number: int, download: bool = False, db=Depends(session)):
     entries = require(db, MediaAnalysis, task_id).payload['artifacts']

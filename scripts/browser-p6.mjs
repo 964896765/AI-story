@@ -12,7 +12,12 @@ const scriptText = '灯塔熄灭前，请在船边等我。'
 const project = await post('/projects', { name: 'P6 自有样本浏览器验收' })
 const projectPath = '/projects/' + project.id
 const localSrt = join(qaRoot, 'self-authored.srt')
-await writeFile(localSrt, '1\n00:00:00,500 --> 00:00:01,500\n'+scriptText+'\n')
+const srtTime = ms => `00:00:01,${String(ms).padStart(3,'0')}`
+const moreCues = Array.from({length:51}, (_, index) => {
+  const start = 510 + index*9
+  return `${index+2}\n${srtTime(start)} --> ${srtTime(start+7)}\n验收字幕 ${index+2}\n`
+})
+await writeFile(localSrt, ['1\n00:00:00,500 --> 00:00:01,500\n'+scriptText+'\n',...moreCues].join('\n'))
 const localVideo = join(qaRoot, 'p6-owned.mkv')
 execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','color=black:s=320x240:r=24:d=1',
   '-f','lavfi','-i','color=white:s=320x240:r=24:d=1',
@@ -36,12 +41,15 @@ try {
   await setField('当前项目',project.id)
   await click('智能解析')
   await wait(() => contains('灯塔样本.mkv'), 'material selected')
-  await evaluate(`(async () => {
-    for (const box of document.querySelectorAll('.analysis-choices input:not([value="ocr"])')) {
+  for (const operation of ['inspect','split','remux','transcode','frames','scenes','subtitles','waveform']) {
+    await wait(() => evaluate(`(() => {
+      const box = document.querySelector('.analysis-choices input[value=${operation}]')
+      if (!box || box.disabled) return false
       if (!box.checked) box.click()
-      await Promise.resolve()
-    }
-  })()`)
+      return box.checked
+    })()`), 'selected step: '+operation)
+  }
+  assert.equal(await evaluate("document.querySelectorAll('.analysis-choices input:checked').length"),8)
   await click('提交本地解析')
   await wait(() => contains('已提交 8 项解析任务'), 'all operations submitted')
   let tasks
@@ -69,6 +77,56 @@ try {
   await evaluate("Array.from(document.querySelectorAll('h2')).find(n=>n.textContent==='代理预览').scrollIntoView({block:'center'})")
   await screenshot('p6-analysis.png')
 
+  await evaluate(`(async () => {
+    for (const box of document.querySelectorAll('.analysis-choices input:checked:not([value="waveform"])')) {
+      box.click()
+      await Promise.resolve()
+    }
+    document.querySelector('.analysis-options details').open = true
+  })()`)
+  await setField('波形与静音源流','2')
+  await click('提交本地解析')
+  let selectedWave
+  await wait(async () => {
+    const rows=await api(route)
+    selectedWave=rows.find(row=>row.parameters.operation==='waveform' && row.parameters.stream===2)
+    if (selectedWave?.status==='failed') throw new Error(selectedWave.error)
+    return selectedWave?.status==='succeeded'
+  },'worker analyzed second audio stream')
+  const wave=await api('/analysis/tasks/'+selectedWave.id+'/result')
+  assert.equal(wave.stream_index,2)
+  await wait(() => evaluate("document.querySelector('.analysis-result')?.textContent.includes('流 2') && !!document.querySelector('canvas')"),'second track waveform displayed')
+  await click('字幕')
+  await wait(() => contains('52 条'),'all cues reachable')
+  await click('下一页')
+  await wait(() => contains('验收字幕 52'),'last cue paginated')
+  await click('上一页')
+  await evaluate("document.querySelector('.cue-list button').click()")
+  await wait(() => evaluate("document.querySelector('.active-caption')?.textContent.includes('灯塔熄灭前')"),'preview shows selected cue')
+  await evaluate("document.querySelectorAll('.shot-marker')[1].click()")
+  await wait(() => evaluate("Math.abs(document.querySelector('video').currentTime - 1) < .03"),'shot marker seeks real proxy')
+  await screenshot('v3-02-analysis-desktop.png')
+  const reviewLink = await evaluate("document.querySelector('.analysis-link').href")
+  const link = new URL(reviewLink)
+  assert.equal(link.searchParams.get('asset'),asset.id)
+  assert.equal(link.searchParams.get('task'),results.subtitles.task_id)
+  assert.equal(link.searchParams.get('at'),'1000000')
+  assert.equal(link.searchParams.get('preview'),results.transcode.task_id)
+  const [replacement] = await post('/analysis'+projectPath+'/tasks',{
+    asset_id:asset.id, steps:[{operation:'transcode',crf:24}], idempotency_key:'browser-replacement-proxy',
+  })
+  await wait(async () => (await api(route+'/'+replacement.id)).status === 'succeeded','newer proxy completed')
+  await command('Page.navigate',{url:reviewLink})
+  await wait(() => evaluate(`(() => {
+    const player=document.querySelector('video')
+    return document.querySelector('.cue-list') && player?.readyState>=1 &&
+      player.currentSrc.endsWith(${JSON.stringify(url)}) && Math.abs(player.currentTime-1)<.03
+  })()`),'deep link restores selected task and exact older proxy')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  await wait(() => evaluate("window.innerWidth===390 && document.documentElement.scrollWidth<=390"),'mobile fits viewport')
+  await screenshot('v3-02-analysis-mobile.png')
+  await command('Emulation.clearDeviceMetricsOverride')
+
   await wait(() => contains('快照证据 · 8 项'), 'browser synchronized all eight results')
   await setField('审核说明','浏览器验收，人工确认镜头时间和字幕归属。')
   await click('保存审核快照')
@@ -88,7 +146,8 @@ try {
   const entities=await api(projectPath+'/story/entities')
   const adopted=await api('/story/versions/'+entities.items.find(item=>item.kind==='script').version_id)
   assert.equal(adopted.provenance.analysis_revision_id,revision.id)
-  assert.equal(adopted.content.body,scriptText)
+  assert.equal(adopted.content.body.split('\n')[0],scriptText)
+  assert(adopted.content.body.includes('验收字幕 52'))
   const source=await fetch(base+'/api/assets/'+asset.id+'/media')
   assert.equal(sha256(Buffer.from(await source.arrayBuffer())), asset.sha256)
   assert.deepEqual(errors,[])
@@ -99,6 +158,13 @@ try {
     source_sha256:asset.sha256,source_hash_verified:true,review_revision_id:revision.id,
     reviewed_script_version:adopted.version_id,keyboard_adoption:true,real_external_calls:0,
     js_errors:errors,
+  },null,2)+'\n')
+  await writeFile(join(evidenceDir,'v3-02-analysis-browser.json'),JSON.stringify({
+    checked_at:new Date().toISOString(), operation_count:Object.keys(results).length,
+    subtitle_cues:results.subtitles.subtitle_tracks[0].cues.length,
+    browser_seek_us:1000000, restored_proxy_from_link:true, mobile_width:390, selected_audio_stream:wave.stream_index,
+    immutable_review_revision:revision.id, fixed_script_version:adopted.version_id,
+    source_hash_verified:true, paid_model_calls:0, js_errors:errors,
   },null,2)+'\n')
   console.log('P6 browser: eight local FFmpeg steps, seekable proxy, immutable review and P5 handoff passed.')
 } catch (error) {

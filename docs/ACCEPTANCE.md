@@ -4,6 +4,8 @@
 
 ## 状态
 
+V3 第二阶段首批交付覆盖智能解析工作台的审片、选轨和固定位置链接。后端 123 项、生产构建 Chrome 12 条流程通过。 [验收与回滚](V3_02_ANALYSIS_ACCEPTANCE.md)
+
 P11 黑场质检定位、片段修正、返回原批次和重新渲染见 [片段返工验收](P11_CLIP_REWORK_ACCEPTANCE.md)。
 
 P10 同轨拖动、双边裁剪、吸附、键盘操作及新版本渲染见 [直接编辑验收](P10_FRAME_EDIT_ACCEPTANCE.md)。

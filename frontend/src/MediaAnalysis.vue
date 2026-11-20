@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { AudioLines, Film, Link2, List, RefreshCw, ScanLine, Subtitles } from 'lucide-vue-next'
 import AnalysisReview from './AnalysisReview.vue'
 import AnalysisWaveform from './AnalysisWaveform.vue'
 import {
@@ -7,13 +8,25 @@ import {
   type Job, type Operation, type Result, type Version,
 } from './analysisApi'
 
-const props = defineProps<{ projectId: string; assets: {id:string;name:string}[]; initialAssetId: string }>()
+const props = defineProps<{
+  projectId: string
+  assets: { id:string; name:string; size_bytes:number; authorization:string }[]
+  initialAssetId: string
+  initialTaskId: string
+  initialTime: string
+  initialProxy: string
+  reviewLink: (asset:string, task:string, time:number, proxy:string) => string
+}>()
 const emit = defineEmits<{ adaptation: [version: Version]; assetsChanged: [] }>()
 const supported = computed(() => props.assets.filter(asset => /\.(mp4|mov|mkv|webm|avi|wav|mp3)$/i.test(asset.name)))
-const assetId = ref(props.initialAssetId)
+const assetId = ref('')
 const currentAsset = computed(() => supported.value.find(asset => asset.id === assetId.value))
 const jobs = ref<Job[]>([]), results = ref<Result[]>([]), activeResult = ref<Result | null>(null)
 const selectedJob = ref(''), viewSource = ref(''), playing = ref<HTMLMediaElement | null>(null), playhead = ref(0)
+const playerDuration = ref(0), pendingSeek = ref<number|null>(null), playbackError = ref(false)
+const linkError = ref(''), previewTask = ref(''), pendingProxy = ref(''), pendingTask = ref('')
+const subtitleTrack = ref(0), subtitlePage = ref(0)
+const taskFilter = ref<'all'|'running'|'issues'>('all')
 const checked = ref<Operation[]>(['inspect'])
 const operations = Object.keys(operationLabels) as Operation[]
 const error = ref(''), notice = ref(''), busy = ref(false), loading = ref(false)
@@ -27,12 +40,49 @@ const options = reactive({
   scene_threshold:0.30, minimum_shot_seconds:0.30, silence_db:-40, silence_seconds:0.4,
   ocr_language:'', ocr_interval:2,
 })
+const streamsByStep = reactive<Partial<Record<Operation,number>>>({})
 const audioOnly = computed(() => /\.(wav|mp3)$/i.test(currentAsset.value?.name || ''))
 const queuePath = computed(() => `/analysis/projects/${props.projectId}/assets/${assetId.value}/tasks`)
 const sourceUrl = computed(() => viewSource.value || `/api/assets/${assetId.value}/media`)
 const keys = new Map<string,string>()
 const cache = new Map<string,Result>()
+let scope = 0
 let timer: ReturnType<typeof setInterval> | undefined
+
+const reviewTabs = [
+  { op:'scenes', icon:Film, label:'镜头' }, { op:'frames', icon:ScanLine, label:'关键帧' },
+  { op:'subtitles', icon:Subtitles, label:'字幕' }, { op:'waveform', icon:AudioLines, label:'波形' },
+  { op:'ocr', icon:ScanLine, label:'OCR' }, { op:'inspect', icon:List, label:'媒体流' },
+] as const
+const byOperation = computed(() => new Map(results.value.map(result => [result.operation,result])))
+const reviewResults = computed(() => {
+  const selected = activeResult.value
+  if (!selected || byOperation.value.get(selected.operation)?.task_id === selected.task_id) return results.value
+  return [...results.value.filter(result => result.operation !== selected.operation), selected]
+})
+const selectedRow = computed(() => jobs.value.find(job => job.id === selectedJob.value))
+const scenes = computed(() => activeResult.value?.operation === 'scenes' ? activeResult.value : byOperation.value.get('scenes'))
+const proxy = computed(() => activeResult.value?.operation === 'transcode' ? activeResult.value : byOperation.value.get('transcode'))
+const duration = computed(() => Math.max(playerDuration.value, scenes.value?.shots?.at(-1)?.end_us || 0))
+const captions = computed(() => activeResult.value?.operation === 'subtitles' ? activeResult.value.subtitle_tracks || [] : [])
+const currentTrack = computed(() => captions.value.find(track => track.stream_index === subtitleTrack.value))
+const activeCue = computed(() => currentTrack.value?.cues.findIndex(cue => cue.start_us <= playhead.value && playhead.value < cue.end_us) ?? -1)
+const pageSize = 50
+const cuePage = computed(() => currentTrack.value?.cues.slice(subtitlePage.value * pageSize, (subtitlePage.value + 1)*pageSize) || [])
+const visibleJobs = computed(() => jobs.value.filter(job => taskFilter.value === 'all' ||
+  (taskFilter.value === 'running' ? ['queued','running'].includes(job.status) : ['failed','cancelled'].includes(job.status))))
+const linkHref = computed(() => props.reviewLink(assetId.value,selectedJob.value,playhead.value,previewTask.value))
+const streamSelectors = computed(() => {
+  const media = byOperation.value.get('inspect')?.media?.streams || []
+  const types: Partial<Record<Operation,string[]>> = {
+    split:['video','audio','subtitle'], subtitles:['subtitle'], waveform:['audio'],
+    frames:['video'], scenes:['video'], transcode:['video'], ocr:['video'],
+  }
+  return checked.value.flatMap(op => {
+    const streams = media.filter(stream => types[op]?.includes(stream.codec_type) && !stream.disposition?.attached_pic)
+    return streams.length ? [{op,streams}] : []
+  })
+})
 
 async function loadResult(taskId: string) {
   const cached = cache.get(taskId)
@@ -43,24 +93,60 @@ async function loadResult(taskId: string) {
   return result
 }
 async function refresh() {
-  const id = assetId.value
-  if (!id || loading.value) return
+  if (!currentAsset.value || loading.value) return
+  const requestScope = scope
+  const path = queuePath.value
   loading.value = true
   try {
-    const list = await request<Job[]>(queuePath.value)
-    if (id !== assetId.value) return
+    const list = await request<Job[]>(path)
+    if (requestScope !== scope) return
+    const linkedTask = pendingTask.value || (selectedJob.value === props.initialTaskId ? selectedJob.value : '')
+    if (linkedTask && !list.some(job => job.id === linkedTask)) {
+      try {
+        const linked = await request<Job>(`${path}/${encodeURIComponent(linkedTask)}`)
+        if (requestScope !== scope) return
+        list.push(linked)
+      } catch (failure) {
+        if (requestScope !== scope) return
+        linkError.value = String(failure)
+        pendingTask.value = ''
+      }
+    }
+    if (pendingTask.value && list.some(job => job.id === pendingTask.value)) {
+      selectedJob.value = pendingTask.value
+      pendingTask.value = ''
+      linkError.value = ''
+    }
     jobs.value = list
     const latest = [...new Set(list.filter(job => job.status === 'succeeded').map(job => job.parameters.operation))]
       .map(op => list.find(job => job.parameters.operation === op && job.status === 'succeeded')!.id)
     const values = await Promise.all(latest.map(loadResult))
-    if (id !== assetId.value) return
+    if (requestScope !== scope) return
     results.value = values
     const selected = list.find(job => job.id === selectedJob.value)
     if (selected?.status === 'succeeded' && activeResult.value?.task_id !== selected.id) {
       const result = await loadResult(selected.id)
-      if (id === assetId.value && selectedJob.value === selected.id) activeResult.value = result
+      if (requestScope === scope && selectedJob.value === selected.id) activeResult.value = result
     }
-  } finally { loading.value = false }
+    if (pendingProxy.value) {
+      const id = pendingProxy.value
+      try {
+        const job = list.find(row => row.id === id) || await request<Job>(`${path}/${encodeURIComponent(id)}`)
+        if (job.parameters.operation !== 'transcode' || job.status !== 'succeeded') throw new Error('链接中的代理尚不可用')
+        const linkedProxy = await loadResult(job.id)
+        if (requestScope === scope && pendingProxy.value === id) previewProxy(linkedProxy)
+      } catch (failure) {
+        if (requestScope === scope) {
+          linkError.value = String(failure)
+          pendingProxy.value = ''
+        }
+      }
+    } else if (proxy.value?.artifacts[0] && playbackError.value && !viewSource.value) {
+      previewProxy()
+    }
+  } finally {
+    if (requestScope === scope) loading.value = false
+  }
 }
 async function run(action: () => Promise<void>) {
   busy.value = true
@@ -69,7 +155,8 @@ async function run(action: () => Promise<void>) {
   try { await action() } catch (failure) { error.value = String(failure) } finally { busy.value = false }
 }
 function payload(operation: Operation) {
-  const common = {operation}
+  const stream = streamsByStep[operation]
+  const common = {operation, ...(stream !== undefined ? {stream} : {})}
   if (operation === 'remux') return {...common, container:options.container}
   if (operation === 'transcode') {
     const {max_edge,crf,fps,sample_rate,channels} = options
@@ -117,6 +204,11 @@ async function openJob(job: Job) {
     if (selectedJob.value === job.id) activeResult.value = result
   })
 }
+async function showOperation(operation: Operation) {
+  const result = byOperation.value.get(operation)
+  const job = result && jobs.value.find(row => row.id === result.task_id)
+  if (job) await openJob(job)
+}
 async function showLogs(job: Job) {
   await run(async () => {
     const result = await request<{files:{name:string;tail:string}[]}>(`/analysis/tasks/${job.id}/logs/${job.attempt}`)
@@ -130,17 +222,82 @@ async function control(job: Job, action: 'retry'|'cancel') {
   })
 }
 function seek(time: number) {
-  playhead.value = time
-  if (playing.value && Number.isFinite(playing.value.duration)) playing.value.currentTime = time/1_000_000
+  const requested = Math.max(0,Math.round(time))
+  const media = playing.value
+  if (!media || !Number.isFinite(media.duration)) {
+    playhead.value = requested
+    pendingSeek.value = requested
+    return
+  }
+  pendingSeek.value = null
+  const clamped = Math.min(media.duration,requested/1_000_000)
+  media.currentTime = clamped
+  playhead.value = Math.round(clamped*1_000_000)
 }
+function metadata(event: Event) {
+  const media = event.target as HTMLMediaElement
+  if (media !== playing.value) return
+  playerDuration.value = Number.isFinite(media.duration) ? Math.round(media.duration*1_000_000) : 0
+  if (pendingSeek.value !== null) seek(pendingSeek.value)
+}
+function updatePlayhead(event: Event) {
+  const media = event.target as HTMLMediaElement
+  if (media === playing.value && pendingSeek.value === null) playhead.value = Math.round(media.currentTime*1_000_000)
+}
+function changeSource(url: string, task = '') {
+  if (viewSource.value === url) return
+  pendingSeek.value = playhead.value
+  playerDuration.value = 0
+  playbackError.value = false
+  previewTask.value = task
+  viewSource.value = url
+}
+function previewProxy(result = proxy.value) {
+  if (!result?.artifacts[0]) return
+  pendingProxy.value = ''
+  changeSource(artifactUrl(result.task_id,result.artifacts[0].id),result.task_id)
+}
+function mediaError() {
+  if (!viewSource.value && proxy.value && !pendingProxy.value) previewProxy()
+  else playbackError.value = true
+}
+function seekCue(index: number) {
+  if (index < 0) return
+  const cue = currentTrack.value?.cues[index]
+  if (!cue) return
+  subtitlePage.value = Math.floor(index/pageSize)
+  seek(cue.start_us)
+}
+function initialPosition() {
+  const raw = props.initialTime
+  const us = /^\d{1,12}$/.test(raw) ? Number(raw) : 0
+  return Number.isSafeInteger(us) ? us : 0
+}
+watch(activeResult, result => {
+  subtitleTrack.value = result?.subtitle_tracks?.[0]?.stream_index ?? 0
+  subtitlePage.value = 0
+})
+watch(subtitleTrack, () => { subtitlePage.value = 0 })
 watch(assetId, () => {
+  scope++
+  loading.value = false
   jobs.value = []
   results.value = []
   activeResult.value = null
   selectedJob.value = ''
   viewSource.value = ''
+  previewTask.value = ''
   logFiles.value = null
-  playhead.value = 0
+  const linked = assetId.value !== '' && assetId.value === props.initialAssetId
+  playhead.value = linked ? initialPosition() : 0
+  pendingSeek.value = linked ? playhead.value : null
+  pendingTask.value = linked ? props.initialTaskId : ''
+  pendingProxy.value = linked ? props.initialProxy : ''
+  playbackError.value = false
+  playerDuration.value = 0
+  taskFilter.value = 'all'
+  for (const operation of operations) delete streamsByStep[operation]
+  linkError.value = ''
   error.value = ''
   if (assetId.value) void run(refresh)
 })
@@ -156,22 +313,71 @@ onMounted(() => {
   })
   timer = setInterval(() => { if (!busy.value) void refresh().catch(failure => { error.value=String(failure) }) }, 3000)
 })
-onUnmounted(() => clearInterval(timer))
+onUnmounted(() => { scope++; clearInterval(timer) })
 </script>
 
 <template>
   <p v-if="!projectId" class="empty">选择项目以开始媒体解析。</p>
   <div v-else class="analysis-workspace">
     <p v-if="error" class="error" role="alert">{{ error }}</p>
+    <p v-if="linkError" class="error" role="alert">定位链接不可用。{{ linkError }}</p>
+    <p v-if="initialAssetId && assets.length && !supported.some(asset => asset.id === initialAssetId)"
+      class="error" role="alert">链接中的音视频素材在当前项目不可用。</p>
     <p v-if="notice" role="status">{{ notice }}</p>
     <p v-if="!supported.length" class="empty">先在素材资产中心导入音视频。</p>
     <template v-else>
-      <div class="workspace">
-        <section>
-          <h2>本地解析任务</h2>
-          <label>解析素材<select v-model="assetId" :disabled="busy">
-            <option v-for="asset in supported" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
-          </select></label>
+      <div class="analysis-source">
+        <label>解析素材<select v-model="assetId" :disabled="busy">
+          <option v-for="asset in supported" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
+        </select></label>
+        <p v-if="currentAsset" class="hint">{{ (currentAsset.size_bytes/1024**2).toFixed(2) }} MiB · {{ currentAsset.authorization }}</p>
+      </div>
+      <div class="analysis-desk">
+        <section class="analysis-viewer" aria-label="审片预览与时间轴">
+          <div class="analysis-panel-bar">
+            <h2>{{ viewSource ? '代理预览' : '原素材预览' }}</h2>
+            <div class="actions source-actions">
+              <button v-if="viewSource" type="button" @click="changeSource('')">返回原素材</button>
+              <button v-else-if="proxy" type="button" @click="previewProxy()">切换到代理</button>
+              <a class="analysis-link" :href="linkHref" target="_blank" rel="noopener">
+                <Link2 :size="15" aria-hidden="true" />定位链接
+              </a>
+            </div>
+          </div>
+          <div class="analysis-monitor" :class="{ 'audio-monitor':audioOnly }">
+            <audio v-if="audioOnly" :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata"
+              @loadedmetadata="metadata" @timeupdate="updatePlayhead" @error="mediaError"></audio>
+            <video v-else :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata"
+              @loadedmetadata="metadata" @timeupdate="updatePlayhead" @error="mediaError"></video>
+          </div>
+          <p v-if="playbackError" class="hint">浏览器无法播放当前文件。可运行 MP4 转码生成代理。</p>
+          <div class="time-readout">
+            <output aria-label="源时间">{{ clock(playhead) }}</output>
+            <span v-if="duration">{{ clock(duration) }}</span>
+          </div>
+          <input v-if="duration" class="source-seek" type="range" min="0" :max="duration" step="10000"
+            aria-label="定位源时间" :aria-valuetext="clock(playhead)" :value="Math.min(playhead,duration)"
+            @input="seek(Number(($event.target as HTMLInputElement).value))">
+          <div v-if="scenes?.shots?.length" class="shot-ruler" aria-label="镜头时间轴">
+            <button v-for="(shot,index) in scenes.shots" :key="shot.start_us" class="shot-marker"
+              type="button" :style="{ flexGrow:shot.end_us-shot.start_us }"
+              :aria-label="'镜头 '+(index+1)+' · '+clock(shot.start_us)"
+              :aria-pressed="shot.start_us<=playhead && playhead<shot.end_us"
+              :title="clock(shot.start_us)+' – '+clock(shot.end_us)" @click="seek(shot.start_us)">
+              {{ index+1 }}
+            </button>
+          </div>
+          <div class="analysis-tabs" aria-label="解析结果">
+            <button v-for="tab in reviewTabs" :key="tab.op" type="button" :aria-pressed="activeResult?.operation===tab.op"
+              :disabled="!byOperation.has(tab.op)" :title="tab.label" @click="showOperation(tab.op)">
+              <component :is="tab.icon" :size="15" aria-hidden="true" />{{ tab.label }}
+            </button>
+          </div>
+          <AnalysisWaveform v-if="activeResult?.operation === 'waveform'" :result="activeResult" :playhead="playhead" @seek="seek" />
+          <p v-if="currentTrack && activeCue>=0" class="active-caption">{{ currentTrack.cues[activeCue]?.text }}</p>
+        </section>
+        <section class="analysis-tools" aria-label="解析设置与任务">
+          <h2>本地处理</h2>
           <form class="analysis-options" @submit.prevent="submit">
             <fieldset>
               <legend>选择步骤</legend>
@@ -181,9 +387,15 @@ onUnmounted(() => clearInterval(timer))
                 </label>
               </span>
             </fieldset>
-            <details v-if="checked.some(op => !['inspect','split','subtitles'].includes(op))">
+            <details v-if="streamSelectors.length || checked.some(op => !['inspect','split','subtitles'].includes(op))">
               <summary>解析参数</summary>
               <div class="editor-grid">
+                <label v-for="{op,streams} in streamSelectors" :key="op">{{ operationLabels[op] }}源流<select v-model="streamsByStep[op]">
+                  <option :value="undefined">自动选择</option>
+                  <option v-for="stream in streams" :key="stream.index" :value="stream.index">
+                    流 {{ stream.index }} · {{ stream.codec_type }} · {{ stream.language || stream.codec_name }}
+                  </option>
+                </select></label>
                 <label v-if="checked.includes('remux')">转封装格式<select v-model="options.container"><option value="mkv">MKV</option><option value="mp4">MP4</option></select></label>
                 <template v-if="checked.includes('transcode')">
                   <label>代理最大边长<select v-model.number="options.max_edge"><option v-for="edge in [480,720,1080,1920,3840]" :key="edge">{{ edge }}</option></select></label>
@@ -213,33 +425,39 @@ onUnmounted(() => clearInterval(timer))
             </details>
             <button class="primary" :disabled="busy || !currentAsset || !checked.some(op => !disabled(op))">提交本地解析</button>
           </form>
-        </section>
-        <section>
-          <h2>{{ viewSource ? '代理预览' : '原素材预览' }}</h2>
-          <audio v-if="audioOnly" :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata" @timeupdate="playing && (playhead=Math.round(playing.currentTime*1e6))"></audio>
-          <video v-else :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata" @timeupdate="playing && (playhead=Math.round(playing.currentTime*1e6))"></video>
-          <p>{{ clock(playhead) }}</p>
-          <button v-if="viewSource" @click="viewSource=''">返回原素材</button>
-          <AnalysisWaveform v-if="activeResult?.operation === 'waveform'" :result="activeResult" :playhead="playhead" @seek="seek" />
-          <p v-if="pendingModels" class="hint">本机暂不可用的能力包括{{ pendingModels }}。</p>
+          <details v-if="pendingModels" class="analysis-capabilities">
+            <summary>感知能力</summary><p class="hint">待接入：{{ pendingModels }}</p>
+          </details>
+          <div class="analysis-panel-bar task-header">
+            <h2>解析记录</h2>
+            <button class="analysis-refresh" type="button" aria-label="刷新解析记录" title="刷新解析记录"
+              :disabled="busy || loading" @click="run(refresh)"><RefreshCw :size="16" aria-hidden="true" /></button>
+          </div>
+          <div v-if="jobs.length" class="queue-filter" aria-label="筛选解析记录">
+            <button v-for="item in [{key:'all',label:'全部'},{key:'running',label:'进行中'},{key:'issues',label:'失败与取消'}] as const"
+              :key="item.key" type="button" :aria-pressed="taskFilter===item.key" @click="taskFilter=item.key">{{ item.label }}</button>
+          </div>
+          <p v-if="!visibleJobs.length" class="hint">{{ loading ? '正在读取解析记录…' : '没有符合当前筛选的解析记录。' }}</p>
+          <div v-else class="analysis-queue">
+            <div v-for="job in visibleJobs" :key="job.id" class="analysis-job">
+              <button class="select-job" type="button" :aria-pressed="selectedJob===job.id" :disabled="busy"
+                @click="openJob(job)">{{ operationLabels[job.parameters.operation] }}</button>
+              <span :class="['status',job.status]">{{ statusLabels[job.status] || job.status }}</span>
+              <p class="task-stage hint">{{ statusLabels[job.stage] || job.stage }} · {{ job.elapsed_seconds.toFixed(1) }} 秒<span v-if="job.parameters.stream != null"> · 流 {{ job.parameters.stream }}</span></p>
+              <p v-if="job.error" class="error task-stage">{{ job.error }}</p>
+              <div v-if="job.status !== 'succeeded' || selectedJob === job.id" class="actions">
+                <button v-if="['queued','running'].includes(job.status)" type="button" :disabled="busy || job.cancel_requested" @click="control(job,'cancel')">取消</button>
+                <button v-if="['failed','cancelled'].includes(job.status)" type="button" :disabled="busy" @click="control(job,'retry')">重试</button>
+                <button v-if="job.attempt && selectedJob===job.id" type="button" :disabled="busy" @click="showLogs(job)">执行日志</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="logFiles" class="log-tail"><p v-if="!logFiles.length">没有可读取的日志文件。</p><pre v-for="file in logFiles" :key="file.name">{{ file.name }}{{ '\n' }}{{ file.tail }}</pre></div>
         </section>
       </div>
-      <section>
-        <div class="actions"><h2>解析记录</h2><button :disabled="busy || loading" @click="run(refresh)">刷新解析记录</button></div>
-        <p v-if="!jobs.length" class="hint">这份素材暂无解析记录。</p>
-        <div v-for="job in jobs" :key="job.id" class="analysis-job">
-          <button :aria-pressed="selectedJob===job.id" :disabled="busy" @click="openJob(job)">{{ operationLabels[job.parameters.operation] }}</button>
-          <span>{{ statusLabels[job.status] || job.status }} · {{ statusLabels[job.stage] || job.stage }}</span>
-          <span v-if="job.error" class="error">{{ job.error }}</span>
-          <button v-if="['queued','running'].includes(job.status)" :disabled="busy || job.cancel_requested" @click="control(job,'cancel')">取消</button>
-          <button v-if="['failed','cancelled'].includes(job.status)" :disabled="busy" @click="control(job,'retry')">重试</button>
-          <button v-if="job.attempt && selectedJob===job.id" :disabled="busy" @click="showLogs(job)">执行日志</button>
-        </div>
-        <div v-if="logFiles" class="log-tail"><p v-if="!logFiles.length">没有可读取的日志文件。</p><pre v-for="file in logFiles" :key="file.name">{{ file.name }}{{ '\n' }}{{ file.tail }}</pre></div>
-      </section>
       <section v-if="activeResult" class="analysis-result">
         <h2>{{ operationLabels[activeResult.operation] }}</h2>
-        <p class="hint">{{ activeResult.algorithm }}<span v-if="activeResult.reused_from_task_id"> · 已核对哈希并复用历史结果</span></p>
+        <p class="hint">{{ activeResult.algorithm }}<span v-if="selectedRow?.parameters.stream != null"> · 流 {{ selectedRow.parameters.stream }}</span><span v-if="activeResult.reused_from_task_id"> · 已核对哈希并复用历史结果</span></p>
         <p v-if="activeResult.truncated" class="hint" role="status">结果达到当前采样或镜头上限。</p>
         <div v-if="activeResult.media" class="stream-list">
           <div v-for="stream in activeResult.media.streams" :key="stream.index" class="analysis-job">
@@ -252,7 +470,7 @@ onUnmounted(() => clearInterval(timer))
           </div>
           <details><summary>完整媒体元数据</summary><pre class="log-tail">{{ JSON.stringify(activeResult.media,null,2) }}</pre></details>
         </div>
-        <div v-if="activeResult.artifacts.length" class="artifacts">
+        <div v-if="activeResult.artifacts.length" class="artifacts" :class="{ filmstrip:['scenes','frames','ocr'].includes(activeResult.operation) }">
           <article v-for="file in activeResult.artifacts" :key="file.id">
             <button v-if="file.media_type === 'image/jpeg'" class="frame" @click="seek(file.time_us || 0)">
               <img :src="artifactUrl(activeResult.task_id,file.id)" loading="lazy" :alt="clock(file.time_us || 0)+' 处的画面'">
@@ -260,16 +478,30 @@ onUnmounted(() => clearInterval(timer))
             </button>
             <p>{{ file.name }} · {{ (file.size_bytes / 1024).toFixed(1) }} KiB</p>
             <div class="actions"><a :href="artifactUrl(activeResult.task_id,file.id,true)">下载</a>
-              <button v-if="activeResult.operation==='transcode'" @click="viewSource=artifactUrl(activeResult.task_id,file.id)">预览代理</button>
+              <button v-if="activeResult.operation==='transcode'" type="button" @click="previewProxy(activeResult)">预览代理</button>
             </div>
           </article>
         </div>
-        <div v-for="track in activeResult.subtitle_tracks" :key="track.stream_index">
-          <h3>字幕流 {{ track.stream_index }} · {{ track.language || '语言未标注' }}</h3>
-          <p class="hint">{{ track.status }} · {{ track.cues.length }} 条</p>
-          <div class="cue-list"><div v-for="(cue,index) in track.cues.slice(0,100)" :key="index" class="actions">
-            <button @click="seek(cue.start_us)">{{ clock(cue.start_us) }}</button><span>{{ cue.text }}</span>
-          </div></div>
+        <p v-if="activeResult.operation==='subtitles' && !captions.length" class="hint">此素材没有软字幕流。</p>
+        <div v-if="currentTrack">
+          <div class="subtitle-controls">
+            <label>字幕轨<select v-model.number="subtitleTrack">
+              <option v-for="track in captions" :key="track.stream_index" :value="track.stream_index">
+                流 {{ track.stream_index }} · {{ track.language || '语言未标注' }}
+              </option>
+            </select></label>
+            <button type="button" :disabled="activeCue<0" @click="seekCue(activeCue)">定位当前字幕</button>
+          </div>
+          <p class="hint">{{ currentTrack.cues.length }} 条<span v-if="currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
+          <div class="cue-list">
+            <button v-for="(cue,index) in cuePage" :key="index" type="button" :aria-pressed="activeCue===subtitlePage*pageSize+index"
+              @click="seek(cue.start_us)"><time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span></button>
+          </div>
+          <div v-if="currentTrack.cues.length>pageSize" class="actions cue-pager">
+            <button type="button" :disabled="subtitlePage===0" @click="subtitlePage--">上一页</button>
+            <span>{{ subtitlePage+1 }} / {{ Math.ceil(currentTrack.cues.length/pageSize) }}</span>
+            <button type="button" :disabled="(subtitlePage+1)*pageSize>=currentTrack.cues.length" @click="subtitlePage++">下一页</button>
+          </div>
         </div>
         <section v-if="activeResult.ocr" class="ocr-result">
           <h3>画面文字 · {{ activeResult.ocr.language }}</h3>
@@ -280,24 +512,71 @@ onUnmounted(() => clearInterval(timer))
           </div>
         </section>
       </section>
-      <AnalysisReview v-if="currentAsset" :key="assetId" :asset-id="assetId" :results="results" :playhead="playhead"
+      <AnalysisReview v-if="currentAsset" :key="assetId" :asset-id="assetId" :results="reviewResults" :playhead="playhead"
         @seek="seek" @adaptation="emit('adaptation',$event)" @assets-changed="emit('assetsChanged')" />
     </template>
   </div>
 </template>
 
 <style scoped>
-.analysis-workspace,.analysis-options { display:grid; gap:14px }
-.analysis-options details,.analysis-options fieldset { margin:0 }
-.analysis-options { margin-top:14px }
-.analysis-choices,.analysis-job { display:flex; flex-wrap:wrap; align-items:center; gap:10px }
-.analysis-job { padding:10px 0; border-bottom:1px solid #303b4a }
-.artifacts { display:grid; grid-template-columns:repeat(auto-fill,minmax(185px,1fr)); gap:12px }
-.artifacts article { border:1px solid #394655; border-radius:6px; padding:12px; min-width:0 }
-.frame { width:100%; padding:4px }
-.frame img { display:block; width:100%; height:auto; border-radius:4px; margin-bottom:4px }
-.cue-list { max-height:260px; overflow:auto }
-.cue-list .actions { margin-bottom:7px }
+.analysis-workspace,.analysis-options { display:grid; gap:14px; min-width:0 }
+.analysis-source { display:flex; flex-wrap:wrap; align-items:end; gap:10px 24px }
+.analysis-source label { width:min(100%,420px) }
+.analysis-source select { min-width:0; width:100%; text-overflow:ellipsis }
+.analysis-source p { margin:0 0 3px; overflow-wrap:anywhere }
+.analysis-desk { display:grid; grid-template-columns:minmax(0,1.8fr) minmax(290px,1fr); gap:16px; align-items:start }
+.analysis-desk > section { min-width:0 }
+.analysis-panel-bar,.subtitle-controls { display:flex; align-items:center; justify-content:space-between; gap:9px; flex-wrap:wrap }
+.analysis-panel-bar h2,.analysis-tools > h2 { margin:0 }
+.analysis-link,.analysis-tabs button { display:inline-flex; align-items:center; gap:7px }
+.source-actions { gap:8px }
+.analysis-link { padding:6px 9px; border:1px solid var(--line); border-radius:6px; color:var(--ink-secondary); font-size:12px; text-decoration:none }
+.analysis-link:hover { border-color:var(--accent) }
+.analysis-monitor { background:#111216; border-radius:7px; display:grid; place-items:center; margin:12px 0; overflow:hidden }
+.analysis-monitor video { display:block; border:0; aspect-ratio:16/9; max-height:59vh; width:100%; background:#111216 }
+.analysis-monitor audio { display:block; width:100%; margin:10px 0 }
+.audio-monitor { padding:0 10px; }
+.time-readout { display:flex; justify-content:space-between; gap:10px; color:var(--ink-muted); font:12px Consolas,monospace }
+.time-readout output { color:var(--ink); letter-spacing:.04em }
+.source-seek { display:block; padding:0; width:100%; margin:10px 0; accent-color:var(--accent) }
+.shot-ruler { display:flex; gap:3px; overflow:auto; margin-top:10px }
+.shot-marker { flex-basis:0; min-width:28px; padding:4px 8px; border-radius:4px; font-size:11px; text-align:center }
+.analysis-tabs,.queue-filter { display:flex; flex-wrap:wrap; gap:7px; margin:13px 0 0; }
+.analysis-tabs { border-top:1px solid var(--line-soft); padding-top:12px }
+.analysis-tabs button,.queue-filter button { font-size:12px; padding:6px 9px }
+.active-caption { background:var(--surface-raised); border-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere; margin-bottom:0; padding:8px 12px }
+.analysis-options details,.analysis-options fieldset { margin:0; padding:10px; min-width:0 }
+.analysis-options { margin-top:10px; gap:10px }
+.analysis-options .editor-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr)); gap:10px }
+.analysis-options .editor-grid :is(input,select) { min-width:0; width:100% }
+.analysis-choices { display:grid; grid-template-columns:1fr 1fr; gap:3px 6px }
+.analysis-choices label { padding:5px 0; font-size:12px; gap:6px }
+.analysis-capabilities { margin:12px 0 0; padding:10px }
+.task-header { margin-top:15px }
+.analysis-refresh { padding:6px 8px; line-height:0 }
+.analysis-queue { max-height:285px; overflow:auto; margin-top:7px }
+.analysis-job { display:flex; flex-wrap:wrap; align-items:center; column-gap:8px; row-gap:5px; padding:8px 0; border-bottom:1px solid var(--line-soft) }
+.task-stage,.analysis-job .actions { flex-basis:100%; margin:0 }
+.select-job { text-align:left; flex:1; min-width:0; padding:6px 8px; overflow-wrap:anywhere }
+.analysis-job .error { max-width:100%; padding:6px }
+.artifacts { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr)); gap:10px }
+.artifacts.filmstrip { display:flex; overflow:auto; padding-bottom:6px }
+.artifacts.filmstrip article { flex:0 0 156px }
+.artifacts article { border:1px solid var(--line); border-radius:6px; padding:10px; min-width:0; overflow-wrap:anywhere }
+.artifacts article p { font-size:12px; margin:6px 0 }
+.frame { width:100%; padding:5px }
+.frame img { display:block; width:100%; height:84px; object-fit:contain; margin-bottom:3px; background:#111216 }
+.cue-list { display:grid; gap:5px; max-height:360px; overflow:auto; }
+.cue-list button { display:flex; flex-wrap:wrap; text-align:left; gap:7px 14px; white-space:pre-wrap; overflow-wrap:anywhere }
+.cue-list time { color:var(--ink-muted); font:12px Consolas,monospace; padding-top:3px }
+.cue-pager { margin-top:9px }
 .stream-list details { margin:12px 0 }
-[aria-pressed="true"] { border-color:#8ab7fc }
+[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-surface); color:var(--ink) }
+@media(max-width:1120px) { .analysis-desk { grid-template-columns:1fr } }
+@media(max-width:520px) {
+  .analysis-desk > section,.analysis-result { padding:12px }
+  .analysis-choices { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .analysis-tabs { gap:5px }
+  .analysis-tabs button { padding:5px 7px }
+}
 </style>
