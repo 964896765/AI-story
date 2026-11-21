@@ -1,0 +1,119 @@
+{
+  "checked_at": "2026-11-21T02:40:40.727Z",
+  "source_duration_us": 193000000,
+  "chunks": [
+    {
+      "start_us": 0,
+      "end_us": 175000000,
+      "cue_count": 4
+    },
+    {
+      "start_us": 165000000,
+      "end_us": 193000000,
+      "cue_count": 3
+    }
+  ],
+  "merge_boundaries": [
+    {
+      "boundary_us": 170000000,
+      "merge_us": 170450000,
+      "needs_review": false
+    }
+  ],
+  "captions": [
+    {
+      "start_us": 110000,
+      "end_us": 2950000,
+      "text": "大家好欢迎来到灯塔",
+      "confidence": 0.508589
+    },
+    {
+      "start_us": 3810000,
+      "end_us": 5760000,
+      "text": "今天的天气很好",
+      "confidence": 0.664602
+    },
+    {
+      "start_us": 167600000,
+      "end_us": 170450000,
+      "text": "大家好欢迎来到灯塔",
+      "confidence": 0.546769
+    },
+    {
+      "start_us": 171310000,
+      "end_us": 173260000,
+      "text": "今天的天气很好",
+      "confidence": 0.668584
+    },
+    {
+      "start_us": 182080000,
+      "end_us": 186010000,
+      "text": "请准备处罚我们马上就到海边",
+      "confidence": 0.562644
+    }
+  ],
+  "seam_playback_us": 170450000,
+  "late_playback_us": 182080000,
+  "corrected_late_text": "请准备出发，我们马上就到海边。",
+  "merged_subtitle_sha256": "2889c4a292e318918dd32bf3916ae816060eff8d03a8092ffb118b749920af55",
+  "paid_model_calls": 0,
+  "js_errors": [],
+  "production_chrome_flows": [
+    {
+      "flow": "v3-01",
+      "checked_at": "2026-11-21T02:36:57.389Z"
+    },
+    {
+      "flow": "v3-asr",
+      "checked_at": "2026-11-21T02:37:15.16Z"
+    },
+    {
+      "flow": "v3-long-asr",
+      "checked_at": "2026-11-21T02:37:28.665Z"
+    },
+    {
+      "flow": "p5",
+      "checked_at": "2026-11-21T02:37:37.249Z"
+    },
+    {
+      "flow": "p6",
+      "checked_at": "2026-11-21T02:37:58.399Z"
+    },
+    {
+      "flow": "p6-ocr",
+      "checked_at": "2026-11-21T02:38:15.099Z"
+    },
+    {
+      "flow": "p7",
+      "checked_at": "2026-11-21T02:38:19.993Z"
+    },
+    {
+      "flow": "p8",
+      "checked_at": "2026-11-21T02:38:25.835Z"
+    },
+    {
+      "flow": "p9",
+      "checked_at": "2026-11-21T02:38:35.239Z"
+    },
+    {
+      "flow": "p10",
+      "checked_at": "2026-11-21T02:38:48.092Z"
+    },
+    {
+      "flow": "p11",
+      "checked_at": "2026-11-21T02:39:04.341Z"
+    },
+    {
+      "flow": "p12",
+      "checked_at": "2026-11-21T02:39:16.047Z"
+    },
+    {
+      "flow": "p13",
+      "checked_at": "2026-11-21T02:39:34.966Z"
+    },
+    {
+      "flow": "p14",
+      "checked_at": "2026-11-21T02:39:38.321Z"
+    }
+  ]
+}

@@ -478,7 +478,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                   <label>转写语言<select v-model="options.asr_language"><option v-for="language in speechLanguages" :key="language">{{ language }}</option></select></label>
                   <label>转写开始（秒）<input v-model.number="options.asr_start" type="number" min="0" max="86399.999" step="0.001" required></label>
                   <label>转写结束（秒）<input v-model.number="options.asr_end" type="number" min="0.001" max="86400" step="0.001" placeholder="留空转写到结尾"></label>
-                  <p class="hint">每次最多 {{speechCapability?.max_seconds}} 秒。先运行流清单可选指定音轨，默认使用第一条音轨。</p>
+                  <p class="hint">每次最多 {{Math.floor((speechCapability?.max_seconds || 0)/60)}} 分钟，超过 3 分钟自动分段。先运行流清单可选指定音轨。</p>
                 </template>
               </div>
             </details>
@@ -554,6 +554,19 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <strong>{{ speech.status==='no_speech' ? '所选音轨未识别到语音' : '待校对的语音转写' }}</strong>
             <p>{{ clock(speech.start_us) }} – {{ clock(speech.end_us) }} · 音轨 {{ speech.stream_index }} · {{ speech.language }}</p>
             <p v-if="speech.status==='recognized'" class="hint">试听所选音轨，核对转写文字和时间后保存字幕。</p>
+            <p v-if="speech.chunk_count">{{speech.chunk_count}} 段转写已合并<span v-if="speech.reused_chunks"> · 续用了 {{speech.reused_chunks}} 段</span></p>
+            <details v-if="speech.chunks?.length" class="speech-chunks">
+              <summary>转写分段与接缝</summary>
+              <ul>
+                <li v-for="(chunk,index) in speech.chunks" :key="chunk.start_us">
+                  第 {{index+1}} 段 · {{clock(chunk.start_us)}} – {{clock(chunk.end_us)}} · 原始 {{chunk.cue_count}} 条
+                </li>
+              </ul>
+            </details>
+            <div v-for="seam in speech.merge_boundaries" :key="seam.boundary_us" class="actions speech-seam">
+              <span>{{seam.needs_review ? '接缝待复核' : '在两段识别空档处合并'}}</span>
+              <button type="button" @click="seek(seam.merge_us)">定位 {{clock(seam.merge_us)}}</button>
+            </div>
           </div>
           <div class="subtitle-controls">
             <label v-if="!hardScan && !speech">字幕轨<select v-model.number="subtitleTrack">
@@ -668,6 +681,8 @@ onUnmounted(() => { scope++; clearInterval(timer) })
 .cue-pager { margin-top:9px }
 .hard-subtitle-summary { padding:10px 12px; margin:12px 0; background:var(--accent-surface); border:1px solid var(--line-soft); border-radius:8px }
 .hard-subtitle-summary p { margin:5px 0 0 }
+.speech-chunks,.speech-seam { margin:8px 0 0 }
+.speech-chunks ul { margin:8px 0; padding-left:20px }
 .cue-list small,.caption-evidence figcaption { color:var(--ink-muted) }
 .caption-evidence { margin:10px 0 0; padding:8px; background:#131d26; border:1px solid var(--line-soft); border-radius:8px }
 .caption-evidence img { display:block; width:100%; max-height:190px; object-fit:contain; }

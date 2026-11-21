@@ -16,7 +16,8 @@ import time
 import wave
 
 from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
-from .perception_asr import MAX_SCAN_SECONDS, recognizer as speech_recognizer, transcribe
+from .asr_chunks import recognize_chunks
+from .perception_asr import MAX_SCAN_SECONDS, recognizer as speech_recognizer
 from .perception_ocr import estimate_subtitle_cues, recognize, recognizer
 from .process_guard import attach
 from .render import display_size, file_hash, stop_process, write_manifest
@@ -487,7 +488,7 @@ def recognize_screen_text(commands, source, info, options):
     return payload
 
 
-def recognize_audio(commands, source, info, options):
+def recognize_audio(commands, source, info, options, checkpoint=None):
     stream = choose(info, options.stream, 'audio')
     if stream is None:
         raise ValueError('素材没有可转写的音轨')
@@ -517,7 +518,7 @@ def recognize_audio(commands, source, info, options):
             audio_duration_us = wav.getnframes()*1_000_000//16000
         if not 0 < audio_duration_us <= end_us-start_us+125:
             raise ValueError('所选范围没有有效音频采样或样本超界')
-        cues = transcribe(commands, audio, adapter, start_us, min(audio_duration_us,end_us-start_us))
+        cues, assembly = recognize_chunks(commands, audio, adapter, start_us, min(audio_duration_us,end_us-start_us), checkpoint)
         audio.rename(preview)
     finally:
         audio.unlink(missing_ok=True)
@@ -534,21 +535,23 @@ def recognize_audio(commands, source, info, options):
         artifacts.append(descriptor(commands, transcript, 'asr_transcript', stream_index=stream['index']))
     return {'duration_us': duration_us, 'artifacts': artifacts, 'subtitle_tracks': [track],
             'speech': {**adapter, 'stream_index': stream['index'], 'start_us': start_us, 'end_us': end_us,
-                       'audio_duration_us': audio_duration_us, 'status': 'recognized' if cues else 'no_speech'}}
+                       'audio_duration_us': audio_duration_us, 'status': 'recognized' if cues else 'no_speech', **assembly}}
 
 
 OPERATIONS = {'split': media_copy, 'remux': media_copy, 'transcode': transcode, 'frames': capture_frames,
               'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform, 'ocr': recognize_screen_text,
-              'hard_subtitles': recognize_screen_text, 'asr': recognize_audio}
+              'hard_subtitles': recognize_screen_text}
 
 
-def analyze(source: Path, work: Path, options: AnalysisOptions, update):
+def analyze(source: Path, work: Path, options: AnalysisOptions, update, asr_checkpoint=None):
     commands = Commands(work, update)
     info = inventory(commands, source)
     payload = {'algorithm': ALGORITHM, 'tools': tools_version(), 'operation': options.operation,
                'timeline': info['timeline'], 'artifacts': []}
     if options.operation == 'inspect':
         payload.update({'media': info, 'cadence': cadence(commands, source, info)})
+    elif options.operation == 'asr':
+        payload.update(recognize_audio(commands, source, info, options, asr_checkpoint))
     else:
         payload.update(OPERATIONS[options.operation](commands, source, info, options))
     if len(json.dumps(payload, ensure_ascii=False).encode()) > 12 * 1024**2:

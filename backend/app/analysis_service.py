@@ -8,6 +8,7 @@ from sqlalchemy import select
 from . import storage
 from .analysis_engine import ALGORITHM, analyze, tools_version
 from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
+from .asr_chunks import PIPELINE, SpeechCheckpoint
 from .models import MediaAnalysis
 from .perception_asr import recognizer as speech_recognizer
 from .perception_ocr import recognizer
@@ -51,6 +52,8 @@ def execute_analysis(task_id, attempt, parameters, input_snapshot, update, facto
               'asset_id': source['id'], 'options': options.signature_parameters()}
     if adapter:
         inputs['recognizer'] = adapter
+    if options.operation == 'asr':
+        inputs['asr_pipeline'] = PIPELINE
     signature = fingerprint(inputs)
     with factory() as db:
         cached = db.scalars(select(MediaAnalysis).where(MediaAnalysis.signature == signature)
@@ -60,7 +63,10 @@ def execute_analysis(task_id, attempt, parameters, input_snapshot, update, facto
             update('analysis_cache', 96)
             return signature, {**candidate.payload, 'reused_from_task_id': candidate.task_id}
     work = storage.resolve_key(f'tmp/{task_id}/{attempt}')
-    payload = analyze(path, work, options, update)
+    checkpoint = None
+    if options.operation == 'asr':
+        checkpoint = SpeechCheckpoint(storage.resolve_key(f'tmp/{task_id}/asr-checkpoints'), signature)
+    payload = analyze(path, work, options, update, asr_checkpoint=checkpoint)
     # Keep output inaccessible by HTTP until the Worker commits the result and task together.
     update('analysis_publish', 97)
     if payload['artifacts']:

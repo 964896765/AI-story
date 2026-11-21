@@ -10,7 +10,7 @@ import subprocess
 from .config import ROOT
 
 ENGINE = 'windows-sapi-dictation-v1'
-MAX_SCAN_SECONDS = 180
+MAX_SCAN_SECONDS = 1800
 
 
 def command():
@@ -66,7 +66,7 @@ def normalize_segments(segments, start_us, audio_duration_us):
     return cues
 
 
-def transcribe(commands, path, adapter, start_us, audio_duration_us):
+def transcribe(commands, path, adapter, start_us, audio_duration_us, progress=70):
     stdout, _ = commands.run([*command(), '-InputWave', str(path), '-Recognizer', adapter['recognizer_id']],
-                             'analysis_asr', 70, timeout=600)
+                             'analysis_asr', progress, timeout=600)
     return normalize_segments(json.loads(stdout.read_bytes()), start_us, audio_duration_us)

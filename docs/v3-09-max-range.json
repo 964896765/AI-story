@@ -1,0 +1,49 @@
+{
+  "checked_at": "2026-11-21T02:39:35.749047+00:00",
+  "source_kind": "sparse authored Mandarin WAV",
+  "duration_seconds": 1800,
+  "native_recognizer": "windows-sapi-dictation-v1",
+  "language": "zh-CN",
+  "chunk_count": 11,
+  "elapsed_seconds": 49.125,
+  "cues": [
+    {
+      "start_us": 110000,
+      "end_us": 2950000,
+      "text": "大家好欢迎来到灯塔",
+      "confidence": 0.508589
+    },
+    {
+      "start_us": 3810000,
+      "end_us": 5760000,
+      "text": "今天的天气很好",
+      "confidence": 0.664602
+    },
+    {
+      "start_us": 167600000,
+      "end_us": 170450000,
+      "text": "大家好欢迎来到灯塔",
+      "confidence": 0.546769
+    },
+    {
+      "start_us": 171310000,
+      "end_us": 173260000,
+      "text": "今天的天气很好",
+      "confidence": 0.668584
+    },
+    {
+      "start_us": 1790020000,
+      "end_us": 1791590000,
+      "text": "请准备出发",
+      "confidence": 0.333574
+    },
+    {
+      "start_us": 1791830000,
+      "end_us": 1794010000,
+      "text": "我们马上就到海边",
+      "confidence": 0.461348
+    }
+  ],
+  "audition_bytes": 57600078,
+  "external_calls": 0
+}

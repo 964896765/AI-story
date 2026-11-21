@@ -29,7 +29,12 @@ export interface Result {
   subtitle_tracks?: { stream_index: number; language: string | null; status: string; cues: Cue[] }[]
   ocr?: { engine: string; language: string; frames: OcrFrame[] }
   hard_subtitle_scan?: Interval & { interval_us: number; region: 'lower' | 'full' }
-  speech?: Interval & { engine: string; language: string; stream_index: number; audio_duration_us: number; status: 'recognized' | 'no_speech' }
+  speech?: Interval & {
+    engine: string; language: string; stream_index: number; audio_duration_us: number; status: 'recognized' | 'no_speech'
+    chunk_count?: number; reused_chunks?: number
+    chunks?: (Interval & {cue_count: number})[]
+    merge_boundaries?: {boundary_us: number; merge_us: number; needs_review: boolean}[]
+  }
   bins?: number[]; silences?: Interval[]; bin_us?: number; duration_us?: number; audio_status?: string
 }
 export interface Job {
@@ -43,6 +48,7 @@ export const statusLabels: Record<string,string> = {
   analysis_hash:'核对源文件', analysis_probe:'探测媒体流', analysis_process:'FFmpeg 处理中',
   analysis_verify:'检查输出', analysis_waveform:'统计音频采样', analysis_publish:'保存产物', analysis_ocr:'Windows 本机识别画面文字',
   analysis_asr:'Windows 本机语音转写',
+  analysis_asr_chunk:'校验转写分段',
   analysis_cache:'检查缓存', retry_wait:'等待重试', recovered:'中断恢复', inspecting:'检查输入',
 }
 export const clock = (us: number) => {
