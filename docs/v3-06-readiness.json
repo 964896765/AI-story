@@ -1,0 +1,20 @@
+{
+  "checked_at": "2026-11-21T01:28:27.8475484Z",
+  "base_url": "http://127.0.0.1:15173",
+  "ready": true,
+  "database_revision": "0013",
+  "projects_checked": 7,
+  "assets": 13,
+  "online_workers": 1,
+  "live_authorized": false,
+  "live_limit_cny_micros": 0,
+  "live_limit_usd_micros": 0,
+  "frontend_bundle": "/assets/index-Dq9qHnjd.js",
+  "frontend_http": 200,
+  "bundle_http": 200,
+  "analysis_route_http": 200,
+  "hard_subtitle_operation_available": true,
+  "ocr_languages": [
+    "zh-Hans-CN"
+  ]
+}

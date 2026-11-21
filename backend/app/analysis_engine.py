@@ -14,8 +14,8 @@ import subprocess
 import sys
 import time
 
-from .analysis_schemas import AnalysisOptions
-from .perception_ocr import recognize, recognizer
+from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
+from .perception_ocr import estimate_subtitle_cues, recognize, recognizer
 from .process_guard import attach
 from .render import display_size, file_hash, stop_process, write_manifest
 
@@ -265,10 +265,10 @@ def transcode(commands, source, info, options):
                                     source_streams=[s['index'] for s in expected], **metadata)]}
 
 
-def capture_frames(commands, source, info, options):
+def capture_frames(commands, source, info, options, scan=None):
     stream = require_video(info, options.stream)
     width, height = stream['display_size']
-    ocr = options.operation == 'ocr'
+    ocr = options.operation in OCR_OPERATIONS
     ratio = min(1, (1440 if ocr else 480) / max(width, height))
     size = [max(2, round(edge * ratio / 2) * 2) for edge in (width, height)]
     scene_mode = options.operation == 'scenes'
@@ -279,8 +279,17 @@ def capture_frames(commands, source, info, options):
     elif not ocr and options.frame_mode == 'at':
         expression = f'gte(t,{options.frame_time})'
     else:
-        expression = f'isnan(prev_selected_t)+gte(t-prev_selected_t,{options.frame_interval})'
+        interval = options.subtitle_interval if scan else options.frame_interval
+        # Use a small tolerance for integer timestamp conversion to avoid losing exactly spaced frames.
+        expression = f'isnan(prev_selected_t)+gte(t-prev_selected_t,{interval-0.0000001 if scan else interval})'
     filters = f"select='{expression}',showinfo,scale={size[0]}:{size[1]},setsar=1"
+    if scan:
+        start_us, end_us = scan
+        filters = f'trim=start={start_us/1_000_000:.6f}:end={end_us/1_000_000:.6f},' + filters
+        if options.subtitle_region == 'lower':
+            crop_height = max(2, int(size[1]*0.4/2)*2)
+            filters += f',crop=iw:{crop_height}:0:ih-oh'
+            size[1] = crop_height
     if scene_mode:
         filters += ',metadata=mode=print:key=lavfi.scene_score:file=scores.txt'
     limit = MAX_OCR_FRAMES if ocr else MAX_FRAMES
@@ -431,14 +440,40 @@ def waveform(commands, source, info, options):
 
 def recognize_screen_text(commands, source, info, options):
     adapter = recognizer(options.ocr_language)
-    payload = capture_frames(commands, source, info, options)
+    duration_us = probe_duration(info)
+    scan = None
+    if options.operation == 'hard_subtitles':
+        start_us = options.scan_start_ms * 1000
+        end_us = min(duration_us, options.scan_end_ms * 1000) if options.scan_end_ms is not None else duration_us
+        interval_us = round(options.subtitle_interval * 1_000_000)
+        if start_us >= end_us or (options.scan_end_ms is not None and options.scan_end_ms*1000 > duration_us+999):
+            raise ValueError('硬字幕扫描范围超出素材时长')
+        if end_us - start_us > interval_us * MAX_OCR_FRAMES:
+            raise ValueError('硬字幕扫描最多 120 帧，请缩短扫描范围或增大采样间隔')
+        scan = (start_us, end_us)
+    payload = capture_frames(commands, source, info, options, scan)
     payload['ocr'] = {**adapter, 'frames': recognize(commands, payload['artifacts'], adapter)}
-    payload['duration_us'] = probe_duration(info)
+    payload['duration_us'] = duration_us
+    if scan:
+        if payload['truncated']:
+            raise ValueError('硬字幕采样超过 120 帧，请缩短扫描范围')
+        frames = payload['ocr']['frames']
+        if any(not start_us <= frame['time_us'] < end_us for frame in frames):
+            raise ValueError('采样帧超出硬字幕扫描范围')
+        cues = estimate_subtitle_cues(frames, interval_us, end_us)
+        payload['subtitle_tracks'] = [{
+            'stream_index': payload['artifacts'][0]['stream_index'], 'language': adapter['language'],
+            'status': 'ocr_estimated', 'cues': cues,
+        }]
+        payload['hard_subtitle_scan'] = {
+            'start_us': start_us, 'end_us': end_us, 'interval_us': interval_us, 'region': options.subtitle_region,
+        }
     return payload
 
 
 OPERATIONS = {'split': media_copy, 'remux': media_copy, 'transcode': transcode, 'frames': capture_frames,
-              'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform, 'ocr': recognize_screen_text}
+              'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform, 'ocr': recognize_screen_text,
+              'hard_subtitles': recognize_screen_text}
 
 
 def analyze(source: Path, work: Path, options: AnalysisOptions, update):

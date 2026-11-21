@@ -1,11 +1,12 @@
 export const operationLabels = {
   inspect: '流清单', split: '音视频分轨', remux: '转封装', transcode: 'MP4 转码 / 代理',
   frames: '抽帧', scenes: '自动切镜', subtitles: '软字幕提取', waveform: '波形与静音', ocr: '本机画面文字识别',
+  hard_subtitles: '硬字幕时序识别',
 }
 export type Operation = keyof typeof operationLabels
 export type Interval = { start_us: number; end_us: number }
 export type Shot = Interval & { score: number | null; artifact: number | null; origin?: string }
-export type Cue = Interval & { text: string }
+export type Cue = Interval & { text: string; artifact?: number; sample_count?: number }
 export type OcrFrame = { artifact: number; time_us: number; text: string; lines: string[] }
 export interface Artifact {
   id: number; name: string; role: string; size_bytes: number; time_us?: number; stream_index?: number
@@ -24,6 +25,7 @@ export interface Result {
   cadence?: Record<string, { status: string; sample_frames: number }>
   subtitle_tracks?: { stream_index: number; language: string | null; status: string; cues: Cue[] }[]
   ocr?: { engine: string; language: string; frames: OcrFrame[] }
+  hard_subtitle_scan?: Interval & { interval_us: number; region: 'lower' | 'full' }
   bins?: number[]; silences?: Interval[]; bin_us?: number; duration_us?: number; audio_status?: string
 }
 export interface Job {

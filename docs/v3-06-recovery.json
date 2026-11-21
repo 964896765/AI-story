@@ -1,0 +1,24 @@
+{
+  "before_revision": "0013",
+  "tested_revision": "0013",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "37d8a8c879da323ee93c9a4feed2d991c8b4c841e98aa058a6f5904cfa0047e8",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "migration_roundtrip": [
+    "upgrade 0013",
+    "schema check",
+    "downgrade 0013",
+    "upgrade 0013",
+    "schema check"
+  ],
+  "backup_directory": "data/backups/v3-06-147949f60694"
+}

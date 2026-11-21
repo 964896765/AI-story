@@ -145,8 +145,9 @@ def create_revision(asset_id: str, body: RevisionInput, db=Depends(session)):
                 raise HTTPException(422, '单个快照最多对齐 20000 条字幕，请选较少轨道')
             for number, cue in enumerate(track['cues']):
                 duration_candidates.append(cue['end_us'])
+                origin = 'hard_subtitle_ocr' if track['status'] == 'ocr_estimated' else 'soft_subtitle'
                 subtitles.append({'start_us': cue['start_us'], 'end_us': cue['end_us'],
-                                  'origin': 'soft_subtitle', 'task_id': task_id,
+                                  'origin': origin, 'task_id': task_id,
                                   'stream_index': track['stream_index'], 'cue_number': number})
     candidates = []
     for candidate in body.candidates:

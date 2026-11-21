@@ -16,7 +16,7 @@ const busy = ref(false), error = ref(''), notice = ref('')
 const route = `/analysis/projects/${props.projectId}/assets/${props.assetId}/tasks/${props.taskId}/subtitle-tracks/${props.stream}/revisions`
 const original = computed(() => {
   const cue = props.cues[props.cueIndex]
-  return { start_ms: cue.start_us / 1000, end_ms: cue.end_us / 1000, text: cue.text }
+  return { start_ms: Math.floor(cue.start_us / 1000), end_ms: Math.floor(cue.end_us / 1000), text: cue.text }
 })
 const selected = computed(() => edits[props.cueIndex] === undefined ? original.value : edits[props.cueIndex])
 const changed = computed(() => Object.keys(edits).length)

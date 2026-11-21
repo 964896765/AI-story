@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import platform
 import subprocess
+from unicodedata import normalize
 
 from .config import ROOT
 
@@ -47,3 +48,29 @@ def recognize(commands, artifacts, adapter):
         raise ValueError('OCR 输出与采样帧无法对应')
     return [{'artifact': i, 'time_us': artifact['time_us'], 'text': frame['text'].strip(), 'lines': frame['lines']}
             for i, (frame, artifact) in enumerate(zip(frames, artifacts))]
+
+
+def estimate_subtitle_cues(frames, interval_us, end_us):
+    """Join matching observations and bound each cue by the next sample and scan end."""
+    cues = []
+    previous_key = ''
+    for index, frame in enumerate(frames):
+        text = '\n'.join(line.strip() for line in frame['lines'] if line.strip()) or frame['text'].strip()
+        key = ' '.join(normalize('NFKC', text).split())
+        start = frame['time_us']
+        next_time = frames[index+1]['time_us'] if index+1 < len(frames) else end_us
+        # Tolerate small sampling jitter without extending cues across large gaps.
+        end = min(next_time, end_us)
+        if end-start > interval_us * 1.5:
+            end = start + interval_us
+        if key and end > start:
+            if key == previous_key and cues[-1]['end_us'] == start:
+                cues[-1]['end_us'] = end
+                cues[-1]['sample_count'] += 1
+            else:
+                cues.append({'start_us': start, 'end_us': end, 'text': text,
+                             'artifact': frame['artifact'], 'sample_count': 1})
+            previous_key = key
+        else:
+            previous_key = ''
+    return cues

@@ -40,6 +40,7 @@ const options = reactive({
   channels:null as number|null, frame_mode:'interval', frame_interval:5, frame_time:0,
   scene_threshold:0.30, minimum_shot_seconds:0.30, silence_db:-40, silence_seconds:0.4,
   ocr_language:'', ocr_interval:2,
+  hard_start:0, hard_end:'' as number | '', hard_interval:0.5, hard_region:'lower',
 })
 const streamsByStep = reactive<Partial<Record<Operation,number>>>({})
 const audioOnly = computed(() => /\.(wav|mp3)$/i.test(currentAsset.value?.name || ''))
@@ -53,6 +54,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 const reviewTabs = [
   { op:'scenes', icon:Film, label:'镜头' }, { op:'frames', icon:ScanLine, label:'关键帧' },
   { op:'subtitles', icon:Subtitles, label:'字幕' }, { op:'waveform', icon:AudioLines, label:'波形' },
+  { op:'hard_subtitles', icon:Subtitles, label:'硬字幕' },
   { op:'ocr', icon:ScanLine, label:'OCR' }, { op:'inspect', icon:List, label:'媒体流' },
 ] as const
 const byOperation = computed(() => new Map(results.value.map(result => [result.operation,result])))
@@ -65,11 +67,13 @@ const selectedRow = computed(() => jobs.value.find(job => job.id === selectedJob
 const scenes = computed(() => activeResult.value?.operation === 'scenes' ? activeResult.value : byOperation.value.get('scenes'))
 const proxy = computed(() => activeResult.value?.operation === 'transcode' ? activeResult.value : byOperation.value.get('transcode'))
 const duration = computed(() => Math.max(playerDuration.value, scenes.value?.shots?.at(-1)?.end_us || 0))
-const captions = computed(() => activeResult.value?.operation === 'subtitles' ? activeResult.value.subtitle_tracks || [] : [])
+const captions = computed(() => activeResult.value?.subtitle_tracks || [])
+const hardScan = computed(() => activeResult.value?.hard_subtitle_scan)
 const currentTrack = computed(() => captions.value.find(track => track.stream_index === subtitleTrack.value))
 const activeCue = computed(() => currentTrack.value?.cues.findIndex(cue => cue.start_us <= playhead.value && playhead.value < cue.end_us) ?? -1)
 const pageSize = 50
 const cuePage = computed(() => currentTrack.value?.cues.slice(subtitlePage.value * pageSize, (subtitlePage.value + 1)*pageSize) || [])
+const selectedCaption = computed(() => currentTrack.value?.cues[draftCue.value])
 const visibleJobs = computed(() => jobs.value.filter(job => taskFilter.value === 'all' ||
   (taskFilter.value === 'running' ? ['queued','running'].includes(job.status) : ['failed','cancelled'].includes(job.status))))
 const linkHref = computed(() => props.reviewLink(assetId.value,selectedJob.value,playhead.value,previewTask.value))
@@ -77,7 +81,7 @@ const streamSelectors = computed(() => {
   const media = byOperation.value.get('inspect')?.media?.streams || []
   const types: Partial<Record<Operation,string[]>> = {
     split:['video','audio','subtitle'], subtitles:['subtitle'], waveform:['audio'],
-    frames:['video'], scenes:['video'], transcode:['video'], ocr:['video'],
+    frames:['video'], scenes:['video'], transcode:['video'], ocr:['video'], hard_subtitles:['video'],
   }
   return checked.value.flatMap(op => {
     const streams = media.filter(stream => types[op]?.includes(stream.codec_type) && !stream.disposition?.attached_pic)
@@ -176,6 +180,9 @@ function payload(operation: Operation) {
     return {...common,silence_db,silence_seconds}
   }
   if (operation === 'ocr') return {...common, ocr_language:options.ocr_language, frame_interval:options.ocr_interval}
+  if (operation === 'hard_subtitles') return {...common, ocr_language:options.ocr_language,
+    scan_start_ms:Math.round(options.hard_start*1000), scan_end_ms:options.hard_end==='' ? null : Math.round(options.hard_end*1000),
+    subtitle_interval:options.hard_interval, subtitle_region:options.hard_region}
   return common
 }
 async function submit() {
@@ -193,7 +200,7 @@ async function submit() {
   })
 }
 function disabled(operation: Operation) {
-  if (operation === 'ocr') return audioOnly.value || !ocrLanguages.value.length
+  if (operation === 'ocr' || operation === 'hard_subtitles') return audioOnly.value || !ocrLanguages.value.length
   return audioOnly.value && ['frames','scenes','transcode','subtitles'].includes(operation)
 }
 async function openJob(job: Job) {
@@ -420,9 +427,16 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                   <label>静音阈值（dB）<input v-model.number="options.silence_db" type="number" min="-99" max="-10"></label>
                   <label>最短静音（秒）<input v-model.number="options.silence_seconds" type="number" min="0.1" max="60" step="0.01"></label>
                 </template>
-                <template v-if="checked.includes('ocr')">
+                <template v-if="checked.includes('ocr') || checked.includes('hard_subtitles')">
                   <label>OCR 语言<select v-model="options.ocr_language"><option v-for="language in ocrLanguages" :key="language">{{ language }}</option></select></label>
-                  <label>OCR 采样间隔（秒）<input v-model.number="options.ocr_interval" type="number" min="0.25" max="3600" step="0.01"></label>
+                  <label v-if="checked.includes('ocr')">OCR 采样间隔（秒）<input v-model.number="options.ocr_interval" type="number" min="0.25" max="3600" step="0.01"></label>
+                </template>
+                <template v-if="checked.includes('hard_subtitles')">
+                  <label>硬字幕画面区域<select v-model="options.hard_region"><option value="lower">画面底部 40%</option><option value="full">完整画面</option></select></label>
+                  <label>硬字幕采样间隔（秒）<input v-model.number="options.hard_interval" type="number" min="0.25" max="2" step="0.01" required></label>
+                  <label>硬字幕开始（秒）<input v-model.number="options.hard_start" type="number" min="0" max="86399.999" step="0.001" required></label>
+                  <label>硬字幕结束（秒）<input v-model.number="options.hard_end" type="number" min="0.001" max="86400" step="0.001" placeholder="留空扫描到结尾"></label>
+                  <p class="hint">每次最多 120 帧。长片可分段扫描。</p>
                 </template>
               </div>
             </details>
@@ -473,7 +487,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
           </div>
           <details><summary>完整媒体元数据</summary><pre class="log-tail">{{ JSON.stringify(activeResult.media,null,2) }}</pre></details>
         </div>
-        <div v-if="activeResult.artifacts.length" class="artifacts" :class="{ filmstrip:['scenes','frames','ocr'].includes(activeResult.operation) }">
+        <div v-if="activeResult.artifacts.length && !hardScan" class="artifacts" :class="{ filmstrip:['scenes','frames','ocr'].includes(activeResult.operation) }">
           <article v-for="file in activeResult.artifacts" :key="file.id">
             <button v-if="file.media_type === 'image/jpeg'" class="frame" @click="seek(file.time_us || 0)">
               <img :src="artifactUrl(activeResult.task_id,file.id)" loading="lazy" :alt="clock(file.time_us || 0)+' 处的画面'">
@@ -487,15 +501,21 @@ onUnmounted(() => { scope++; clearInterval(timer) })
         </div>
         <p v-if="activeResult.operation==='subtitles' && !captions.length" class="hint">此素材没有软字幕流。</p>
         <div v-if="currentTrack">
+          <div v-if="hardScan" class="hard-subtitle-summary">
+            <strong>OCR 估算时序</strong>
+            <p>{{ clock(hardScan.start_us) }} – {{ clock(hardScan.end_us) }} · {{ hardScan.region==='lower' ? '画面底部 40%' : '完整画面' }} · {{ activeResult.ocr?.frames.length }} 帧</p>
+            <p class="hint">请对照画面校正起止时间。需要烧录修订字幕时，在剪辑中选择无旧字幕的画面。</p>
+          </div>
           <div class="subtitle-controls">
-            <label>字幕轨<select v-model.number="subtitleTrack">
+            <label v-if="!hardScan">字幕轨<select v-model.number="subtitleTrack">
               <option v-for="track in captions" :key="track.stream_index" :value="track.stream_index">
                 流 {{ track.stream_index }} · {{ track.language || '语言未标注' }}
               </option>
             </select></label>
             <button type="button" :disabled="activeCue<0" @click="seekCue(activeCue)">定位当前字幕</button>
           </div>
-          <p class="hint">{{ currentTrack.cues.length }} 条<span v-if="currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
+          <p class="hint">{{ currentTrack.cues.length }} 条<span v-if="hardScan && !currentTrack.cues.length"> · 扫描范围内未找到字幕候选</span>
+            <span v-else-if="!hardScan && currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
           <div v-if="currentTrack.cues.length" class="subtitle-workspace">
             <div class="cue-browser">
               <div class="cue-list">
@@ -503,6 +523,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                   :aria-pressed="draftCue===subtitlePage*pageSize+index" :data-playing="activeCue===subtitlePage*pageSize+index"
                   @click="seekCue(subtitlePage*pageSize+index)">
                   <time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span>
+                  <small v-if="cue.sample_count">{{ cue.sample_count }} 帧采样</small>
                 </button>
               </div>
               <div v-if="currentTrack.cues.length>pageSize" class="actions cue-pager">
@@ -510,14 +531,18 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                 <span>{{ subtitlePage+1 }} / {{ Math.ceil(currentTrack.cues.length/pageSize) }}</span>
                 <button type="button" :disabled="(subtitlePage+1)*pageSize>=currentTrack.cues.length" @click="subtitlePage++">下一页</button>
               </div>
+              <figure v-if="selectedCaption?.artifact != null" class="caption-evidence">
+                <img :src="artifactUrl(activeResult.task_id,selectedCaption.artifact)" alt="所选字幕的首个识别画面">
+                <figcaption>首个识别画面 · {{ clock(selectedCaption.start_us) }}</figcaption>
+              </figure>
             </div>
             <SubtitleDraft :key="activeResult.task_id+':'+subtitleTrack" :project-id="projectId" :asset-id="assetId"
               :task-id="activeResult.task_id" :stream="subtitleTrack" :cues="currentTrack.cues"
               :cue-index="Math.min(draftCue,currentTrack.cues.length-1)"
-              @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',assetId,$event)" />
+              @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',hardScan ? '' : assetId,$event)" />
           </div>
         </div>
-        <section v-if="activeResult.ocr" class="ocr-result">
+        <section v-if="activeResult.ocr && !hardScan" class="ocr-result">
           <h3>画面文字 · {{ activeResult.ocr.language }}</h3>
           <p class="hint">{{ activeResult.ocr.frames.length }} 个采样帧。请到证据审核中核对画面文字。</p>
           <p v-if="!activeResult.ocr.frames.some(frame=>frame.text)">在采样帧中未识别到文字。</p>
@@ -587,6 +612,12 @@ onUnmounted(() => { scope++; clearInterval(timer) })
 .cue-list time { color:var(--ink-muted); font:12px Consolas,monospace; padding-top:3px }
 .cue-list button[data-playing=true] time { color:var(--accent) }
 .cue-pager { margin-top:9px }
+.hard-subtitle-summary { padding:10px 12px; margin:12px 0; background:var(--accent-surface); border:1px solid var(--line-soft); border-radius:8px }
+.hard-subtitle-summary p { margin:5px 0 0 }
+.cue-list small,.caption-evidence figcaption { color:var(--ink-muted) }
+.caption-evidence { margin:10px 0 0; padding:8px; background:#131d26; border:1px solid var(--line-soft); border-radius:8px }
+.caption-evidence img { display:block; width:100%; max-height:190px; object-fit:contain; }
+.caption-evidence figcaption { margin-top:6px; font-size:12px }
 @media (max-width:900px) { .subtitle-workspace { grid-template-columns:1fr } }
 .stream-list details { margin:12px 0 }
 [aria-pressed="true"] { border-color:var(--accent); background:var(--accent-surface); color:var(--ink) }

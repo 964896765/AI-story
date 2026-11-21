@@ -6,7 +6,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from . import storage
-from .analysis_schemas import AnalysisRequest
+from .analysis_schemas import AnalysisRequest, OCR_OPERATIONS
 from .creative import require
 from .db import session
 from .models import Asset, MediaAnalysis, Project, Task, TaskEvent, now
@@ -41,7 +41,7 @@ def submit(project_id: str, body: AnalysisRequest, db=Depends(session)):
         return existing
     recognizers = {}
     for index, step in enumerate(body.steps):
-        if step.operation == 'ocr':
+        if step.operation in OCR_OPERATIONS:
             try:
                 recognizers[index] = recognizer(step.ocr_language)
             except ValueError as exc:

@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from . import storage
 from .analysis_engine import ALGORITHM, analyze, tools_version
-from .analysis_schemas import AnalysisOptions
+from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
 from .models import MediaAnalysis
 from .perception_ocr import recognizer
 from .render import file_hash
@@ -34,7 +34,7 @@ def execute_analysis(task_id, attempt, parameters, input_snapshot, update, facto
     if actual != source['sha256']:
         raise ValueError('源文件与导入时的 SHA-256 不一致，请重新导入未修改的素材')
     adapter = None
-    if options.operation == 'ocr':
+    if options.operation in OCR_OPERATIONS:
         pinned = input_snapshot.get('ocr')
         adapter = recognizer(pinned['language'] if pinned else options.ocr_language)
         if pinned and adapter != pinned:

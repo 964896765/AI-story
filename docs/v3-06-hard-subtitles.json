@@ -1,0 +1,88 @@
+{
+  "checked_at": "2026-11-21T01:24:36.032Z",
+  "engine": "windows-ocr-v1",
+  "language": "zh-Hans-CN",
+  "expected_us": [
+    [
+      500000,
+      1250000
+    ],
+    [
+      1750000,
+      2500000
+    ]
+  ],
+  "recognized_us": [
+    [
+      500000,
+      1250000
+    ],
+    [
+      1750000,
+      2500000
+    ]
+  ],
+  "sampled_frames": 10,
+  "reviewed_subtitle_sha256": "8e9d73f7147fdc334d0712904a831207272eff0e6f3a57532f3f3220d380a964",
+  "immutable_source_sha256": "225888dbc38b0fba332756cbc11f06bfb6b34ee81625eaaa1f0345f71c92e043",
+  "rendered_dark_pixels": [
+    0,
+    3100,
+    0,
+    1658,
+    0
+  ],
+  "clean_source_rendered": true,
+  "paid_model_calls": 0,
+  "js_errors": [],
+  "production_chrome_flows": [
+    {
+      "flow": "v3-01",
+      "checked_at": "2026-11-21T01:23:40.921Z"
+    },
+    {
+      "flow": "p5",
+      "checked_at": "2026-11-21T01:23:51.114Z"
+    },
+    {
+      "flow": "p6",
+      "checked_at": "2026-11-21T01:24:16.631Z"
+    },
+    {
+      "flow": "p6-ocr",
+      "checked_at": "2026-11-21T01:24:36.038Z"
+    },
+    {
+      "flow": "p7",
+      "checked_at": "2026-11-21T01:24:41.498Z"
+    },
+    {
+      "flow": "p8",
+      "checked_at": "2026-11-21T01:24:48.523Z"
+    },
+    {
+      "flow": "p9",
+      "checked_at": "2026-11-21T01:25:02.782Z"
+    },
+    {
+      "flow": "p10",
+      "checked_at": "2026-11-21T01:25:20.26Z"
+    },
+    {
+      "flow": "p11",
+      "checked_at": "2026-11-21T01:25:36.778Z"
+    },
+    {
+      "flow": "p12",
+      "checked_at": "2026-11-21T01:25:47.511Z"
+    },
+    {
+      "flow": "p13",
+      "checked_at": "2026-11-21T01:26:00.006Z"
+    },
+    {
+      "flow": "p14",
+      "checked_at": "2026-11-21T01:26:03.858Z"
+    }
+  ]
+}

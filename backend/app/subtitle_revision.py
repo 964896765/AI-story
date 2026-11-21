@@ -1,4 +1,4 @@
-"""Save reviewed soft subtitles as immutable project media."""
+"""Save reviewed subtitles as immutable project media."""
 import hashlib
 import os
 from pathlib import Path
@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from . import storage
 from .analysis_engine import micros
-from .analysis_service import artifact_intact
+from .analysis_service import artifact_intact, fingerprint
 from .models import Asset, MediaAnalysis
 from .story_schemas import Strict
 
@@ -67,14 +67,31 @@ def compile_srt(cues, edits, duration_us):
 
 def verified_track(db, task, source, stream_index):
     row = db.get(MediaAnalysis, task.id)
-    if not row or task.status != 'succeeded' or row.payload['operation'] != 'subtitles':
+    if not row or task.status != 'succeeded' or row.payload['operation'] not in ('subtitles', 'hard_subtitles'):
         raise HTTPException(404, '此任务没有已验证的字幕结果')
     if task.input_snapshot.get('video', {}).get('sha256') != source.sha256:
         raise HTTPException(409, '素材哈希与解析时不一致，请重新解析')
     track = next((item for item in row.payload['subtitle_tracks'] if item['stream_index'] == stream_index), None)
-    if not track or track['status'] != 'extracted' or not track['cues']:
-        raise HTTPException(404, '此轨道没有可校对的软字幕')
+    if not track or track['status'] not in ('extracted', 'ocr_estimated') or not track['cues']:
+        raise HTTPException(404, '此轨道没有可校对的字幕')
     return row, track
+
+
+def subtitle_provenance(payload, track):
+    if track['status'] == 'extracted':
+        artifact = payload['artifacts'][track['artifact']]
+        if not artifact_intact(artifact):
+            raise HTTPException(409, '提取的字幕文件缺失或校验失败，请重新提取')
+        return {'subtitle_source_sha256': artifact['sha256']}
+    artifacts = payload['artifacts']
+    if not artifacts or not all(artifact_intact(entry) for entry in artifacts):
+        raise HTTPException(409, '硬字幕采样帧缺失或校验失败，请重新识别')
+    scan = payload['hard_subtitle_scan']
+    return {'subtitle_origin': 'ocr_estimated', 'subtitle_scan': scan,
+            'subtitle_evidence_sha256': fingerprint({
+                'scan': scan, 'ocr': payload['ocr'], 'cues': track['cues'],
+                'frame_hashes': [entry['sha256'] for entry in artifacts],
+            })}
 
 
 def publish_srt(key, data, digest):
@@ -120,18 +137,16 @@ def save_revision(db, source, task, stream_index, edits):
         if not artifact_intact({'storage_key': key, 'size_bytes': existing.size_bytes, 'sha256': existing.sha256}):
             raise HTTPException(409, '已保存的字幕文件缺失或校验失败')
         return existing
-    artifact = row.payload['artifacts'][track['artifact']]
-    if not artifact_intact(artifact):
-        raise HTTPException(409, '提取的字幕文件缺失或校验失败，请重新提取')
+    provenance = subtitle_provenance(row.payload, track)
     version = (db.scalar(select(func.max(Asset.version)).where(*scope)) or 0) + 1
     publish_srt(key, data, digest)
-    name = f'{Path(source.name).stem[:220]} · 字幕流 {stream_index} v{version}.srt'
+    label = '硬字幕 OCR' if track['status'] == 'ocr_estimated' else '字幕流'
+    name = f'{Path(source.name).stem[:220]} · {label} {stream_index} v{version}.srt'
     asset = Asset(project_id=source.project_id, name=name, storage_key=key, sha256=digest,
                   size_bytes=len(data), authorization=source.authorization, version=version,
                   media_info={'origin': 'subtitle_review', 'derived_from_asset': source.id,
                               'source_sha256': source.sha256, 'analysis_task_id': task.id,
-                              'subtitle_stream': stream_index, 'subtitle_source_sha256': artifact['sha256'],
-                              'cue_count': count})
+                              'subtitle_stream': stream_index, 'cue_count': count, **provenance})
     db.add(asset)
     db.commit()
     return asset
