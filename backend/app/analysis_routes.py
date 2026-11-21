@@ -12,7 +12,7 @@ from .db import session
 from .models import Asset, MediaAnalysis, Project, Task, TaskEvent, now
 from .analysis_service import analysis_public
 from .perception_ocr import recognizer
-from .subtitle_revision import SubtitleRevisionInput, revision_list, save_revision
+from .subtitle_revision import SubtitleRevisionInput, revision_detail, revision_list, save_revision
 
 router = APIRouter(prefix='/api/analysis', tags=['media-analysis'])
 INPUT_FORMATS = {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.wav', '.mp3'}
@@ -97,12 +97,19 @@ def subtitle_revisions(project_id: str, asset_id: str, task_id: str, stream_inde
     return revision_list(db, require(db, Asset, asset_id), task, stream_index)
 
 
+@router.get(SUBTITLE_REVISIONS + '/{revision_id}')
+def get_subtitle_revision(project_id: str, asset_id: str, task_id: str, stream_index: int, revision_id: str,
+                          db=Depends(session)):
+    task = get_task(project_id, asset_id, task_id, db)
+    return revision_detail(db, require(db, Asset, asset_id), task, stream_index, revision_id)
+
+
 @router.post(SUBTITLE_REVISIONS, status_code=201)
 def review_subtitles(project_id: str, asset_id: str, task_id: str, stream_index: int,
                      body: SubtitleRevisionInput, db=Depends(session)):
     task = get_task(project_id, asset_id, task_id, db)
     db.scalar(select(Project.id).where(Project.id == project_id).with_for_update())
-    return save_revision(db, require(db, Asset, asset_id), task, stream_index, body.edits)
+    return save_revision(db, require(db, Asset, asset_id), task, stream_index, body)
 
 
 @router.get('/tasks/{task_id}/artifacts/{number}')

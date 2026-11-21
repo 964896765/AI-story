@@ -95,13 +95,20 @@ try {
   await click('智能解析')
   await wait(()=>contains('自制硬字幕.mp4'),'timed sample in list')
   await setField('解析素材',timed.id)
-  await evaluate(`(async () => {
+  await wait(()=>evaluate(`(async () => {
     const inspect = document.querySelector('.analysis-choices input[value=inspect]')
+    const hard = document.querySelector('.analysis-choices input[value=hard_subtitles]')
+    if (!inspect || !hard || hard.disabled) return false
     if (inspect.checked) inspect.click()
     await Promise.resolve()
-    document.querySelector('.analysis-choices input[value=hard_subtitles]').click()
-  })()`)
-  await evaluate("document.querySelector('.analysis-options details').open = true")
+    if (!hard.checked) hard.click()
+    return hard.checked
+  })()`),'hard subtitle operation enabled')
+  await wait(()=>evaluate(`(() => {
+    const settings = document.querySelector('.analysis-options details')
+    if (!settings) return false
+    return settings.open = true
+  })()`),'hard subtitle options visible')
   await setField('OCR 语言','zh-Hans-CN')
   await setField('硬字幕开始（秒）','0.25')
   await setField('硬字幕结束（秒）','2.75')

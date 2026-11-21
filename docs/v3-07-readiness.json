@@ -1,0 +1,18 @@
+{
+  "checked_at": "2026-11-21T01:42:51.2784334Z",
+  "base_url": "http://127.0.0.1:15173",
+  "ready": true,
+  "database_revision": "0013",
+  "projects_checked": 7,
+  "assets": 13,
+  "online_workers": 1,
+  "live_authorized": false,
+  "live_limit_cny_micros": 0,
+  "live_limit_usd_micros": 0,
+  "frontend_bundle": "/assets/index-CXM8x-Pv.js",
+  "frontend_http": 200,
+  "bundle_http": 200,
+  "analysis_route_http": 200,
+  "subtitle_revision_detail_available": true,
+  "subtitle_base_revision_input_available": true
+}

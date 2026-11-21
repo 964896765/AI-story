@@ -6,7 +6,7 @@ import AnalysisWaveform from './AnalysisWaveform.vue'
 import SubtitleDraft from './SubtitleDraft.vue'
 import {
   artifactUrl, clock, operationLabels, request, statusLabels,
-  type Job, type Operation, type Result, type Version,
+  type Job, type Operation, type Result, type ReviewCue, type SubtitlePreview, type Version,
 } from './analysisApi'
 
 const props = defineProps<{
@@ -27,6 +27,8 @@ const selectedJob = ref(''), viewSource = ref(''), playing = ref<HTMLMediaElemen
 const playerDuration = ref(0), pendingSeek = ref<number|null>(null), playbackError = ref(false)
 const linkError = ref(''), previewTask = ref(''), pendingProxy = ref(''), pendingTask = ref('')
 const subtitleTrack = ref(0), subtitlePage = ref(0), draftCue = ref(0)
+const subtitlePreview = ref<SubtitlePreview>()
+const previewDraft = ref(true)
 const taskFilter = ref<'all'|'running'|'issues'>('all')
 const checked = ref<Operation[]>(['inspect'])
 const operations = Object.keys(operationLabels) as Operation[]
@@ -70,10 +72,15 @@ const duration = computed(() => Math.max(playerDuration.value, scenes.value?.sho
 const captions = computed(() => activeResult.value?.subtitle_tracks || [])
 const hardScan = computed(() => activeResult.value?.hard_subtitle_scan)
 const currentTrack = computed(() => captions.value.find(track => track.stream_index === subtitleTrack.value))
-const activeCue = computed(() => currentTrack.value?.cues.findIndex(cue => cue.start_us <= playhead.value && playhead.value < cue.end_us) ?? -1)
+const workingPreview = computed(() => subtitlePreview.value?.task === activeResult.value?.task_id &&
+  subtitlePreview.value?.stream === subtitleTrack.value ? subtitlePreview.value : undefined)
+const workingCues = computed<ReviewCue[]>(() => workingPreview.value?.cues ?? currentTrack.value?.cues ?? [])
+const isPlaying = (cue: {start_us:number; end_us:number}) => cue.start_us <= playhead.value && playhead.value < cue.end_us
+const activeCue = computed(() => workingCues.value.findIndex(cue => !cue.hidden && isPlaying(cue)))
+const playbackCue = computed(() => previewDraft.value ? workingCues.value[activeCue.value] : currentTrack.value?.cues.find(isPlaying))
 const pageSize = 50
-const cuePage = computed(() => currentTrack.value?.cues.slice(subtitlePage.value * pageSize, (subtitlePage.value + 1)*pageSize) || [])
-const selectedCaption = computed(() => currentTrack.value?.cues[draftCue.value])
+const cuePage = computed(() => workingCues.value.slice(subtitlePage.value * pageSize, (subtitlePage.value + 1)*pageSize))
+const selectedCaption = computed(() => workingCues.value[draftCue.value])
 const visibleJobs = computed(() => jobs.value.filter(job => taskFilter.value === 'all' ||
   (taskFilter.value === 'running' ? ['queued','running'].includes(job.status) : ['failed','cancelled'].includes(job.status))))
 const linkHref = computed(() => props.reviewLink(assetId.value,selectedJob.value,playhead.value,previewTask.value))
@@ -271,7 +278,7 @@ function mediaError() {
 }
 function seekCue(index: number) {
   if (index < 0) return
-  const cue = currentTrack.value?.cues[index]
+  const cue = workingCues.value[index]
   if (!cue) return
   subtitlePage.value = Math.floor(index/pageSize)
   draftCue.value = index
@@ -288,6 +295,7 @@ watch(activeResult, result => {
   draftCue.value = 0
 })
 watch(subtitleTrack, () => { subtitlePage.value = 0; draftCue.value = 0 })
+watch(() => workingPreview.value?.baseId, () => { subtitlePage.value = 0; draftCue.value = 0 })
 watch(assetId, () => {
   scope++
   loading.value = false
@@ -384,7 +392,11 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             </button>
           </div>
           <AnalysisWaveform v-if="activeResult?.operation === 'waveform'" :result="activeResult" :playhead="playhead" @seek="seek" />
-          <p v-if="currentTrack && activeCue>=0" class="active-caption">{{ currentTrack.cues[activeCue]?.text }}</p>
+          <div v-if="workingCues.length" class="actions caption-mode" aria-label="字幕预览">
+            <button type="button" :aria-pressed="previewDraft" @click="previewDraft=true">预览校对稿</button>
+            <button type="button" :aria-pressed="!previewDraft" @click="previewDraft=false">预览原字幕</button>
+          </div>
+          <p v-if="playbackCue" class="active-caption">{{ playbackCue.text }}</p>
         </section>
         <section class="analysis-tools" aria-label="解析设置与任务">
           <h2>本地处理</h2>
@@ -514,22 +526,24 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             </select></label>
             <button type="button" :disabled="activeCue<0" @click="seekCue(activeCue)">定位当前字幕</button>
           </div>
-          <p class="hint">{{ currentTrack.cues.length }} 条<span v-if="hardScan && !currentTrack.cues.length"> · 扫描范围内未找到字幕候选</span>
+          <p class="hint">{{ workingCues.length }} 条<span v-if="hardScan && !currentTrack.cues.length"> · 扫描范围内未找到字幕候选</span>
             <span v-else-if="!hardScan && currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
           <div v-if="currentTrack.cues.length" class="subtitle-workspace">
             <div class="cue-browser">
               <div class="cue-list">
                 <button v-for="(cue,index) in cuePage" :key="subtitlePage*pageSize+index" type="button"
                   :aria-pressed="draftCue===subtitlePage*pageSize+index" :data-playing="activeCue===subtitlePage*pageSize+index"
+                  :data-hidden="cue.hidden || undefined"
                   @click="seekCue(subtitlePage*pageSize+index)">
                   <time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span>
+                  <small v-if="cue.hidden">预览已隐藏</small>
                   <small v-if="cue.sample_count">{{ cue.sample_count }} 帧采样</small>
                 </button>
               </div>
-              <div v-if="currentTrack.cues.length>pageSize" class="actions cue-pager">
+              <div v-if="workingCues.length>pageSize" class="actions cue-pager">
                 <button type="button" :disabled="subtitlePage===0" @click="subtitlePage--">上一页</button>
-                <span>{{ subtitlePage+1 }} / {{ Math.ceil(currentTrack.cues.length/pageSize) }}</span>
-                <button type="button" :disabled="(subtitlePage+1)*pageSize>=currentTrack.cues.length" @click="subtitlePage++">下一页</button>
+                <span>{{ subtitlePage+1 }} / {{ Math.ceil(workingCues.length/pageSize) }}</span>
+                <button type="button" :disabled="(subtitlePage+1)*pageSize>=workingCues.length" @click="subtitlePage++">下一页</button>
               </div>
               <figure v-if="selectedCaption?.artifact != null" class="caption-evidence">
                 <img :src="artifactUrl(activeResult.task_id,selectedCaption.artifact)" alt="所选字幕的首个识别画面">
@@ -538,7 +552,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             </div>
             <SubtitleDraft :key="activeResult.task_id+':'+subtitleTrack" :project-id="projectId" :asset-id="assetId"
               :task-id="activeResult.task_id" :stream="subtitleTrack" :cues="currentTrack.cues"
-              :cue-index="Math.min(draftCue,currentTrack.cues.length-1)"
+              :cue-index="draftCue" @preview="subtitlePreview=$event"
               @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',hardScan ? '' : assetId,$event)" />
           </div>
         </div>
@@ -611,6 +625,8 @@ onUnmounted(() => { scope++; clearInterval(timer) })
 .cue-list button { display:flex; flex-wrap:wrap; text-align:left; gap:7px 14px; white-space:pre-wrap; overflow-wrap:anywhere }
 .cue-list time { color:var(--ink-muted); font:12px Consolas,monospace; padding-top:3px }
 .cue-list button[data-playing=true] time { color:var(--accent) }
+.cue-list button[data-hidden=true] span { text-decoration:line-through; color:var(--ink-muted) }
+.caption-mode { margin-top:8px }
 .cue-pager { margin-top:9px }
 .hard-subtitle-summary { padding:10px 12px; margin:12px 0; background:var(--accent-surface); border:1px solid var(--line-soft); border-radius:8px }
 .hard-subtitle-summary p { margin:5px 0 0 }

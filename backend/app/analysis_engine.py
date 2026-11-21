@@ -346,7 +346,11 @@ SRT_TIME = re.compile(r'(\d{2,}):(\d{2}):(\d{2}),(\d{3})')
 def read_cues(path):
     if path.stat().st_size > 2 * 1024**2:
         raise ValueError('单条字幕超过 2 MiB')
-    blocks = re.split(r'\n[ \t]*\n', path.read_text(encoding='utf-8-sig').strip())
+    return parse_cues(path.read_text(encoding='utf-8-sig'))
+
+
+def parse_cues(content):
+    blocks = re.split(r'\n[ \t]*\n', content.strip())
     if len(blocks) > 10000:
         raise ValueError('单条字幕超过 10000 条')
     cues = []

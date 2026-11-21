@@ -10,7 +10,7 @@ from pydantic import Field
 from sqlalchemy import func, select
 
 from . import storage
-from .analysis_engine import micros
+from .analysis_engine import micros, parse_cues
 from .analysis_service import artifact_intact, fingerprint
 from .models import Asset, MediaAnalysis
 from .story_schemas import Strict
@@ -25,6 +25,7 @@ class CueEdit(Strict):
 class SubtitleRevisionInput(Strict):
     # Only the changed rows are submitted. A null row removes that source cue.
     edits: dict[int, CueEdit | None] = Field(default_factory=dict, max_length=10_000)
+    base_revision_id: str | None = Field(default=None, min_length=1, max_length=36)
 
 
 def srt_time(ms: int) -> str:
@@ -125,12 +126,40 @@ def revision_list(db, source, task, stream_index):
     return db.scalars(select(Asset).where(*scope).order_by(Asset.version.desc()).limit(20)).all()
 
 
-def save_revision(db, source, task, stream_index, edits):
+def read_revision(db, scope, revision_id):
+    asset = db.scalar(select(Asset).where(*scope, Asset.id == revision_id))
+    if asset is None:
+        raise HTTPException(404, '此字幕版本不属于当前素材、任务或轨道')
+    try:
+        with storage.resolve_key(asset.storage_key).open('rb') as file:
+            data = file.read(2*1024**2+1)
+        if len(data) > 2*1024**2 or len(data) != asset.size_bytes or hashlib.sha256(data).hexdigest() != asset.sha256:
+            raise ValueError('字幕版本哈希不匹配')
+        cues = parse_cues(data.decode('utf-8-sig'))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(409, '已保存的字幕文件缺失或校验失败') from exc
+    return asset, cues
+
+
+def revision_detail(db, source, task, stream_index, revision_id):
+    verified_track(db, task, source, stream_index)
+    _, scope = revision_scope(source, task, stream_index)
+    asset, cues = read_revision(db, scope, revision_id)
+    return {'id': asset.id, 'version': asset.version, 'sha256': asset.sha256, 'cues': cues,
+            'parent_revision_id': asset.media_info.get('subtitle_parent_asset_id')}
+
+
+def save_revision(db, source, task, stream_index, body):
     row, track = verified_track(db, task, source, stream_index)
-    duration = row.payload.get('duration_us') or micros(source.media_info.get('format', {}).get('duration'))
-    data, count = compile_srt(track['cues'], edits, duration if duration and duration > 0 else None)
-    digest = hashlib.sha256(data).hexdigest()
     prefix, scope = revision_scope(source, task, stream_index)
+    cues = track['cues']
+    lineage = {}
+    if body.base_revision_id is not None:
+        base, cues = read_revision(db, scope, body.base_revision_id)
+        lineage = {'subtitle_parent_asset_id': base.id, 'subtitle_parent_sha256': base.sha256}
+    duration = row.payload.get('duration_us') or micros(source.media_info.get('format', {}).get('duration'))
+    data, count = compile_srt(cues, body.edits, duration if duration and duration > 0 else None)
+    digest = hashlib.sha256(data).hexdigest()
     key = prefix + digest + '.srt'
     existing = db.scalar(select(Asset).where(*scope, Asset.storage_key == key))
     if existing:
@@ -146,7 +175,7 @@ def save_revision(db, source, task, stream_index, edits):
                   size_bytes=len(data), authorization=source.authorization, version=version,
                   media_info={'origin': 'subtitle_review', 'derived_from_asset': source.id,
                               'source_sha256': source.sha256, 'analysis_task_id': task.id,
-                              'subtitle_stream': stream_index, 'cue_count': count, **provenance})
+                              'subtitle_stream': stream_index, 'cue_count': count, **provenance, **lineage})
     db.add(asset)
     db.commit()
     return asset

@@ -7,6 +7,8 @@ export type Operation = keyof typeof operationLabels
 export type Interval = { start_us: number; end_us: number }
 export type Shot = Interval & { score: number | null; artifact: number | null; origin?: string }
 export type Cue = Interval & { text: string; artifact?: number; sample_count?: number }
+export type ReviewCue = Cue & { hidden?: boolean }
+export interface SubtitlePreview { task: string; stream: number; baseId: string | null; cues: ReviewCue[] }
 export type OcrFrame = { artifact: number; time_us: number; text: string; lines: string[] }
 export interface Artifact {
   id: number; name: string; role: string; size_bytes: number; time_us?: number; stream_index?: number

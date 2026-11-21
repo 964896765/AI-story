@@ -150,10 +150,32 @@ def test_reviewed_subtitles_are_validated_versioned_and_immutable(analysis, tmp_
     assert (first['version'], second['version']) == (1, 2)
     assert second['media_info']['cue_count'] == 1
     assert client.get(first_file).content == first_bytes
+    detail = client.get(route+'/'+second['id'])
+    assert detail.status_code == 200, detail.text
+    assert detail.json() == {'id': second['id'], 'version': 2, 'sha256': second['sha256'],
+                             'parent_revision_id': None, 'cues': [{
+                                 'start_us': 300000, 'end_us': 950000, 'text': '校对台词\n第二行',
+                             }]}
+    assert client.get(route+'/'+asset['id']).status_code == 404
+    assert client.post(route, json={'base_revision_id': asset['id']}).status_code == 404
+    assert client.post(route, json={'base_revision_id': second['id'], 'edits': {'1': cue}}).status_code == 422
+    branch = {'base_revision_id': second['id'], 'edits': {'0': cue | {'text': '从 v2 继续编辑'}}}
+    third = client.post(route, json=branch)
+    assert third.status_code == 201, third.text
+    third = third.json()
+    assert third['version'] == 3 and third['media_info']['cue_count'] == 1
+    assert third['media_info']['subtitle_parent_asset_id'] == second['id']
+    assert third['media_info']['subtitle_parent_sha256'] == second['sha256']
+    assert client.get(route+'/'+third['id']).json()['parent_revision_id'] == second['id']
+    assert client.post(route, json=branch).json()['id'] == third['id']
+    assert client.post(route, json={'base_revision_id': second['id']}).json()['id'] == second['id']
+    assert client.get(first_file).content == first_bytes
     assert resolve(asset['storage_key']).read_bytes() == source.read_bytes()
     assert client.get(f"/api/analysis/tasks/{job['id']}/result").json() == result
     assert client.get(f"/api/analysis/tasks/{job['id']}/artifacts/0").content.decode().find('原始台词') >= 0
     resolve(first['storage_key']).write_bytes(b'changed')
+    assert client.get(route+'/'+first['id']).status_code == 409
+    assert client.post(route, json={'base_revision_id': first['id']}).status_code == 409
     assert client.post(route, json={'edits': {'0': cue}}).status_code == 409
 
 
