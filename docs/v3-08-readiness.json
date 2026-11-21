@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-11-21T02:14:22.3707110Z",
+  "base_url": "http://127.0.0.1:15173",
+  "ready": true,
+  "database_revision": "0013",
+  "projects_checked": 7,
+  "assets": 13,
+  "online_workers": 1,
+  "live_authorized": false,
+  "live_limit_cny_micros": 0,
+  "live_limit_usd_micros": 0,
+  "frontend_bundle": "/assets/index-BIG-h1QL.js",
+  "frontend_http": 200,
+  "bundle_http": 200,
+  "analysis_route_http": 200,
+  "asr_operation_available": true,
+  "local_recognizer": {
+    "id": "asr",
+    "label": "语音转写",
+    "status": "ready_local",
+    "available": true,
+    "engine": "windows-sapi-dictation-v1",
+    "languages": [
+      "zh-CN"
+    ],
+    "max_seconds": 180
+  }
+}

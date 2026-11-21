@@ -9,6 +9,7 @@ from . import storage
 from .analysis_engine import ALGORITHM, analyze, tools_version
 from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
 from .models import MediaAnalysis
+from .perception_asr import recognizer as speech_recognizer
 from .perception_ocr import recognizer
 from .render import file_hash
 
@@ -40,6 +41,12 @@ def execute_analysis(task_id, attempt, parameters, input_snapshot, update, facto
         if pinned and adapter != pinned:
             raise ValueError('本机 OCR 识别器环境已变更，请重新提交解析')
         options = options.model_copy(update={'ocr_language': adapter['language']})
+    elif options.operation == 'asr':
+        pinned = input_snapshot.get('asr')
+        adapter = speech_recognizer(pinned['language'] if pinned else options.asr_language)
+        if pinned != adapter:
+            raise ValueError('本机语音识别器环境已变更，请重新提交转写')
+        options = options.model_copy(update={'asr_language': adapter['language']})
     inputs = {'algorithm': ALGORITHM, 'tools': tools_version(), 'source': actual,
               'asset_id': source['id'], 'options': options.signature_parameters()}
     if adapter:

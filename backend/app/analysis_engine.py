@@ -13,8 +13,10 @@ import shutil
 import subprocess
 import sys
 import time
+import wave
 
 from .analysis_schemas import AnalysisOptions, OCR_OPERATIONS
+from .perception_asr import MAX_SCAN_SECONDS, recognizer as speech_recognizer, transcribe
 from .perception_ocr import estimate_subtitle_cues, recognize, recognizer
 from .process_guard import attach
 from .render import display_size, file_hash, stop_process, write_manifest
@@ -26,7 +28,7 @@ MAX_LOG = 16 * 1024**2
 MAX_FRAMES = 240
 MAX_OCR_FRAMES = 120
 MEDIA_TYPES = {'.mkv': 'video/x-matroska', '.mka': 'audio/x-matroska',
-               '.mp4': 'video/mp4', '.srt': 'text/plain; charset=utf-8', '.jpg': 'image/jpeg'}
+               '.mp4': 'video/mp4', '.wav': 'audio/wav', '.srt': 'text/plain; charset=utf-8', '.jpg': 'image/jpeg'}
 TEXT_CODECS = {'subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text'}
 
 
@@ -367,6 +369,16 @@ def parse_cues(content):
     return cues
 
 
+def srt_time(ms):
+    seconds, remainder = divmod(ms, 1000)
+    return f'{seconds//3600:02d}:{seconds//60%60:02d}:{seconds%60:02d},{remainder:03d}'
+
+
+def format_srt(rows):
+    return '\n\n'.join(f'{i}\n{srt_time(start)} --> {srt_time(end)}\n{text}'
+                       for i, (start, end, text) in enumerate(rows, 1)) + '\n'
+
+
 def subtitles(commands, source, info, options):
     streams = typed_streams(info, 'subtitle') if options.stream is None else [choose(info, options.stream, 'subtitle')]
     if len(streams) > 12:
@@ -475,9 +487,59 @@ def recognize_screen_text(commands, source, info, options):
     return payload
 
 
+def recognize_audio(commands, source, info, options):
+    stream = choose(info, options.stream, 'audio')
+    if stream is None:
+        raise ValueError('素材没有可转写的音轨')
+    adapter = speech_recognizer(options.asr_language)
+    duration_us = probe_duration(info)
+    start_us = options.scan_start_ms * 1000
+    end_us = duration_us
+    if options.scan_end_ms is not None:
+        requested_end = options.scan_end_ms * 1000
+        if requested_end > duration_us + 999:
+            raise ValueError('语音转写范围超出素材时长')
+        end_us = min(duration_us, requested_end)
+    if start_us >= end_us:
+        raise ValueError('语音转写范围超出素材时长')
+    if end_us - start_us > MAX_SCAN_SECONDS * 1_000_000:
+        raise ValueError(f'本机转写每次最多 {MAX_SCAN_SECONDS} 秒，请缩短区间')
+    start, end = f'{start_us/1_000_000:.6f}', f'{end_us/1_000_000:.6f}'
+    filters = f'atrim=start={start}:end={end},asetpts=PTS-{start}/TB,aresample=16000:async=1:first_pts=0'
+    audio = commands.work / 'speech.wav'
+    preview = commands.output / 'speech.wav'
+    try:
+        commands.ffmpeg(source, ['-map', f"0:{stream['index']}", '-af', filters,
+                                 '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', audio.name])
+        with wave.open(str(audio), 'rb') as wav:
+            if (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) != (16000, 1, 2):
+                raise ValueError('转写音频规格校验失败')
+            audio_duration_us = wav.getnframes()*1_000_000//16000
+        if not 0 < audio_duration_us <= end_us-start_us+125:
+            raise ValueError('所选范围没有有效音频采样或样本超界')
+        cues = transcribe(commands, audio, adapter, start_us, min(audio_duration_us,end_us-start_us))
+        audio.rename(preview)
+    finally:
+        audio.unlink(missing_ok=True)
+    artifacts = [descriptor(commands, preview, 'asr_audio', stream_index=stream['index'],
+                            time_us=start_us, duration_us=audio_duration_us)]
+    track = {'stream_index': stream['index'], 'language': adapter['language'], 'status': 'asr_estimated', 'cues': cues}
+    if cues:
+        data = format_srt((cue['start_us']//1000, cue['end_us']//1000, cue['text']) for cue in cues).encode('utf-8')
+        if len(data) > 2 * 1024**2:
+            raise ValueError('转写字幕超过 2 MiB')
+        transcript = commands.output / 'transcript.srt'
+        transcript.write_bytes(data)
+        track['artifact'] = len(artifacts)
+        artifacts.append(descriptor(commands, transcript, 'asr_transcript', stream_index=stream['index']))
+    return {'duration_us': duration_us, 'artifacts': artifacts, 'subtitle_tracks': [track],
+            'speech': {**adapter, 'stream_index': stream['index'], 'start_us': start_us, 'end_us': end_us,
+                       'audio_duration_us': audio_duration_us, 'status': 'recognized' if cues else 'no_speech'}}
+
+
 OPERATIONS = {'split': media_copy, 'remux': media_copy, 'transcode': transcode, 'frames': capture_frames,
               'scenes': capture_frames, 'subtitles': subtitles, 'waveform': waveform, 'ocr': recognize_screen_text,
-              'hard_subtitles': recognize_screen_text}
+              'hard_subtitles': recognize_screen_text, 'asr': recognize_audio}
 
 
 def analyze(source: Path, work: Path, options: AnalysisOptions, update):

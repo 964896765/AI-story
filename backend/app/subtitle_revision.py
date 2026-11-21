@@ -10,7 +10,7 @@ from pydantic import Field
 from sqlalchemy import func, select
 
 from . import storage
-from .analysis_engine import micros, parse_cues
+from .analysis_engine import format_srt, micros, parse_cues
 from .analysis_service import artifact_intact, fingerprint
 from .models import Asset, MediaAnalysis
 from .story_schemas import Strict
@@ -26,11 +26,6 @@ class SubtitleRevisionInput(Strict):
     # Only the changed rows are submitted. A null row removes that source cue.
     edits: dict[int, CueEdit | None] = Field(default_factory=dict, max_length=10_000)
     base_revision_id: str | None = Field(default=None, min_length=1, max_length=36)
-
-
-def srt_time(ms: int) -> str:
-    seconds, remainder = divmod(ms, 1000)
-    return f'{seconds//3600:02d}:{seconds//60%60:02d}:{seconds%60:02d},{remainder:03d}'
 
 
 def compile_srt(cues, edits, duration_us):
@@ -58,8 +53,7 @@ def compile_srt(cues, edits, duration_us):
     for earlier, later in zip(reviewed, reviewed[1:]):
         if earlier[1] > later[0]:
             raise HTTPException(422, f'第 {earlier[2]} 条与第 {later[2]} 条字幕时间重叠')
-    content = '\n\n'.join(f'{i}\n{srt_time(start)} --> {srt_time(end)}\n{text}'
-                          for i, (start, end, _, text) in enumerate(reviewed, 1)) + '\n'
+    content = format_srt((start, end, text) for start, end, _, text in reviewed)
     data = content.encode('utf-8')
     if len(data) > 2 * 1024**2:
         raise HTTPException(422, '校对后的 SRT 超过 2 MiB')
@@ -68,22 +62,25 @@ def compile_srt(cues, edits, duration_us):
 
 def verified_track(db, task, source, stream_index):
     row = db.get(MediaAnalysis, task.id)
-    if not row or task.status != 'succeeded' or row.payload['operation'] not in ('subtitles', 'hard_subtitles'):
+    if not row or task.status != 'succeeded' or row.payload['operation'] not in ('subtitles', 'hard_subtitles', 'asr'):
         raise HTTPException(404, '此任务没有已验证的字幕结果')
     if task.input_snapshot.get('video', {}).get('sha256') != source.sha256:
         raise HTTPException(409, '素材哈希与解析时不一致，请重新解析')
     track = next((item for item in row.payload['subtitle_tracks'] if item['stream_index'] == stream_index), None)
-    if not track or track['status'] not in ('extracted', 'ocr_estimated') or not track['cues']:
+    if not track or track['status'] not in ('extracted', 'ocr_estimated', 'asr_estimated') or not track['cues']:
         raise HTTPException(404, '此轨道没有可校对的字幕')
     return row, track
 
 
 def subtitle_provenance(payload, track):
-    if track['status'] == 'extracted':
+    if track['status'] in ('extracted', 'asr_estimated'):
         artifact = payload['artifacts'][track['artifact']]
         if not artifact_intact(artifact):
             raise HTTPException(409, '提取的字幕文件缺失或校验失败，请重新提取')
-        return {'subtitle_source_sha256': artifact['sha256']}
+        provenance = {'subtitle_source_sha256': artifact['sha256']}
+        if track['status'] == 'asr_estimated':
+            provenance.update(subtitle_origin='asr_estimated', speech=payload['speech'])
+        return provenance
     artifacts = payload['artifacts']
     if not artifacts or not all(artifact_intact(entry) for entry in artifacts):
         raise HTTPException(409, '硬字幕采样帧缺失或校验失败，请重新识别')
@@ -169,7 +166,7 @@ def save_revision(db, source, task, stream_index, body):
     provenance = subtitle_provenance(row.payload, track)
     version = (db.scalar(select(func.max(Asset.version)).where(*scope)) or 0) + 1
     publish_srt(key, data, digest)
-    label = '硬字幕 OCR' if track['status'] == 'ocr_estimated' else '字幕流'
+    label = {'ocr_estimated': '硬字幕 OCR', 'asr_estimated': '语音转写'}.get(track['status'], '字幕流')
     name = f'{Path(source.name).stem[:220]} · {label} {stream_index} v{version}.srt'
     asset = Asset(project_id=source.project_id, name=name, storage_key=key, sha256=digest,
                   size_bytes=len(data), authorization=source.authorization, version=version,

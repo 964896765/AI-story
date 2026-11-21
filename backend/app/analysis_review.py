@@ -143,9 +143,9 @@ def create_revision(asset_id: str, body: RevisionInput, db=Depends(session)):
         for track in row.payload.get('subtitle_tracks', []):
             if len(subtitles) + len(track['cues']) > 20000:
                 raise HTTPException(422, '单个快照最多对齐 20000 条字幕，请选较少轨道')
+            origin = {'ocr_estimated': 'hard_subtitle_ocr', 'asr_estimated': 'local_asr'}.get(track['status'], 'soft_subtitle')
             for number, cue in enumerate(track['cues']):
                 duration_candidates.append(cue['end_us'])
-                origin = 'hard_subtitle_ocr' if track['status'] == 'ocr_estimated' else 'soft_subtitle'
                 subtitles.append({'start_us': cue['start_us'], 'end_us': cue['end_us'],
                                   'origin': origin, 'task_id': task_id,
                                   'stream_index': track['stream_index'], 'cue_number': number})

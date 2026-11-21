@@ -5,6 +5,7 @@ from typing import Literal, Protocol
 
 from .text_adapters import live_gate
 from .perception_ocr import ENGINE, installed_languages
+from .perception_asr import ENGINE as ASR_ENGINE, installed_recognizers, MAX_SCAN_SECONDS
 
 Capability = Literal['asr', 'ocr', 'diarization', 'source_separation', 'video_understanding']
 
@@ -51,12 +52,17 @@ CAPABILITIES = {
 
 def available_capabilities():
     languages = installed_languages()
+    speech_languages = sorted({item['language'] for item in installed_recognizers()})
     capabilities = []
     for key, label in CAPABILITIES.items():
         capability = {'id': key, 'label': label, 'status': 'pending_integration', 'available': False}
         if key == 'ocr':
             capability.update(status='ready_local' if languages else 'missing_recognizer', available=bool(languages),
                               engine=ENGINE, languages=languages)
+        elif key == 'asr':
+            capability.update(status='ready_local' if speech_languages else 'missing_recognizer',
+                              available=bool(speech_languages), engine=ASR_ENGINE,
+                              languages=speech_languages, max_seconds=MAX_SCAN_SECONDS)
         capabilities.append(capability)
     return {'capabilities': capabilities, 'text_live_authorized': live_gate(), 'text_gate': '/api/text/status'}
 

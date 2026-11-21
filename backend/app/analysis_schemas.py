@@ -4,7 +4,7 @@ from pydantic import Field, model_validator
 
 from .story_schemas import Strict
 
-Operation = Literal['inspect', 'split', 'remux', 'transcode', 'frames', 'scenes', 'subtitles', 'waveform', 'ocr', 'hard_subtitles']
+Operation = Literal['inspect', 'split', 'remux', 'transcode', 'frames', 'scenes', 'subtitles', 'waveform', 'ocr', 'hard_subtitles', 'asr']
 OCR_OPERATIONS = {'ocr', 'hard_subtitles'}
 
 
@@ -25,6 +25,7 @@ class AnalysisOptions(Strict):
     silence_db: int = Field(default=-40, ge=-99, le=-10)
     silence_seconds: float = Field(default=0.4, ge=0.1, le=60)
     ocr_language: str | None = Field(default=None, pattern=r'^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$', max_length=48)
+    asr_language: str | None = Field(default=None, pattern=r'^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$', max_length=48)
     scan_start_ms: int = Field(default=0, ge=0, lt=86_400_000, strict=True)
     scan_end_ms: int | None = Field(default=None, gt=0, le=86_400_000, strict=True)
     subtitle_interval: float = Field(default=0.5, ge=0.25, le=2)
@@ -36,6 +37,8 @@ class AnalysisOptions(Strict):
             raise ValueError('流清单与转封装作用于整份素材，不接受单流索引')
         if self.operation == 'hard_subtitles' and self.scan_end_ms is not None and self.scan_end_ms <= self.scan_start_ms:
             raise ValueError('硬字幕扫描终点必须晚于起点')
+        if self.operation == 'asr' and self.scan_end_ms is not None and self.scan_end_ms <= self.scan_start_ms:
+            raise ValueError('语音转写终点必须晚于起点')
         return self
 
     def signature_parameters(self):
@@ -47,6 +50,7 @@ class AnalysisOptions(Strict):
             'waveform': {'silence_db', 'silence_seconds'},
             'ocr': {'frame_interval', 'ocr_language'},
             'hard_subtitles': {'subtitle_interval', 'ocr_language', 'scan_start_ms', 'scan_end_ms', 'subtitle_region'},
+            'asr': {'asr_language', 'scan_start_ms', 'scan_end_ms'},
         }
         return self.model_dump(include={'operation', 'stream'} | fields.get(self.operation, set()))
 

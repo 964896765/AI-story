@@ -26,6 +26,7 @@ const jobs = ref<Job[]>([]), results = ref<Result[]>([]), activeResult = ref<Res
 const selectedJob = ref(''), viewSource = ref(''), playing = ref<HTMLMediaElement | null>(null), playhead = ref(0)
 const playerDuration = ref(0), pendingSeek = ref<number|null>(null), playbackError = ref(false)
 const linkError = ref(''), previewTask = ref(''), pendingProxy = ref(''), pendingTask = ref('')
+const speechPlayback = ref<{ start_us:number; end_us:number } | null>(null)
 const subtitleTrack = ref(0), subtitlePage = ref(0), draftCue = ref(0)
 const subtitlePreview = ref<SubtitlePreview>()
 const previewDraft = ref(true)
@@ -34,8 +35,10 @@ const checked = ref<Operation[]>(['inspect'])
 const operations = Object.keys(operationLabels) as Operation[]
 const error = ref(''), notice = ref(''), busy = ref(false), loading = ref(false)
 const logFiles = ref<{name:string;tail:string}[] | null>(null)
-const capabilities = ref<{id:string;label:string;available:boolean;languages?:string[]}[]>([])
+const capabilities = ref<{id:string;label:string;available:boolean;languages?:string[];max_seconds?:number;status?:string}[]>([])
 const ocrLanguages = computed(() => capabilities.value.find(item => item.id==='ocr')?.languages || [])
+const speechCapability = computed(() => capabilities.value.find(item => item.id==='asr'))
+const speechLanguages = computed(() => speechCapability.value?.languages || [])
 const pendingModels = computed(() => capabilities.value.filter(item => !item.available).map(item => item.label).join('、'))
 const options = reactive({
   container:'mkv', max_edge:720, crf:20, fps:null as number|null, sample_rate:48000,
@@ -43,6 +46,7 @@ const options = reactive({
   scene_threshold:0.30, minimum_shot_seconds:0.30, silence_db:-40, silence_seconds:0.4,
   ocr_language:'', ocr_interval:2,
   hard_start:0, hard_end:'' as number | '', hard_interval:0.5, hard_region:'lower',
+  asr_language:'', asr_start:0, asr_end:'' as number | '',
 })
 const streamsByStep = reactive<Partial<Record<Operation,number>>>({})
 const audioOnly = computed(() => /\.(wav|mp3)$/i.test(currentAsset.value?.name || ''))
@@ -58,6 +62,7 @@ const reviewTabs = [
   { op:'subtitles', icon:Subtitles, label:'字幕' }, { op:'waveform', icon:AudioLines, label:'波形' },
   { op:'hard_subtitles', icon:Subtitles, label:'硬字幕' },
   { op:'ocr', icon:ScanLine, label:'OCR' }, { op:'inspect', icon:List, label:'媒体流' },
+  { op:'asr', icon:AudioLines, label:'转写' },
 ] as const
 const byOperation = computed(() => new Map(results.value.map(result => [result.operation,result])))
 const reviewResults = computed(() => {
@@ -68,9 +73,12 @@ const reviewResults = computed(() => {
 const selectedRow = computed(() => jobs.value.find(job => job.id === selectedJob.value))
 const scenes = computed(() => activeResult.value?.operation === 'scenes' ? activeResult.value : byOperation.value.get('scenes'))
 const proxy = computed(() => activeResult.value?.operation === 'transcode' ? activeResult.value : byOperation.value.get('transcode'))
-const duration = computed(() => Math.max(playerDuration.value, scenes.value?.shots?.at(-1)?.end_us || 0))
+const duration = computed(() => speechPlayback.value ? playerDuration.value || speechPlayback.value.end_us :
+  Math.max(playerDuration.value, scenes.value?.shots?.at(-1)?.end_us || 0))
+const playbackStart = computed(() => speechPlayback.value?.start_us ?? 0)
 const captions = computed(() => activeResult.value?.subtitle_tracks || [])
 const hardScan = computed(() => activeResult.value?.hard_subtitle_scan)
+const speech = computed(() => activeResult.value?.speech)
 const currentTrack = computed(() => captions.value.find(track => track.stream_index === subtitleTrack.value))
 const workingPreview = computed(() => subtitlePreview.value?.task === activeResult.value?.task_id &&
   subtitlePreview.value?.stream === subtitleTrack.value ? subtitlePreview.value : undefined)
@@ -87,7 +95,7 @@ const linkHref = computed(() => props.reviewLink(assetId.value,selectedJob.value
 const streamSelectors = computed(() => {
   const media = byOperation.value.get('inspect')?.media?.streams || []
   const types: Partial<Record<Operation,string[]>> = {
-    split:['video','audio','subtitle'], subtitles:['subtitle'], waveform:['audio'],
+    split:['video','audio','subtitle'], subtitles:['subtitle'], waveform:['audio'], asr:['audio'],
     frames:['video'], scenes:['video'], transcode:['video'], ocr:['video'], hard_subtitles:['video'],
   }
   return checked.value.flatMap(op => {
@@ -144,9 +152,12 @@ async function refresh() {
       const id = pendingProxy.value
       try {
         const job = list.find(row => row.id === id) || await request<Job>(`${path}/${encodeURIComponent(id)}`)
-        if (job.parameters.operation !== 'transcode' || job.status !== 'succeeded') throw new Error('链接中的代理尚不可用')
+        if (!['transcode','asr'].includes(job.parameters.operation) || job.status !== 'succeeded') throw new Error('链接中的代理尚不可用')
         const linkedProxy = await loadResult(job.id)
-        if (requestScope === scope && pendingProxy.value === id) previewProxy(linkedProxy)
+        if (requestScope === scope && pendingProxy.value === id) {
+          if (linkedProxy.operation === 'asr') previewSpeech(linkedProxy)
+          else previewProxy(linkedProxy)
+        }
       } catch (failure) {
         if (requestScope === scope) {
           linkError.value = String(failure)
@@ -190,6 +201,8 @@ function payload(operation: Operation) {
   if (operation === 'hard_subtitles') return {...common, ocr_language:options.ocr_language,
     scan_start_ms:Math.round(options.hard_start*1000), scan_end_ms:options.hard_end==='' ? null : Math.round(options.hard_end*1000),
     subtitle_interval:options.hard_interval, subtitle_region:options.hard_region}
+  if (operation === 'asr') return {...common, asr_language:options.asr_language,
+    scan_start_ms:Math.round(options.asr_start*1000), scan_end_ms:options.asr_end==='' ? null : Math.round(options.asr_end*1000)}
   return common
 }
 async function submit() {
@@ -208,6 +221,7 @@ async function submit() {
 }
 function disabled(operation: Operation) {
   if (operation === 'ocr' || operation === 'hard_subtitles') return audioOnly.value || !ocrLanguages.value.length
+  if (operation === 'asr') return !speechLanguages.value.length
   return audioOnly.value && ['frames','scenes','transcode','subtitles'].includes(operation)
 }
 async function openJob(job: Job) {
@@ -237,7 +251,7 @@ async function control(job: Job, action: 'retry'|'cancel') {
   })
 }
 function seek(time: number) {
-  const requested = Math.max(0,Math.round(time))
+  const requested = Math.max(playbackStart.value,Math.round(time))
   const media = playing.value
   if (!media || !Number.isFinite(media.duration)) {
     playhead.value = requested
@@ -245,32 +259,40 @@ function seek(time: number) {
     return
   }
   pendingSeek.value = null
-  const clamped = Math.min(media.duration,requested/1_000_000)
+  const clamped = Math.min(media.duration,(requested-playbackStart.value)/1_000_000)
   media.currentTime = clamped
-  playhead.value = Math.round(clamped*1_000_000)
+  playhead.value = playbackStart.value + Math.round(clamped*1_000_000)
 }
 function metadata(event: Event) {
   const media = event.target as HTMLMediaElement
   if (media !== playing.value) return
-  playerDuration.value = Number.isFinite(media.duration) ? Math.round(media.duration*1_000_000) : 0
+  playerDuration.value = Number.isFinite(media.duration) ? playbackStart.value + Math.round(media.duration*1_000_000) : 0
   if (pendingSeek.value !== null) seek(pendingSeek.value)
 }
 function updatePlayhead(event: Event) {
   const media = event.target as HTMLMediaElement
-  if (media === playing.value && pendingSeek.value === null) playhead.value = Math.round(media.currentTime*1_000_000)
+  if (media === playing.value && pendingSeek.value === null) playhead.value = playbackStart.value + Math.round(media.currentTime*1_000_000)
 }
-function changeSource(url: string, task = '') {
+function changeSource(url: string, task = '', range: typeof speechPlayback.value = null) {
   if (viewSource.value === url) return
   pendingSeek.value = playhead.value
   playerDuration.value = 0
   playbackError.value = false
   previewTask.value = task
+  speechPlayback.value = range
   viewSource.value = url
 }
 function previewProxy(result = proxy.value) {
   if (!result?.artifacts[0]) return
   pendingProxy.value = ''
   changeSource(artifactUrl(result.task_id,result.artifacts[0].id),result.task_id)
+}
+function previewSpeech(result: Result) {
+  const audio = result.artifacts.find(file => file.role === 'asr_audio')
+  if (!audio || !result.speech) throw new Error('转写音轨试听文件不可用')
+  pendingProxy.value = ''
+  const {start_us,audio_duration_us} = result.speech
+  changeSource(artifactUrl(result.task_id,audio.id),result.task_id,{start_us,end_us:start_us+audio_duration_us})
 }
 function mediaError() {
   if (!viewSource.value && proxy.value && !pendingProxy.value) previewProxy()
@@ -304,6 +326,7 @@ watch(assetId, () => {
   activeResult.value = null
   selectedJob.value = ''
   viewSource.value = ''
+  speechPlayback.value = null
   previewTask.value = ''
   logFiles.value = null
   const linked = assetId.value !== '' && assetId.value === props.initialAssetId
@@ -327,6 +350,7 @@ onMounted(() => {
     const status = await request<{capabilities:typeof capabilities.value}>('/analysis/capabilities')
     capabilities.value = status.capabilities
     options.ocr_language = ocrLanguages.value[0] || ''
+    options.asr_language = speechLanguages.value[0] || ''
     await refresh()
   })
   timer = setInterval(() => { if (!busy.value) void refresh().catch(failure => { error.value=String(failure) }) }, 3000)
@@ -353,7 +377,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
       <div class="analysis-desk">
         <section class="analysis-viewer" aria-label="审片预览与时间轴">
           <div class="analysis-panel-bar">
-            <h2>{{ viewSource ? '代理预览' : '原素材预览' }}</h2>
+            <h2>{{ speechPlayback ? '转写音轨试听' : viewSource ? '代理预览' : '原素材预览' }}</h2>
             <div class="actions source-actions">
               <button v-if="viewSource" type="button" @click="changeSource('')">返回原素材</button>
               <button v-else-if="proxy" type="button" @click="previewProxy()">切换到代理</button>
@@ -362,19 +386,19 @@ onUnmounted(() => { scope++; clearInterval(timer) })
               </a>
             </div>
           </div>
-          <div class="analysis-monitor" :class="{ 'audio-monitor':audioOnly }">
-            <audio v-if="audioOnly" :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata"
+          <div class="analysis-monitor" :class="{ 'audio-monitor':audioOnly || speechPlayback }">
+            <audio v-if="audioOnly || speechPlayback" :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata"
               @loadedmetadata="metadata" @timeupdate="updatePlayhead" @error="mediaError"></audio>
             <video v-else :key="sourceUrl" ref="playing" :src="sourceUrl" controls preload="metadata"
               @loadedmetadata="metadata" @timeupdate="updatePlayhead" @error="mediaError"></video>
           </div>
-          <p v-if="playbackError" class="hint">浏览器无法播放当前文件。可运行 MP4 转码生成代理。</p>
+          <p v-if="playbackError" class="hint">{{ speechPlayback ? '浏览器无法读取转写音轨。可返回原素材。' : '浏览器无法播放当前文件。可运行 MP4 转码生成代理。' }}</p>
           <div class="time-readout">
             <output aria-label="源时间">{{ clock(playhead) }}</output>
             <span v-if="duration">{{ clock(duration) }}</span>
           </div>
-          <input v-if="duration" class="source-seek" type="range" min="0" :max="duration" step="10000"
-            aria-label="定位源时间" :aria-valuetext="clock(playhead)" :value="Math.min(playhead,duration)"
+          <input v-if="duration" class="source-seek" type="range" :min="playbackStart" :max="duration" step="10000"
+            aria-label="定位源时间" :aria-valuetext="clock(playhead)" :value="Math.min(Math.max(playhead,playbackStart),duration)"
             @input="seek(Number(($event.target as HTMLInputElement).value))">
           <div v-if="scenes?.shots?.length" class="shot-ruler" aria-label="镜头时间轴">
             <button v-for="(shot,index) in scenes.shots" :key="shot.start_us" class="shot-marker"
@@ -450,12 +474,19 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                   <label>硬字幕结束（秒）<input v-model.number="options.hard_end" type="number" min="0.001" max="86400" step="0.001" placeholder="留空扫描到结尾"></label>
                   <p class="hint">每次最多 120 帧。长片可分段扫描。</p>
                 </template>
+                <template v-if="checked.includes('asr')">
+                  <label>转写语言<select v-model="options.asr_language"><option v-for="language in speechLanguages" :key="language">{{ language }}</option></select></label>
+                  <label>转写开始（秒）<input v-model.number="options.asr_start" type="number" min="0" max="86399.999" step="0.001" required></label>
+                  <label>转写结束（秒）<input v-model.number="options.asr_end" type="number" min="0.001" max="86400" step="0.001" placeholder="留空转写到结尾"></label>
+                  <p class="hint">每次最多 {{speechCapability?.max_seconds}} 秒。先运行流清单可选指定音轨，默认使用第一条音轨。</p>
+                </template>
               </div>
             </details>
             <button class="primary" :disabled="busy || !currentAsset || !checked.some(op => !disabled(op))">提交本地解析</button>
           </form>
           <details v-if="pendingModels" class="analysis-capabilities">
             <summary>感知能力</summary><p class="hint">待接入：{{ pendingModels }}</p>
+            <p v-if="speechCapability?.status==='missing_recognizer'" class="hint">本机转写需要可用的 Windows 桌面识别语言。</p>
           </details>
           <div class="analysis-panel-bar task-header">
             <h2>解析记录</h2>
@@ -508,6 +539,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <p>{{ file.name }} · {{ (file.size_bytes / 1024).toFixed(1) }} KiB</p>
             <div class="actions"><a :href="artifactUrl(activeResult.task_id,file.id,true)">下载</a>
               <button v-if="activeResult.operation==='transcode'" type="button" @click="previewProxy(activeResult)">预览代理</button>
+              <button v-if="file.role==='asr_audio'" type="button" @click="previewSpeech(activeResult)">试听音轨</button>
             </div>
           </article>
         </div>
@@ -518,8 +550,13 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <p>{{ clock(hardScan.start_us) }} – {{ clock(hardScan.end_us) }} · {{ hardScan.region==='lower' ? '画面底部 40%' : '完整画面' }} · {{ activeResult.ocr?.frames.length }} 帧</p>
             <p class="hint">请对照画面校正起止时间。需要烧录修订字幕时，在剪辑中选择无旧字幕的画面。</p>
           </div>
+          <div v-if="speech" class="hard-subtitle-summary">
+            <strong>{{ speech.status==='no_speech' ? '所选音轨未识别到语音' : '待校对的语音转写' }}</strong>
+            <p>{{ clock(speech.start_us) }} – {{ clock(speech.end_us) }} · 音轨 {{ speech.stream_index }} · {{ speech.language }}</p>
+            <p v-if="speech.status==='recognized'" class="hint">试听所选音轨，核对转写文字和时间后保存字幕。</p>
+          </div>
           <div class="subtitle-controls">
-            <label v-if="!hardScan">字幕轨<select v-model.number="subtitleTrack">
+            <label v-if="!hardScan && !speech">字幕轨<select v-model.number="subtitleTrack">
               <option v-for="track in captions" :key="track.stream_index" :value="track.stream_index">
                 流 {{ track.stream_index }} · {{ track.language || '语言未标注' }}
               </option>
@@ -527,7 +564,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <button type="button" :disabled="activeCue<0" @click="seekCue(activeCue)">定位当前字幕</button>
           </div>
           <p class="hint">{{ workingCues.length }} 条<span v-if="hardScan && !currentTrack.cues.length"> · 扫描范围内未找到字幕候选</span>
-            <span v-else-if="!hardScan && currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
+            <span v-else-if="!hardScan && !speech && currentTrack.status !== 'extracted'"> · {{ currentTrack.status }}</span></p>
           <div v-if="currentTrack.cues.length" class="subtitle-workspace">
             <div class="cue-browser">
               <div class="cue-list">
@@ -538,6 +575,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
                   <time>{{ clock(cue.start_us) }} – {{ clock(cue.end_us) }}</time><span>{{ cue.text }}</span>
                   <small v-if="cue.hidden">预览已隐藏</small>
                   <small v-if="cue.sample_count">{{ cue.sample_count }} 帧采样</small>
+                  <small v-if="cue.confidence != null">引擎置信值 {{cue.confidence.toFixed(2)}}</small>
                 </button>
               </div>
               <div v-if="workingCues.length>pageSize" class="actions cue-pager">
@@ -553,7 +591,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
             <SubtitleDraft :key="activeResult.task_id+':'+subtitleTrack" :project-id="projectId" :asset-id="assetId"
               :task-id="activeResult.task_id" :stream="subtitleTrack" :cues="currentTrack.cues"
               :cue-index="draftCue" @preview="subtitlePreview=$event"
-              @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',hardScan ? '' : assetId,$event)" />
+              @seek="seek" @assets-changed="emit('assetsChanged')" @edit-video="emit('editVideo',hardScan || audioOnly ? '' : assetId,$event)" />
           </div>
         </div>
         <section v-if="activeResult.ocr && !hardScan" class="ocr-result">

@@ -1,0 +1,92 @@
+{
+  "checked_at": "2026-11-21T02:09:23.643Z",
+  "engine": "windows-sapi-dictation-v1",
+  "language": "zh-CN",
+  "selected_audio_stream": 2,
+  "source_range_us": [
+    2000000,
+    15000000
+  ],
+  "recognized_cues": [
+    {
+      "start_us": 2610000,
+      "end_us": 5450000,
+      "text": "大家好欢迎来到灯塔",
+      "confidence": 0.523352
+    },
+    {
+      "start_us": 6310000,
+      "end_us": 8260000,
+      "text": "今天的天气很好",
+      "confidence": 0.665258
+    },
+    {
+      "start_us": 10090000,
+      "end_us": 14030000,
+      "text": "请准备出发我们马上就到海边",
+      "confidence": 0.540158
+    }
+  ],
+  "audition_local_seek_seconds": 0.61,
+  "deep_link_restored": true,
+  "reviewed_subtitle_sha256": "ff36f71976bc41760e8cf95f65744bcabd1bd890fc952746e09ecf020c86e62a",
+  "original_sha256": "c8fe39ed155b3ac0c1433ed8d5ed5298ffc4d2c1d2921b242a75641f4c7c3545",
+  "render_verified": true,
+  "output_range_http": 206,
+  "paid_model_calls": 0,
+  "js_errors": [],
+  "production_chrome_flows": [
+    {
+      "flow": "v3-01",
+      "checked_at": "2026-11-21T02:04:38.044Z"
+    },
+    {
+      "flow": "v3-asr",
+      "checked_at": "2026-11-21T02:05:02.409Z"
+    },
+    {
+      "flow": "p5",
+      "checked_at": "2026-11-21T02:05:20.292Z"
+    },
+    {
+      "flow": "p6",
+      "checked_at": "2026-11-21T02:05:58.978Z"
+    },
+    {
+      "flow": "p6-ocr",
+      "checked_at": "2026-11-21T02:06:25.397Z"
+    },
+    {
+      "flow": "p7",
+      "checked_at": "2026-11-21T02:06:33.037Z"
+    },
+    {
+      "flow": "p8",
+      "checked_at": "2026-11-21T02:06:40.851Z"
+    },
+    {
+      "flow": "p9",
+      "checked_at": "2026-11-21T02:06:55.479Z"
+    },
+    {
+      "flow": "p10",
+      "checked_at": "2026-11-21T02:07:10.535Z"
+    },
+    {
+      "flow": "p11",
+      "checked_at": "2026-11-21T02:07:25.887Z"
+    },
+    {
+      "flow": "p12",
+      "checked_at": "2026-11-21T02:07:40.047Z"
+    },
+    {
+      "flow": "p13",
+      "checked_at": "2026-11-21T02:07:55.739Z"
+    },
+    {
+      "flow": "p14",
+      "checked_at": "2026-11-21T02:07:59.313Z"
+    }
+  ]
+}

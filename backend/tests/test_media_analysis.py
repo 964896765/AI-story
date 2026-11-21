@@ -270,7 +270,9 @@ def test_review_snapshot_alignment_source_isolation_and_adoption(analysis):
     assert script.json()['provenance']['analysis_sha256']==updated['content_hash']
     assert client.get(f"/api/analysis/revisions/{saved['id']}").json()==saved
     capabilities=client.get('/api/analysis/capabilities').json()['capabilities']
-    assert len(capabilities)==5 and not any(item['available'] for item in capabilities if item['id']!='ocr')
+    assert len(capabilities)==5 and not any(item['available'] for item in capabilities if item['id'] not in ('ocr','asr'))
+    asr=next(item for item in capabilities if item['id']=='asr')
+    assert asr['available'] == bool(asr['languages'])
     ocr=next(item for item in capabilities if item['id']=='ocr')
     assert ocr['available']==bool(ocr['languages'])
 

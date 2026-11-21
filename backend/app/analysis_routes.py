@@ -11,6 +11,7 @@ from .creative import require
 from .db import session
 from .models import Asset, MediaAnalysis, Project, Task, TaskEvent, now
 from .analysis_service import analysis_public
+from .perception_asr import recognizer as speech_recognizer
 from .perception_ocr import recognizer
 from .subtitle_revision import SubtitleRevisionInput, revision_detail, revision_list, save_revision
 
@@ -41,17 +42,18 @@ def submit(project_id: str, body: AnalysisRequest, db=Depends(session)):
         return existing
     recognizers = {}
     for index, step in enumerate(body.steps):
-        if step.operation in OCR_OPERATIONS:
-            try:
-                recognizers[index] = recognizer(step.ocr_language)
-            except ValueError as exc:
-                raise HTTPException(422, str(exc)) from exc
+        try:
+            if step.operation in OCR_OPERATIONS:
+                recognizers[index] = {'ocr': recognizer(step.ocr_language)}
+            elif step.operation == 'asr':
+                recognizers[index] = {'asr': speech_recognizer(step.asr_language)}
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     tasks = []
     submitted_at = now()
     for index, (key, step) in enumerate(zip(keys, parameters)):
         snapshot = {'video': {'id': asset.id, 'storage_key': asset.storage_key, 'sha256': asset.sha256}}
-        if index in recognizers:
-            snapshot['ocr'] = recognizers[index]
+        snapshot.update(recognizers.get(index, {}))
         task = Task(project_id=project_id, asset_id=asset.id, kind='analyze', parameters=step,
                     idempotency_key=key, created_at=submitted_at+timedelta(microseconds=index),
                     input_snapshot=snapshot)

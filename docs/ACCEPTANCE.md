@@ -4,6 +4,8 @@
 
 ## 状态
 
+V3 第八批交付 Windows 本机语音转写、指定音轨试听与定位、SRT 校对及成片烧录。后端 130 项、生产构建 Chrome 13 条流程通过。 [验收、截图与回滚](V3_08_LOCAL_ASR_ACCEPTANCE.md)
+
 V3 第七批交付字幕历史版续改、播放预览和本机草稿恢复。后端 128 项、生产构建 Chrome 12 条流程通过，另存新版后旧成片与原字幕哈希仍一致。 [验收、截图与回滚](V3_07_SUBTITLE_DRAFT_ACCEPTANCE.md)
 
 V3 第六批交付本机硬字幕时序估算、采样画面对照、SRT 校对和剪辑。后端 128 项、生产构建 Chrome 12 条流程通过。 [验收、截图与回滚](V3_06_HARD_SUBTITLE_ACCEPTANCE.md)
