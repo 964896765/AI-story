@@ -19,6 +19,7 @@ from sqlalchemy.engine import make_url
 ROOT = Path(__file__).resolve().parents[1]
 BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)))
 V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr')
+LOAD_PHASE = 'v3-production-load'
 
 def run_browser(env, path, phases):
     api_port, browser_port = 18006, 15179
@@ -36,7 +37,7 @@ def run_browser(env, path, phases):
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10','p11',*V3_PHASES}.intersection(phases) else []),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10','p11',LOAD_PHASE,*V3_PHASES}.intersection(phases) else []),
                   "--host", "127.0.0.1", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:
@@ -47,7 +48,7 @@ def run_browser(env, path, phases):
             stack.callback(process.terminate)
         for phase in phases:
             subprocess.run(["node", "--experimental-websocket", f"scripts/browser-{phase}.mjs"], cwd=ROOT,
-                           env=env, check=True, timeout=110)
+                           env=env, check=True, timeout=420 if phase==LOAD_PHASE else 110)
 
 
 def main():
@@ -55,9 +56,9 @@ def main():
     parser.add_argument("--junitxml", type=Path)
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--browser-only", action="store_true")
-    parser.add_argument("--browser-phase", choices=(*BROWSER_PHASES,*V3_PHASES), default="p5")
+    parser.add_argument("--browser-phase", choices=(*BROWSER_PHASES,*V3_PHASES,LOAD_PHASE), default="p5")
     parser.add_argument("--all-browsers", action="store_true", help="Run P5–P14 flows against the built frontend")
-    parser.add_argument("--v3-browsers", action="store_true", help="Run the V3 workflows followed by the eleven V2 flows")
+    parser.add_argument("--v3-browsers", action="store_true", help="Run V3 workflows, the eleven V2 flows and multi-episode production load")
     parser.add_argument("--browser-evidence", type=Path, default=ROOT / "data" / "tmp")
     parser.add_argument("--test-file", help="Optional pytest path or node ID relative to backend")
     args = parser.parse_args()
@@ -95,7 +96,7 @@ def main():
                 with TemporaryDirectory(prefix="browser-qa-", dir=ROOT / "data" / "tmp", ignore_cleanup_errors=True) as folder:
                     run_browser({**env, "STORAGE_ROOT": folder, "AI_STORY_QA_ROOT": folder,
                                  "AI_STORY_QA_EVIDENCE": str(evidence)}, Path(folder),
-                                (*V3_PHASES,*BROWSER_PHASES) if args.v3_browsers else
+                                (*V3_PHASES,*BROWSER_PHASES,LOAD_PHASE) if args.v3_browsers else
                                 BROWSER_PHASES if args.all_browsers else (args.browser_phase,))
         finally:
             connection.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(db_name)))

@@ -255,11 +255,16 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
             image=work/(prefix+'.jpg')
             make_cover(src,image)
             store(prefix+'/cover.jpg',source=image)
-            if any(track['role']=='caption' and track['enabled'] for track in timeline['tracks']):
+            caption_check=unit['qc'].get('captions')
+            has_caption_track=any(track['role']=='caption' and track['enabled'] for track in timeline['tracks'])
+            if has_caption_track and (not caption_check or caption_check['status']!='absent'):
                 caption_key=output.get('caption_storage_key') or f"tmp/{unit['render_task_id']}/{render_attempt}/timeline.srt"
                 captions=storage.resolve_key(caption_key)
+                caption_hash=(caption_check or {}).get('sha256') or output.get('caption_sha256')
                 if captions.is_file():
-                    store(prefix+'/subtitles.srt',source=captions,expected=output.get('caption_sha256'))
+                    store(prefix+'/subtitles.srt',source=captions,expected=caption_hash)
+                elif caption_hash or report['policy']['require_subtitles']:
+                    raise ValueError('交付时已质检字幕文件缺失')
             save_json(prefix+'/timeline.json',{'version_id':unit['timeline_version_id'],'timeline':timeline})
             save_json(prefix+'/quality.json',{'technical':unit['qc'],'human_review':unit['review']})
         save_json('rights.json',rights)

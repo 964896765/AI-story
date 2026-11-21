@@ -121,3 +121,31 @@ def test_real_delivery_rights_gates_and_verified_archive(delivery_fixture):
     assert client.post(rights,json={**grant,'idempotency_key':'approve-again'}).status_code==201
     assert client.get(readiness_route,params=target).json()['authorization_revision']!=ready['authorization_revision']
     assert client.get(url).status_code==409
+
+
+def test_checked_caption_is_required_at_packaging(delivery_fixture):
+    studio,path,prep,timeline=delivery_fixture
+    client,project,video,upload,_,task,resolve,_=studio
+    caption=upload('授权字幕.srt','1\n00:00:00,000 --> 00:00:00,830\n自行编写的交付字幕\n'.encode())
+    plan=prep(1)
+    run=client.post(path,json={'plan_version_id':plan,'timelines':[timeline(plan,1,caption=caption)],
+                               'policy':{'require_subtitles':True},'idempotency_key':'caption-ready'}).json()
+    assert worker.run_once() and worker.run_once()
+    checked=client.get(path+'/'+run['id']).json()
+    assert checked['status']=='passed'
+    episode=checked['episodes'][0]
+    grant={'status':'approved','source_type':'owned','holder':'自制样本','evidence':'合成样片与自编字幕',
+           'commercial':True,'regions':['CN'],'platforms':['local-test'],'idempotency_key':'rights'}
+    for item in (video,caption):
+        assert client.post(f"/api/library/assets/{item['id']}/rights",json=grant).status_code==201
+    package_route=f'/api/delivery/projects/{project}/packages'
+    response=client.post(package_route,json={'run_id':run['id'],'title':'含字幕交付','platform':'local-test',
+                                            'region':'CN','idempotency_key':'caption-missing'})
+    assert response.status_code==201,response.text
+    pack_id=response.json()['id']
+    storage_key=task(episode['render_task_id'])['output']['caption_storage_key']
+    resolve(storage_key).unlink()
+    assert worker.run_once()
+    failed=task(pack_id)
+    assert failed['status']=='failed' and '已质检字幕文件缺失' in failed['error']
+    assert client.get('/api/delivery/packages/'+pack_id+'/file').status_code==409

@@ -1,0 +1,15 @@
+{
+  "revision": "0013",
+  "restorable_backup": "v3-09-0ff1d1b5020c",
+  "dump_sha256": "c7ae8144bf7882f2c09eb5ced07f0c248d3c99b07976645f2dc5173b468dff9a",
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "isolated_database": true,
+  "isolated_storage": true
+}

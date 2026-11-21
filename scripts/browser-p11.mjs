@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { api, evidenceDir, openChrome, post, qaRoot, wait } from './chrome-qa.mjs'
+import { api, base, evidenceDir, openChrome, post, qaRoot, wait } from './chrome-qa.mjs'
 
 await wait(async()=>{
   try{return (await api('/health')).ready&&(await api('/queue')).workers.some(node=>node.online)}catch{return false}
@@ -97,6 +97,45 @@ try{
   assert.equal(checked.episodes[0].timeline_version_id,good.version_id)
   await click('预览本集')
   await wait(()=>evaluate("document.querySelector('.production video')?.readyState>=1"),'verified movie preview')
+  const fixedEpisode=checked.episodes[0]
+  assert.equal(fixedEpisode.qc.audio.status,'measured')
+  await click('使用当前规则复检')
+  await evaluate("document.querySelector('.quality-rules').open=true")
+  await setField('响度下限（LUFS）','-12')
+  await click('提交技术复检')
+  await wait(()=>contains('低于所设下限'),'actual measured loudness triggers threshold')
+  const [reviewRun]=await api('/production'+path+'/runs')
+  const rechecked=await api('/production'+path+'/runs/'+reviewRun.id)
+  const checkedAgain=rechecked.episodes[0]
+  assert.equal(rechecked.status,'needs_review')
+  assert.equal(rechecked.rechecked,1)
+  assert.equal(checkedAgain.render_task_id,fixedEpisode.render_task_id)
+  assert.notEqual(checkedAgain.qc_task_id,fixedEpisode.qc_task_id)
+  assert.deepEqual(checkedAgain.qc.audio,fixedEpisode.qc.audio)
+  assert.equal(checkedAgain.qc.output_sha256,fixedEpisode.qc.output_sha256)
+  const reportLink=await evaluate("Array.from(document.querySelectorAll('.production a')).find(a=>a.textContent.trim()==='下载质检报告').href")
+  const report=await fetch(reportLink)
+  assert.equal(report.status,200)
+  assert.match(report.headers.get('content-disposition'),/attachment; filename="quality-/)
+  assert.equal((await report.json()).episodes[0].qc.output_sha256,checkedAgain.qc.output_sha256)
+  await click('预览本集')
+  await wait(()=>evaluate("document.querySelector('.review-preview video')?.readyState>=1"),'rechecked movie preview')
+  assert(await evaluate(`document.querySelector('.review-preview').getBoundingClientRect().left >
+    document.querySelector('.episode-list').getBoundingClientRect().left`))
+  await evaluate("document.querySelector('.quality-measurements').scrollIntoView({block:'center'})")
+  await screenshot('v3-10-quality-review.png')
+  await setField('第 1 集复核意见','自制验收音量，审片后确认可接受此告警。')
+  await click('确认可接受的告警')
+  await wait(()=>contains('已保存人工复核意见'),'new warning requires explicit review')
+  assert.equal((await api('/production'+path+'/runs/'+reviewRun.id)).status,'passed')
+  assert.equal((await api('/production/runs/'+result.id)).episodes[0].review,null)
+  assert(reportLink.startsWith(base+'/api/production'))
+  await writeFile(join(evidenceDir,'v3-10-quality-browser.json'),JSON.stringify({
+    checked_at:new Date().toISOString(),original_run:result.id,recheck_run:reviewRun.id,
+    reused_render_task:checkedAgain.render_task_id,original_qc_task:fixedEpisode.qc_task_id,new_qc_task:checkedAgain.qc_task_id,
+    measured_audio:checkedAgain.qc.audio,policy_floor_lufs:rechecked.policy.min_integrated_lufs,
+    report_download_verified:true,side_by_side_review:true,explicit_warning_review:true,paid_model_calls:0,javascript_errors:errors,
+  },null,2)+'\n')
   assert.deepEqual(errors,[])
   await writeFile(join(evidenceDir,'p11-browser-acceptance.json'),JSON.stringify({
     checked_at:new Date().toISOString(),browser:'Installed Chrome headless',initial_run:initial.id,

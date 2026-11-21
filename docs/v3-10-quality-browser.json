@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-21T03:06:35.018Z",
+  "original_run": "0d1c11ed-2a53-42b1-a6a8-dc061dfa31d5",
+  "recheck_run": "91d34452-83ba-4e40-9832-ece921ce979b",
+  "reused_render_task": "15d1bab2-bf60-4098-b2ac-604e59cca9d5",
+  "original_qc_task": "80dd472d-f354-44e2-a8c8-cab6bd9479e3",
+  "new_qc_task": "4ce070c7-d6f3-4fa0-a3b5-f11d4774452c",
+  "measured_audio": {
+    "status": "measured",
+    "integrated_lufs": -21.7,
+    "true_peak_dbtp": -20.7
+  },
+  "policy_floor_lufs": -12,
+  "report_download_verified": true,
+  "side_by_side_review": true,
+  "explicit_warning_review": true,
+  "paid_model_calls": 0,
+  "javascript_errors": []
+}

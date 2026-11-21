@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-21T03:09:13.5322176+00:00",
+  "url": "http://127.0.0.1:15173",
+  "ready": true,
+  "online_workers": 1,
+  "database_revision": "0013",
+  "projects": 7,
+  "assets": 13,
+  "live_authorized": false,
+  "default_live_budget_micros": 0,
+  "frontend_http": 200,
+  "production_route_http": 200,
+  "frontend_bundle": "/assets/index-Ct0RDuhh.js",
+  "bundle_http": 200,
+  "qc_report_endpoint_verified": true
+}

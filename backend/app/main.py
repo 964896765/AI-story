@@ -366,10 +366,11 @@ def task_attempts(task_id: str, db: DBDep):
 
 @app.get('/api/tasks/{task_id}/attempts/{number}/logs')
 def attempt_logs(task_id: str,number: int,db: DBDep):
-    require(db,Task,task_id)
+    task=require(db,Task,task_id)
     record=db.scalar(select(TaskAttempt).where(TaskAttempt.task_id==task_id,TaskAttempt.number==number))
     if not record:raise HTTPException(404,'尝试记录不存在（P2历史不会伪造补录）')
-    path=resolve_key(f'tmp/{task_id}/{record.number}/ffmpeg.log')
+    name='01.stderr' if task.kind=='qc_review' else 'ffmpeg.log'
+    path=resolve_key(f'tmp/{task_id}/{record.number}/{name}')
     if not path.is_file():return {'available':False,'text':'此尝试没有 FFmpeg 日志（可能是解析任务或编码前失败）','truncated':False}
     with path.open('rb') as file:
         size=path.stat().st_size

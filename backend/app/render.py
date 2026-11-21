@@ -107,7 +107,11 @@ def geometry(options: RenderOptions, stream: dict) -> tuple[str,tuple[int,int]]:
 def validate_srt(path: Path) -> str:
     if path.stat().st_size > 2 * 1024**2:
         raise ValueError('SRT 超过 2 MiB')
-    content = path.read_text(encoding='utf-8-sig').replace('\r\n','\n').strip()
+    return validate_srt_text(path.read_text(encoding='utf-8-sig'))
+
+
+def validate_srt_text(content: str) -> str:
+    content = content.replace('\r\n','\n').replace('\r','\n').strip()
     cues = re.split(r'\n\s*\n', content)
     pattern = re.compile(r'^(\d+):(\d{2}):(\d{2}),(\d{3}) --> (\d+):(\d{2}):(\d{2}),(\d{3})$')
     for cue in cues:
