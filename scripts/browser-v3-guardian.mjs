@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFile, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { api, base, evidenceDir, openChrome, post, qaRoot, wait } from './chrome-qa.mjs'
 
@@ -564,9 +564,41 @@ try {
     await post('/library/assets/'+item.asset_id+'/rights',{status:'approved',source_type:'owned',holder:'原创验收样片制作者',
       evidence:'自产测试画面或本机语音录制',commercial:true,regions:['CN'],platforms:['local-test'],idempotency_key:'rights'})
   }
-  const delivered=await post(packagePath,packageBody)
+  const candidateTask=(await api(path+'/tasks')).find(task=>task.id===regen.id)
+  const evidenceKey=candidateTask.output.files['guardian-1'].storage_key
+  const evidencePath=join(qaRoot,evidenceKey)
+  const originalFrame=await readFile(evidencePath)
+  let delivered
+  async function waitForEvidenceFailure(label) {
+    await wait(async()=>{
+      const task=await api(packagePath+'/'+delivered.id)
+      if(task.status==='succeeded') throw new Error('Published with '+label)
+      return task.status==='failed' && task.error.includes('ep2-shot5 的证据帧 1')
+    },label)
+    assert.equal((await fetch(base+'/api/delivery/packages/'+delivered.id+'/file')).status,409)
+  }
+  // Only change the isolated QA fixture. Restore it before retrying the same delivery.
+  await unlink(evidencePath)
+  try {
+    delivered=await post(packagePath,packageBody)
+    await waitForEvidenceFailure('missing evidence blocks delivery')
+    const modifiedFrame=Buffer.from(originalFrame)
+    modifiedFrame[modifiedFrame.length-3]^=1
+    await writeFile(evidencePath,modifiedFrame)
+    await post('/tasks/'+delivered.id+'/retry',{})
+    await waitForEvidenceFailure('changed evidence of the same size blocks delivery')
+  } finally {
+    await writeFile(evidencePath,originalFrame)
+  }
+  await command('Page.navigate',{url:appLink('/delivery/library')})
+  await wait(()=>contains('ep2-shot5 的证据帧 1'),'delivery error visible in browser')
+  await evaluate("Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()==='重试交付').scrollIntoView({block:'center'})")
+  await screenshot('guardian-delivery-evidence-error.png')
+  await click('重试交付')
   let receipt
   await wait(async()=>{
+    const attempts=await api('/tasks/'+delivered.id+'/attempts')
+    if(attempts.length!==3)return false
     receipt=await api(packagePath+'/'+delivered.id)
     if(receipt.status==='failed')throw new Error(JSON.stringify(receipt))
     return receipt.status==='succeeded'
@@ -575,6 +607,38 @@ try {
   assert.equal(file.status,200)
   const bytes=Buffer.from(await file.arrayBuffer())
   assert.equal(createHash('sha256').update(bytes).digest('hex'),receipt.sha256)
+  const archiveFile=join(qaRoot,'verified-guardian-delivery.zip')
+  const extracted=join(qaRoot,'verified-guardian-delivery')
+  await writeFile(archiveFile,bytes)
+  await mkdir(extracted)
+  execFileSync('tar',['-xf',archiveFile,'-C',extracted],{timeout:15000})
+  const guardianManifest=JSON.parse(await readFile(join(extracted,'guardian.json'),'utf8'))
+  const zipManifest=JSON.parse(await readFile(join(extracted,'manifest.json'),'utf8'))
+  const shots=guardianManifest.episodes.flatMap(episode=>episode.shots)
+  const evidenceFrames=shots.flatMap(shot=>shot.evidence_frames)
+  assert.equal(shots.length,10)
+  assert.equal(new Set(evidenceFrames.map(frame=>frame.archive_path)).size,receipt.guardian_frame_count)
+  assert.equal(evidenceFrames.length,receipt.guardian_frame_count)
+  assert.equal(zipManifest.files.filter(entry=>entry.path.includes('/guardian/')).length,evidenceFrames.length)
+  const entries=new Map(zipManifest.files.map(entry=>[entry.path,entry]))
+  for(const frame of evidenceFrames) {
+    assert.match(frame.archive_path,/^episode-\d+\/guardian\/shot-\d+\/frame-\d+\.jpg$/)
+    assert.equal(entries.get(frame.archive_path)?.sha256,frame.sha256)
+    const image=await readFile(join(extracted,frame.archive_path))
+    assert.equal(image.subarray(0,2).toString('hex'),'ffd8')
+    assert.equal(createHash('sha256').update(image).digest('hex'),frame.sha256)
+    assert(!Object.hasOwn(frame,'storage_key'))
+  }
+  for(const shot of shots) {
+    const review=shot.content_review
+    const cited=[review.comparison?.frame,...(review.checklist?.items || []).map(item=>item.frame)].filter(Boolean)
+    for(const frame of cited)
+      assert(shot.evidence_frames.some(saved=>saved.index===frame.index && saved.sha256===frame.sha256 && saved.time_ms===frame.time_ms))
+  }
+  assert.equal((await api(packagePath)).length,1,'retries publish a single delivery')
+  await wait(()=>contains(`含 ${receipt.guardian_frame_count} 张 Guardian 审核证据帧`),'packaged evidence count visible in browser')
+  await evaluate("Array.from(document.querySelectorAll('a')).find(a=>a.textContent.trim()==='下载已验证 ZIP').scrollIntoView({block:'center'})")
+  await screenshot('guardian-delivery-evidence.png')
   assert(bytes.includes(Buffer.from('guardian.json')) && bytes.includes(Buffer.from('guardian-contract-v1')))
   assert(bytes.includes(Buffer.from('guardian-visual-luma-v1')))
   assert(bytes.includes(Buffer.from('guardian-screen-text-v1')))
@@ -613,6 +677,9 @@ try {
     visual_checklist:{report:checklistReport,approved_in_browser:true,unchecked_api_blocked:true,shown_on_guardian:true,
       unchanged_shots:9,verified_zip_contains_checklist:true},
     candidate_review_layout:{desktop:desktopReview,mobile_stacks_without_horizontal_overflow:true},
+    delivery_evidence:{shots:shots.length,frames:receipt.guardian_frame_count,missing_blocked:true,
+      same_size_tampering_blocked:true,verified_extracted_jpegs:true,checklist_and_comparison_resolved:true,
+      retried_in_browser:true,single_delivery:true},
     dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
       muted_delivery_blocked:true,unchanged_episode_reused:true},
     dialogue_balance:{flagged:flaggedBalance,finding:maskingIssue,corrected:clearedBalance,

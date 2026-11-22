@@ -36,6 +36,8 @@ Guardian 新制作的本机候选会逐帧检查近黑和持续低变化，记�
 
 关键镜头可在合同里启用「要求逐项视觉审核」。批准分镜后，候选通过前需要为构图、场景、风格及各角色身份、服装和手持道具选定证据帧。记录随合格镜头进入授权交付包。 [逐项视觉审核验收](docs/V3_GUARDIAN_CHECKLIST_ACCEPTANCE.md)
 
+新建 Guardian 授权交付包会附带已采纳镜头的 JPEG 审核证据。解压后可根据 `guardian.json` 的时间和路径查看实际画面。打包发现证据缺失或哈希不一致时，在「质检与交付 → 资源与交付」显示具体镜头，恢复原证据后可重试原任务。 [审核证据交付验收](docs/V3_GUARDIAN_DELIVERY_EVIDENCE_ACCEPTANCE.md)
+
 整剧生产会按 Guardian 固定分镜核验配音来源、成片字幕和对白时段的混音。字幕不符或对白轨静音会阻断交付。可在质检规则中启用 Windows 本机听写，再从分集报告跳到对应时间回听。 [对白质检验收](docs/V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)
 
 有配乐或音效与对白重叠时，Guardian 会按固定时间轴测量分轨电平。疑似盖住对白的区间需要人工复核。可从报告跳到实际成片回听，再打开相关片段调低背景轨并重新制作受影响的分集。 [分轨质检与返工验收](docs/V3_GUARDIAN_BALANCE_ACCEPTANCE.md)

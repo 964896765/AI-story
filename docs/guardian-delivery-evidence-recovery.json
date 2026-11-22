@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "abce0f2f09e19be1557df0853f4450c6b195475054275b5b80228a0f3d0b5e2d",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "schema_changed": false,
+  "backup_directory": "data/backups/guardian-delivery-evidence-febca8e4bc93"
+}

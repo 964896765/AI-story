@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-22T23:45:45.654Z",
+  "episodes": 2,
+  "shot_count": 10,
+  "delivery_evidence": {
+    "shots": 10,
+    "frames": 30,
+    "missing_blocked": true,
+    "same_size_tampering_blocked": true,
+    "verified_extracted_jpegs": true,
+    "checklist_and_comparison_resolved": true,
+    "retried_in_browser": true,
+    "single_delivery": true
+  },
+  "verified_delivery_bytes": 1652407,
+  "verified_delivery_sha256": "c1d67fedd6da1fd90b215a3ec05fb08fb5fe643b415ada97bd95d467b4f9720c",
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

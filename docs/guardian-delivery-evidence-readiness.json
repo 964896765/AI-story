@@ -1,0 +1,9 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "delivery_route_http": 200,
+  "latest_frontend_build": true,
+  "live_api_authorized": false,
+  "default_live_budget_micros": 0
+}

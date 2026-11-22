@@ -6,7 +6,7 @@ import { request, statusLabels } from './analysisApi'
 interface Work {id:string;title:string;origin:string;tags:string[];archived:boolean;episodes?:{number:number;title:string;asset_id:string;name:string;sha256:string}[]}
 interface Rights {id:string;revision:number;status:string;holder:string;expires_at:string|null;scope:{regions:string[];platforms:string[];commercial:boolean};evidence:string}
 interface Batch {id:string;plan_version_id:string;status:string;episode_count:number;created_at:string}
-interface Package {id:string;status:string;stage:string;parameters:{title:string;platform:string;region:string};sha256:string|null;error:string|null}
+interface Package {id:string;status:string;stage:string;parameters:{title:string;platform:string;region:string};sha256:string|null;error:string|null;guardian_frame_count:number|null}
 interface Readiness {
   run_id:string;ready:boolean;rights_checked:boolean;source_count:number|null;authorized_sources:number|null
   passed_episodes:number;episode_count:number;authorization_revision:string|null
@@ -260,7 +260,10 @@ onUnmounted(()=>clearInterval(timer))
       </div>
       <article v-for="item in packages" :key="item.id" class="task">
         <div><strong>{{ item.parameters.title }}</strong><p>{{ statusLabels[item.status] || item.status }} · {{ stage[item.stage] || item.stage }}</p>
+          <p v-if="item.guardian_frame_count">含 {{ item.guardian_frame_count }} 张 Guardian 审核证据帧</p>
           <p v-if="item.sha256" class="mono">SHA-256 {{ item.sha256 }}</p><p v-if="item.error" class="error">{{ item.error }}</p></div>
+        <button v-if="item.status==='failed'" type="button" :disabled="busy"
+          @click="execute(async()=>{await request('/tasks/'+item.id+'/retry',{}); await refresh()})">重试交付</button>
         <a v-if="item.status==='succeeded'" :href="`/api/delivery/packages/${item.id}/file`">下载已验证 ZIP</a>
         <button v-if="item.status==='succeeded'" type="button" class="handoff-button" @click="emit('openOperations',item.id)">打开人工发行 <ArrowRight :size="14" aria-hidden="true" /></button>
       </article>

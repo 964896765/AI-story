@@ -151,7 +151,7 @@ def eligible(db,params,expected=None,*,check_current_dialogue=True):
 def public(task):
     return {'id':task.id,'status':task.status,'stage':task.stage,'error':task.error,
             'parameters':task.parameters,'created_at':task.created_at,'sha256':task.output.get('sha256'),
-            'size_bytes':task.output.get('size_bytes')}
+            'size_bytes':task.output.get('size_bytes'),'guardian_frame_count':task.output.get('guardian_frame_count')}
 
 
 @router.post('/projects/{project_id}/packages',status_code=201)
@@ -233,13 +233,14 @@ def make_cover(src,dst):
 def guardian_evidence(db, plan, batches):
     reviewed = plan.provenance.get('guardian_manifest')
     if not reviewed:
-        return None
+        return None,[]
     episodes = []
+    sources = []
     for unit,_,timeline,_ in batches:
         clips = sorted((clip for track in timeline['tracks'] if track['enabled'] and track['role']=='main'
                         for clip in track['clips']),key=lambda clip:clip['at'])
         shots = []
-        for clip in clips:
+        for position,clip in enumerate(clips,1):
             asset = require(db,Asset,clip['asset_id'])
             meta = asset.media_info
             contract = reviewed.get(meta.get('shot_id'))
@@ -249,19 +250,39 @@ def guardian_evidence(db, plan, batches):
             review = task.output.get('guardian_review')
             if not review or review['request']['decision']!='approved' or review['output_sha256']!=asset.sha256:
                 raise ValueError('交付镜头缺少与成片哈希匹配的人工审核证据')
+            frames = []
+            for frame in task.output.get('guardian_frames',[]):
+                index = frame['index']
+                source = task.output.get('files',{}).get(f'guardian-{index}')
+                error = f"镜头 {meta['shot_id']} 的证据帧 {index} 缺失或哈希不一致"
+                if not source or any(source.get(key)!=frame[key] for key in ('index','time_ms','sha256')):
+                    raise ValueError(error)
+                try:
+                    path = storage.resolve_key(source['storage_key'])
+                    size = path.stat().st_size if path.is_file() else 0
+                except (OSError,ValueError):
+                    raise ValueError(error) from None
+                if not size:
+                    raise ValueError(error)
+                name = f"episode-{unit['number']:03d}/guardian/shot-{position:03d}/frame-{index:02d}.jpg"
+                sources.append((name,path,frame['sha256'],size,error))
+                frames.append({'index':index,'time_ms':frame['time_ms'],'sha256':frame['sha256'],'archive_path':name})
+            if not frames:
+                raise ValueError(f"镜头 {meta['shot_id']} 缺少 Guardian 证据帧")
             shots.append({'shot_id':meta['shot_id'],'at_frame':clip['at'],'contract_sha256':contract,
                           'candidate_task_id':task.id,'asset_id':asset.id,'asset_sha256':asset.sha256,
-                          'content_review':review,'evidence_frames':task.output.get('guardian_frames',[]),
+                          'content_review':review,'evidence_frames':frames,
                           **({'visual_check':task.output['guardian_visual']} if 'guardian_visual' in task.output else {}),
                           **({'screen_text_check':task.output['guardian_screen_text']} if 'guardian_screen_text' in task.output else {})})
         episodes.append({'number':unit['number'],'timeline_version_id':unit['timeline_version_id'],'shots':shots})
     return {'rule_version':plan.provenance.get('review_rule_version',RULE_VERSION),
-            'approved_plan_version_id':plan.id,'plan_content_hash':plan.content_hash,'episodes':episodes}
+            'approved_plan_version_id':plan.id,'plan_content_hash':plan.content_hash,'episodes':episodes},sources
 
 
 def deliver(task_id,attempt,params,snapshot,update,factory):
     key=f'outputs/{task_id}/delivery.zip'
     target=storage.resolve_key(key)
+    manifest_file=target.parent/'delivery.json'
     signature=fingerprint([SCHEMA,params,snapshot])
     with factory() as db:
         try:
@@ -271,26 +292,25 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
         units=report['episodes']
         if [unit['qc']['output_sha256'] for unit in units]!=snapshot['qc_files']:
             raise ValueError('生产质检依据已变化')
+        if target.is_file():
+            saved=json.loads(manifest_file.read_text(encoding='utf-8'))
+            if saved['signature']!=signature or saved['sha256']!=file_hash(target,lambda *_:update('delivery_verify',95)):
+                raise ValueError('已发布交付包校验失败')
+            return saved
         batches=[]
         for unit in units:
             render=require(db,Task,unit['render_task_id'])
             batches.append((unit,render.output,render.parameters['timeline'],render.attempt))
-        guardian = guardian_evidence(db,require(db,StoryVersion,run.plan_version_id),batches)
-    manifest_file=target.parent/'delivery.json'
-    if target.is_file():
-        saved=json.loads(manifest_file.read_text(encoding='utf-8'))
-        if saved['signature']!=signature or saved['sha256']!=file_hash(target,lambda *_:update('delivery_verify',95)):
-            raise ValueError('已发布交付包校验失败')
-        return saved
+        guardian, evidence = guardian_evidence(db,require(db,StoryVersion,run.plan_version_id),batches)
     work=storage.resolve_key(f'tmp/{task_id}/{attempt}')
     work.mkdir(parents=True,exist_ok=True)
-    total=sum(output['size_bytes'] for _,output,_,_ in batches)
+    total=sum(output['size_bytes'] for _,output,_,_ in batches)+sum(size for _,_,_,size,_ in evidence)
     if shutil.disk_usage(work).free < max(256*1024**2,total+128*1024**2):
         raise OSError('交付磁盘空间不足')
     temporary=work/'delivery.zip'
     files=[]
     with ZipFile(temporary,'x',compression=ZIP_STORED,allowZip64=True) as archive:
-        def store(name,source=None,data=None,expected=None):
+        def store(name,source=None,data=None,expected=None,invalid='交付文件与已核对的哈希不一致'):
             digest=sha256()
             size=0
             if source:
@@ -305,7 +325,7 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
                 digest.update(data)
                 size=len(data)
             if expected and digest.hexdigest()!=expected:
-                raise ValueError('交付读到的成片与质检哈希不一致')
+                raise ValueError(invalid)
             files.append({'path':name,'sha256':digest.hexdigest(),'size_bytes':size})
         def save_json(name,payload):
             store(name,data=json.dumps(payload,ensure_ascii=False,sort_keys=True,indent=2).encode('utf-8'))
@@ -330,6 +350,11 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
             save_json(prefix+'/quality.json',{'technical':unit['qc'],'human_review':unit['review']})
         save_json('rights.json',rights)
         if guardian:
+            for name,path,digest,_,error in evidence:
+                try:
+                    store(name,source=path,expected=digest,invalid=error)
+                except FileNotFoundError:
+                    raise ValueError(error) from None
             save_json('guardian.json',guardian)
         archive.writestr('manifest.json',json.dumps({'schema':SCHEMA,'run_id':params['run_id'],'title':params['title'],
             'platform':params['platform'],'region':params['region'],'files':files},ensure_ascii=False,indent=2).encode('utf-8'))
@@ -344,6 +369,8 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
                 raise ValueError('ZIP 内部文件校验失败')
     result={'storage_key':key,'sha256':file_hash(temporary,lambda *_:update('delivery_verify',95)),
             'size_bytes':temporary.stat().st_size,'files':files,'signature':signature,'schema':SCHEMA}
+    if guardian:
+        result['guardian_frame_count']=len(evidence)
     update('delivery_publish',98)
     with factory() as db:
         try:

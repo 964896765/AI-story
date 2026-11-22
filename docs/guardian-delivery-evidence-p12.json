@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-22T23:46:35.846Z",
+  "browser": "Installed Chrome headless",
+  "checked_run": "7b04e85c-48c0-4671-bcf5-7a7a0cbaba45",
+  "package_task": "2cdc0625-771a-4e80-b815-c3f5adef7a5a",
+  "missing_rights_blocked": true,
+  "recorded_rights_then_downloaded": true,
+  "zip_sha256_verified": true,
+  "zip_bytes": 146383,
+  "fixed_run_reloaded": true,
+  "read_only_preflight_verified": true,
+  "manual_package_handoff": true,
+  "javascript_errors": []
+}

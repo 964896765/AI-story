@@ -18,6 +18,8 @@ Guardian 支持批准参考图与真实候选帧同屏检查，审核可保存�
 
 Guardian 关键镜头可要求逐项视觉审核。通过前必须为合同里的每项检查选择实际证据帧，合格镜头的审核结果写入 `guardian.json`。 [逐项审核、实测与回滚](V3_GUARDIAN_CHECKLIST_ACCEPTANCE.md)
 
+新建 Guardian 交付 ZIP 附带逐帧可核对的 JPEG 审核证据。证据缺失或哈希不一致时阻断打包，并可在恢复后重试原任务。 [证据打包、实测与回滚](V3_GUARDIAN_DELIVERY_EVIDENCE_ACCEPTANCE.md)
+
 V3 第十批交付整剧审片监看、响度与字幕质检、复用成片复检及报告下载。后端 137 项、Chrome 14 条流程、6 集真实生产负载和独立备份恢复通过。 [验收、截图与回滚](V3_10_QUALITY_ACCEPTANCE.md)
 
 V3 第九批交付长音频分段、接缝定位、Worker 续跑与统一 SRT。后端 133 项、生产构建 Chrome 14 条流程通过，另验证 30 分钟转写上限。 [验收、截图与回滚](V3_09_LONG_ASR_ACCEPTANCE.md)
