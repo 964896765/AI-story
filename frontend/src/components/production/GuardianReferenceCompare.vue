@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api } from '../../services/api'
+import GuardianVisualChecklist, { type ReviewFrame, type ReviewItem, type ChecklistEntry, type SavedChecklist } from './GuardianVisualChecklist.vue'
 
 interface Reference {
   index:number; role:'character'|'scene'|'style'; title:string; version_id:string|null; version_number:number|null
 }
-interface Frame {index:number;time_ms:number}
-interface Manifest {contract_sha256:string;visual:string;references:Reference[]}
+interface Manifest {contract_sha256:string;visual:string;references:Reference[];review_items?:ReviewItem[]}
 export interface ComparisonInput {reference:number;frame:number}
-export interface SavedComparison {reference:Reference;frame:Frame}
+export interface SavedComparison {reference:Reference;frame:ReviewFrame}
 
-const props=defineProps<{candidateId:string;frames:Frame[];saved?:SavedComparison;editable?:boolean;attached?:ComparisonInput|null}>()
-const emit=defineEmits<{attach:[comparison:ComparisonInput];detach:[];seek:[frame:Frame]}>()
+const props=defineProps<{candidateId:string;frames:ReviewFrame[];saved?:SavedComparison;editable?:boolean;attached?:ComparisonInput|null;
+  checklistApproval?:boolean;savedChecklist?:SavedChecklist}>()
+const decisions=defineModel<ChecklistEntry[]|null>('checklist',{default:null})
+const emit=defineEmits<{attach:[comparison:ComparisonInput];detach:[];seek:[frame:ReviewFrame]}>()
 const manifest=ref<Manifest|null>(null), failure=ref(''), loading=ref(true)
 const referenceIndex=ref(0), frameIndex=ref<number>()
 const referenceLoaded=ref(false), frameLoaded=ref(false), referenceError=ref(false), frameError=ref(false)
@@ -20,6 +22,7 @@ const title=(item:Reference)=>item.role==='style' ? item.title : `${roles[item.r
 const seconds=(ms:number)=>`${(ms/1000).toFixed(3)} 秒`
 const reference=computed(()=>manifest.value?.references.find(item=>item.index===referenceIndex.value))
 const frame=computed(()=>props.frames.find(item=>item.index===frameIndex.value))
+const reviewItems=computed(()=>props.savedChecklist?.items || manifest.value?.review_items || [])
 const target=computed(()=>props.saved || (props.attached && {
   reference:manifest.value?.references.find(item=>item.index===props.attached?.reference),
   frame:props.frames.find(item=>item.index===props.attached?.frame),
@@ -85,6 +88,8 @@ watch(frameUrl,()=>{frameLoaded.value=false;frameError.value=false},{flush:'sync
       </template>
     </template>
   </section>
+  <GuardianVisualChecklist v-if="reviewItems.length" v-model="decisions" :items="reviewItems" :frames="frames"
+    :saved="savedChecklist" :editable="!!checklistApproval" @seek="emit('seek',$event)" />
 </template>
 
 <style scoped>

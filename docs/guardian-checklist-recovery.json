@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "7adf7731314143b0a6b0fd9aaf94a81a8ad0661aeb624b9e35bd2c31e23b4100",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/guardian-checklist-b4d6c6aa2d53",
+  "schema_changed": false
+}

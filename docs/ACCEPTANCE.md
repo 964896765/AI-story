@@ -16,6 +16,8 @@ Guardian 可比较固定时间轴里的对白和背景声，定位可能听不�
 
 Guardian 支持批准参考图与真实候选帧同屏检查，审核可保存固定版本、图片与帧哈希及时间点。 [对照、浏览器证据与回滚](V3_GUARDIAN_REFERENCE_ACCEPTANCE.md)
 
+Guardian 关键镜头可要求逐项视觉审核。通过前必须为合同里的每项检查选择实际证据帧，合格镜头的审核结果写入 `guardian.json`。 [逐项审核、实测与回滚](V3_GUARDIAN_CHECKLIST_ACCEPTANCE.md)
+
 V3 第十批交付整剧审片监看、响度与字幕质检、复用成片复检及报告下载。后端 137 项、Chrome 14 条流程、6 集真实生产负载和独立备份恢复通过。 [验收、截图与回滚](V3_10_QUALITY_ACCEPTANCE.md)
 
 V3 第九批交付长音频分段、接缝定位、Worker 续跑与统一 SRT。后端 133 项、生产构建 Chrome 14 条流程通过，另验证 30 分钟转写上限。 [验收、截图与回滚](V3_09_LONG_ASR_ACCEPTANCE.md)

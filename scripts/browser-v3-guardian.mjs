@@ -47,8 +47,16 @@ assert(ocr?.available && ocr.languages.includes('zh-Hans-CN'),'Installed Chinese
 await copyFile(join(process.env.SystemRoot || 'C:/Windows','Fonts','simhei.ttf'),join(qaRoot,'guardian-ocr-font.ttf'))
 async function sign(name,text) {
   const filename=name+'.png'
+  const roomAndCast=[
+    'drawbox=x=0:y=550:w=960:h=410:color=0x543747:t=fill',
+    'drawbox=x=185:y=704:w=170:h=165:color=0x2ddd9a:t=fill',
+    'drawbox=x=216:y=608:w=108:h=98:color=0xffc79a:t=fill',
+    'drawbox=x=355:y=735:w=60:h=44:color=white:t=fill',
+    'drawbox=x=578:y=704:w=170:h=165:color=0x5b4296:t=fill',
+    'drawbox=x=609:y=608:w=108:h=98:color=0xdfa582:t=fill',
+  ]
   execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=white:s=960x960','-vf',
-    `drawtext=fontfile=guardian-ocr-font.ttf:text='${text}':fontsize=130:fontcolor=black:x=(w-tw)/2:y=(h-th)/2`,
+    [...roomAndCast,`drawtext=fontfile=guardian-ocr-font.ttf:text='${text}':fontsize=130:fontcolor=black:x=(w-tw)/2:y=190`].join(','),
     '-frames:v','1','-threads','1',filename],{cwd:qaRoot,timeout:15000})
   const body=new FormData()
   body.set('file',new Blob([await readFile(join(qaRoot,filename))]),filename)
@@ -228,6 +236,7 @@ try {
     const source=contract.querySelector('select[multiple]');
     for (const option of source.options) option.selected=${JSON.stringify([correctSign.id,wrongSign.id])}.includes(option.value);
     source.dispatchEvent(new Event('change',{bubbles:true}));
+    Array.from(contract.querySelectorAll('label')).find(label=>label.textContent.trim()==='要求逐项视觉审核').querySelector('input').click();
     Array.from(contract.querySelectorAll('button')).find(button=>button.textContent.trim()==='添加画面文字规则').click();
   })()`)
   await setField('必现文字 1','灯塔坐标')
@@ -241,6 +250,8 @@ try {
   assert.deepEqual(updatedBoard.content.shots[4].contract.screen_text,
     {language:'zh-Hans-CN',required:['灯塔坐标'],forbidden:['旧版标识']})
   assert(!boards[1].content.shots[4].contract.screen_text)
+  assert.equal(updatedBoard.content.shots[4].contract.visual_checklist,true)
+  assert(!('visual_checklist' in boards[1].content.shots[4].contract))
   const updated=await revise(approved,{...approved.content,episodes:approved.content.episodes.map((item,index)=>index ?
     {...item,storyboard_version_id:updatedBoard.version_id}:item)},'local-rework')
   const latest=await approve(updated,'local-rework-approve')
@@ -300,14 +311,42 @@ try {
   await command('Page.navigate',{url:appLink('/ai/candidates',{plan:latest.version_id,shot:'ep2-shot5',asset:correctSign.id,candidate:regen.id})})
   await wait(()=>evaluate(`document.querySelector('.candidate-evidence img[src*="${regen.id}/guardian-frames/1"]')?.naturalWidth>0`),'exact rework candidate evidence')
   await setField('内容审核说明','按新合同核对画面和信封')
+  const checklistManifest=await api(taskRoot(regen.id)+'/guardian-references')
+  assert.equal(checklistManifest.review_items.length,8)
+  assert(checklistManifest.review_items.some(item=>item.expected.includes('左手 白色旧信，右手 空手')))
+  await wait(()=>contains('0 / 8 项已选择通过证据'),'all visual item evidence required')
+  assert(await evaluate("document.querySelector('.content-review button').disabled"))
+  await blocked(taskRoot(regen.id)+'/guardian-review',{decision:'approved',note:'尝试跳过逐项检查'},409)
+  for(const [index,item] of checklistManifest.review_items.entries()) {
+    await setField('通过证据帧 · '+item.label,index===0?'1':'2')
+    if (index===0) assert(await evaluate("document.querySelector('.content-review button').disabled"))
+  }
+  await wait(()=>contains('8 / 8 项已选择通过证据'),'all item choices are distinct submissions')
+  await click('定位证据 0.500 秒')
+  await wait(()=>evaluate("Math.abs(document.querySelector('video[aria-label=当前候选]').currentTime-0.5)<0.05"),'checklist evidence points to real frame')
+  await evaluate("document.querySelector('.visual-checklist').scrollIntoView({block:'start'}); window.scrollBy(0,-78)")
+  await screenshot('guardian-visual-checklist.png')
   await click('保存内容审核')
   await wait(()=>contains('内容审核已保存，可以采纳'),'rework review persisted')
+  await wait(()=>contains('已记录 8 项通过证据'),'saved checklist shown in candidate review')
+  const checklistReport=(await api('/generation'+path+'/candidates?shot_id=ep2-shot5&series_id='+latest.id))
+    .find(item=>item.id===regen.id).output.guardian_review.checklist
+  assert.equal(checklistReport.rule_version,'guardian-visual-checklist-v1')
+  assert.deepEqual(checklistReport.items.map(item=>item.key),checklistManifest.review_items.map(item=>item.key))
+  assert.deepEqual(checklistReport.items.map(item=>item.frame.index),[1,2,2,2,2,2,2,2])
   await blocked(applyPath,replaceBody,409)
   await setField('素材标题','返工特写')
   await setField('采纳说明','批准新的镜头版本')
   await click('采纳为视频素材')
   await wait(()=>contains('已采纳 返工特写'),'replacement candidate adopted')
   await followLink('返回镜头返工')
+  await wait(()=>evaluate("location.pathname==='/delivery/guardian' && document.querySelector('.guardian-workbench .visual-checklist')?.textContent.includes('已记录 8 项通过证据')"),'recorded checklist is available in Guardian')
+  await evaluate("document.querySelector('.guardian-workbench .visual-checklist button').click()")
+  await wait(()=>evaluate(`(() => {
+    const figure=document.getElementById('guardian-evidence-${regen.id}-1');
+    return figure?.classList.contains('evidence-active') && figure.getBoundingClientRect().top>=60 &&
+      figure.getBoundingClientRect().bottom<innerHeight;
+  })()`),'recorded checklist highlights the exact Guardian evidence frame on screen')
   await click('将已采纳候选用于时间轴')
   await wait(()=>evaluate(`Array.from(document.querySelectorAll('.rework-actions select option')).some(option=>option.value===${JSON.stringify(originalTimeline.version_id)})`),'baseline timeline is selectable')
   await setField('返工基线时间轴',originalTimeline.version_id)
@@ -515,6 +554,7 @@ try {
   assert(bytes.includes(Buffer.from('ffmpeg-sidechain-dialogue-v1')))
   assert(bytes.includes(Buffer.from('guardian-reference-comparison-v1')))
   assert(bytes.includes(Buffer.from(approvedComparison.frame.sha256)))
+  assert(bytes.includes(Buffer.from('guardian-visual-checklist-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -541,6 +581,8 @@ try {
     screen_text:{matched,mismatch,explicit_review_gate:true,contract_saved_in_browser:true,export_included:true},
     reference_comparison:{rejected:rejectedComparison,approved:approvedComparison,shown_on_guardian:true,
       exact_preview_seek:true,verified_zip_contains_comparison:true},
+    visual_checklist:{report:checklistReport,approved_in_browser:true,unchecked_api_blocked:true,shown_on_guardian:true,
+      unchanged_shots:9,verified_zip_contains_checklist:true},
     dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
       muted_delivery_blocked:true,unchanged_episode_reused:true},
     dialogue_balance:{flagged:flaggedBalance,finding:maskingIssue,corrected:clearedBalance,

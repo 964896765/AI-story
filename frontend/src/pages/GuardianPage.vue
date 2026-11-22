@@ -4,7 +4,8 @@ import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request, statusLabels } from '../analysisApi'
 import GuardianShotRework from '../components/production/GuardianShotRework.vue'
 import GuardianReferenceCompare, { type SavedComparison } from '../components/production/GuardianReferenceCompare.vue'
-import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from '../components/production/VisualCandidateCheck.vue'
+import type { ReviewFrame, SavedChecklist } from '../components/production/GuardianVisualChecklist.vue'
+import VisualCandidateCheck, { type VisualReport } from '../components/production/VisualCandidateCheck.vue'
 import ScreenTextCheck, { type ScreenTextReport } from '../components/production/ScreenTextCheck.vue'
 import type { ScreenTextContract } from '../components/production/GuardianShot.vue'
 import { useWorkspace } from '../router/workspace'
@@ -28,7 +29,8 @@ interface Candidate {
   parameters:{shot_id:string;preset:string;aspect:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
     guardian_visual?:VisualReport;
     guardian_screen_text?:ScreenTextReport;
-    guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null;comparison?:SavedComparison}}
+    guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null;
+      comparison?:SavedComparison;checklist?:SavedChecklist}}
 }
 interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
 
@@ -53,10 +55,16 @@ const applicableCandidate=computed(()=>candidate.value?.story_version_id===versi
 const activeApproval=computed(()=>history.value.find(item=>item.provenance.guardian_manifest)?.version_id===version.value?.version_id)
 const shotFrames=computed(()=>shot.value ? Math.round((shot.value.start_ms+shot.value.duration_ms)*24/1000)-Math.round(shot.value.start_ms*24/1000) : 0)
 const shotSelect=ref<HTMLSelectElement|null>(null)
+const focusedFrame=ref('')
 const candidateFailure=ref('')
 const refreshCandidates=ref(0)
-function focusEvidence(frame:VisualEvidence) {
-  document.getElementById(`guardian-evidence-${candidate.value?.id}-${frame.index}`)?.focus()
+function focusEvidence(frame:ReviewFrame) {
+  const id=`guardian-evidence-${candidate.value?.id}-${frame.index}`
+  const element=document.getElementById(id)
+  if (!element) return
+  focusedFrame.value=id
+  element.scrollIntoView({block:'center'})
+  element.focus({preventScroll:true})
 }
 const issueCount=(number:number)=>report.value?.issues.filter(item=>item.episode===number).length || 0
 const time=(ms:number)=>(ms/1000).toFixed(3)+' 秒'
@@ -218,7 +226,8 @@ async function compare() {
               </select></label>
               <div v-if="candidate && evidenceFrames.length" class="evidence-grid">
                 <figure><img :src="`/api/assets/${candidate.asset_id}/media`" alt="锁定运镜源图"><figcaption>锁定源图</figcaption></figure>
-                <figure v-for="frame in evidenceFrames" :id="`guardian-evidence-${candidate.id}-${frame.index}`" :key="frame.index" tabindex="-1">
+                <figure v-for="frame in evidenceFrames" :id="`guardian-evidence-${candidate.id}-${frame.index}`" :key="frame.index"
+                  :class="{'evidence-active':focusedFrame===`guardian-evidence-${candidate.id}-${frame.index}`}" tabindex="-1">
                   <img :src="`/api/generation/candidates/${candidate.id}/guardian-frames/${frame.index}`" :alt="`候选 ${time(frame.time_ms)}`">
                   <figcaption>{{time(frame.time_ms)}}</figcaption>
                 </figure>
@@ -226,7 +235,8 @@ async function compare() {
               <VisualCandidateCheck v-if="candidate?.status==='succeeded'" :report="candidate.output.guardian_visual" @evidence="focusEvidence" />
               <ScreenTextCheck v-if="candidate?.output.guardian_screen_text" :report="candidate.output.guardian_screen_text" @evidence="focusEvidence" />
               <GuardianReferenceCompare v-if="candidate?.status==='succeeded'" :key="candidate.id"
-                :candidate-id="candidate.id" :frames="evidenceFrames" :saved="candidate.output.guardian_review?.comparison" />
+                :candidate-id="candidate.id" :frames="evidenceFrames" :saved="candidate.output.guardian_review?.comparison"
+                :saved-checklist="candidate.output.guardian_review?.checklist" @seek="focusEvidence" />
               <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
               <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
               <p v-else-if="candidate" role="status">{{statusLabels[candidate.status] || candidate.status}} · {{Math.round(candidate.progress)}}%</p>
@@ -307,7 +317,7 @@ async function compare() {
 .guardian-issues svg { flex:none }
 .guardian-issues small { display:block }
 .evidence-panel select { margin-bottom:8px }
-.evidence-grid figure:focus { outline:2px solid var(--accent);outline-offset:2px }
+.evidence-grid figure:is(:focus,.evidence-active) { outline:2px solid var(--accent);outline-offset:2px }
 .guardian-error { color:var(--ge) }
 .finding-detail { background:var(--gb); border:1px solid var(--gl); border-radius:10px; padding:10px; margin-bottom:10px; overflow-wrap:anywhere }
 .evidence-values { display:grid; gap:5px; margin:8px 0; overflow-wrap:anywhere }

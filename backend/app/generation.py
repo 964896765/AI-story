@@ -31,6 +31,7 @@ router = APIRouter(prefix='/api/generation', tags=['generation'])
 PIPELINE = 'local-still-motion-v1'
 DEMUXERS = {'.png':'png_pipe','.jpg':'jpeg_pipe','.jpeg':'jpeg_pipe','.webp':'webp_pipe'}
 REFERENCE_TYPES = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'}
+CHECKLIST_RULE = 'guardian-visual-checklist-v1'
 SIZES = {'portrait':(720,1280),'landscape':(1280,720),'square':(720,720)}
 
 
@@ -58,6 +59,11 @@ class ReferenceComparison(Strict):
     frame: int=Field(strict=True,ge=0,le=2+MAX_FINDINGS)
 
 
+class ChecklistEvidence(Strict):
+    key: str=Field(min_length=1,max_length=64)
+    frame: int=Field(strict=True,ge=0,le=2+MAX_FINDINGS)
+
+
 class CandidateReview(Strict):
     decision: Literal['approved','rejected']
     category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','screen_text','other'] | None=None
@@ -65,6 +71,7 @@ class CandidateReview(Strict):
     note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
     screen_text_verified: bool | None = Field(default=None,strict=True)
     comparison: ReferenceComparison | None=None
+    checklist: list[ChecklistEvidence] | None=Field(default=None,min_length=1,max_length=64)
 
 
 class ShotRework(Strict):
@@ -83,6 +90,7 @@ def shot_frames(shot):
 
 def guardian_input(series_id, contract):
     return {'series_id':series_id,'contract_sha256':contract['contract_sha256'],
+            **({'visual_checklist':True} if contract.get('visual_checklist') else {}),
             **({'screen_text':contract['screen_text']} if contract.get('screen_text') else {})}
 
 
@@ -261,7 +269,8 @@ def reference_manifest(db, task):
         for shot in episode['shots']:
             contract = shot.get('guardian')
             if shot['shot_id']==shot_id and contract and contract['contract_sha256']==expected:
-                return {'contract_sha256':expected,'visual':contract['visual'],'references':contract['visual_references']}
+                return {'contract_sha256':expected,'visual':contract['visual'],'references':contract['visual_references'],
+                        **({'review_items':contract['review_items']} if contract.get('visual_checklist') else {})}
     raise HTTPException(409,'固定参考与候选合同不一致')
 
 
@@ -314,18 +323,40 @@ def require_screen_text_clearance(task, confirmed):
         raise HTTPException(409,'请对照实际画面，确认已人工核验必现和禁现文字')
 
 
+def review_checklist(db,task,entries,checked):
+    manifest = reference_manifest(db,task)
+    rows = {row['key']:row for row in manifest.get('review_items',[])}
+    choices = {entry.key:entry.frame for entry in entries}
+    if len(choices)!=len(entries) or choices.keys()-rows.keys():
+        raise HTTPException(422,'逐项审核包含重复或未登记的检查项')
+    if not rows or choices.keys()!=rows.keys():
+        raise HTTPException(409,'完成镜头合同中的全部逐项视觉审核后才能通过')
+    if any(frame not in checked for frame in choices.values()):
+        raise HTTPException(422,'逐项审核必须使用该候选的证据帧')
+    items = []
+    for key,row in rows.items():
+        frame = checked[choices[key]]
+        items.append({**row,'frame':{name:frame[name] for name in ('index','time_ms','sha256')}})
+    return {'rule_version':CHECKLIST_RULE,'contract_sha256':manifest['contract_sha256'],'items':items}
+
+
 @router.post('/candidates/{task_id}/guardian-review')
 def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     task,path = finished_candidate(db,task_id)
     db.scalar(select(Project).where(Project.id==task.project_id).with_for_update())
     db.refresh(task)
-    if not task.input_snapshot.get('guardian'):
+    guardian = task.input_snapshot.get('guardian')
+    if not guardian:
         raise HTTPException(422,'该候选没有已锁定的 Guardian 镜头合同')
     request = body.model_dump()
     if body.screen_text_verified is None:
         request.pop('screen_text_verified')
     if body.comparison is None:
         request.pop('comparison')
+    if body.checklist is None:
+        request.pop('checklist')
+    else:
+        request['checklist'].sort(key=lambda item:item['key'])
     previous = task.output.get('guardian_review')
     if previous:
         if previous['request']!=request:
@@ -338,13 +369,17 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
         raise HTTPException(422,'对照使用的候选帧必须和退回证据帧一致')
     if body.decision=='rejected' and body.screen_text_verified is not None:
         raise HTTPException(422,'文字核验确认仅用于通过候选')
-    if body.screen_text_verified is not None and not task.input_snapshot['guardian'].get('screen_text'):
+    if body.screen_text_verified is not None and not guardian.get('screen_text'):
         raise HTTPException(422,'此候选没有固定画面文字规则')
+    if body.checklist is not None and (not guardian.get('visual_checklist') or body.decision!='approved'):
+        raise HTTPException(422,'逐项视觉审核用于通过已启用此规则的候选')
     if body.decision=='approved' and (body.category is not None or body.frame is not None):
         raise HTTPException(422,'通过候选时，证据帧可随参考对照提交')
     if body.decision=='approved':
         require_visual_clearance(task)
         require_screen_text_clearance(task,body.screen_text_verified)
+        if guardian.get('visual_checklist') and body.checklist is None:
+            raise HTTPException(409,'完成逐项视觉审核后才能通过')
     checked = {item['index']:checked_frame(task,item['index'])[0] for item in task.output['guardian_frames']}
     if file_hash(path)!=task.output['sha256']:
         raise HTTPException(409,'候选文件校验失败，请重新制作')
@@ -360,9 +395,11 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
             raise HTTPException(422,'所选对照帧不存在')
         reference,_,_ = checked_reference(db,task,body.comparison.reference)
         review['comparison'] = {'rule_version':'guardian-reference-comparison-v1',
-                                'contract_sha256':task.input_snapshot['guardian']['contract_sha256'],
+                                'contract_sha256':guardian['contract_sha256'],
                                 'reference':reference,'frame':{'index':compared_frame['index'],
                                     'time_ms':compared_frame['time_ms'],'sha256':compared_frame['sha256']}}
+    if body.checklist is not None:
+        review['checklist'] = review_checklist(db,task,body.checklist,checked)
     task.output = {**task.output,'guardian_review':review}
     db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='Guardian 候选人工审核 · '+body.decision))
     db.commit()
@@ -390,6 +427,10 @@ def select_candidate(task_id: str,body: Selection,db=Depends(session)):
     if guardian:
         require_visual_clearance(task)
         require_screen_text_clearance(task,review['request'].get('screen_text_verified'))
+        checklist = review.get('checklist') or {}
+        if guardian.get('visual_checklist') and (checklist.get('contract_sha256')!=guardian['contract_sha256']
+            or checklist.get('rule_version')!=CHECKLIST_RULE or not checklist.get('items')):
+            raise HTTPException(409,'逐项视觉审核记录缺失或与候选合同不一致')
     source = require(db,Asset,task.asset_id)
     asset = Asset(project_id=task.project_id,name=name,storage_key=task.output['storage_key'],
                   sha256=task.output['sha256'],size_bytes=task.output['size_bytes'],

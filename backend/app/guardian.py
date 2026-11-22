@@ -105,6 +105,29 @@ class Guardian:
                                'version_id':None,'version_number':None})
         return [{'index':index,**reference} for index,reference in enumerate(references)]
 
+    def visual_review_items(self, shot, opening, closing):
+        items = [{'key':'composition','label':'画面与构图','expected':shot['contract']['visual']},
+                 {'key':'style','label':'美术风格','expected':self.canon['style']['description']}]
+        if scene := self.scenes.get(shot.get('scene_version_id')):
+            details = [f'{scene.title} v{scene.number}',scene.content.get('location'),scene.content.get('time_of_day')]
+            items.append({'key':'scene','label':'场景','expected':' · '.join(item for item in details if item)})
+        for key in shot['character_version_ids']:
+            character = self.characters.get(key)
+            identity = character.content.get('identity') if character else None
+            if not (identity and key in opening and key in closing):
+                continue
+            subject = f'{character.title} v{character.number}'
+            items.append({'key':f'identity:{key}','label':f'{subject} · 角色身份','expected':identity['traits']})
+            states = [('开场',opening[key]),('收尾',closing[key])]
+            wardrobes = [f"{edge} · {identity['wardrobes'].get(state['wardrobe_id'],state['wardrobe_id'])}"
+                         for edge,state in states]
+            items.append({'key':f'wardrobe:{key}','label':f'{subject} · 服装','expected':'\n'.join(wardrobes)})
+            if any(state['left_hand'] or state['right_hand'] for _,state in states):
+                props = [f"{edge} · 左手 {self.canon['props'].get(state['left_hand'],'空手')}，"
+                         f"右手 {self.canon['props'].get(state['right_hand'],'空手')}" for edge,state in states]
+                items.append({'key':f'props:{key}','label':f'{subject} · 手持道具','expected':'\n'.join(props)})
+        return items
+
     def check_shot(self, shot, shot_id, episode, start_ms, bridge_note, *, include_references=False):
         def issue(code, detail, severity='error', evidence=None):
             self.issue(code, episode, detail, severity, shot_id, start_ms, evidence)
@@ -148,9 +171,12 @@ class Guardian:
                    'version_hashes': {key: row.content_hash for key, row in versions.items()},
                    'asset_hashes': asset_hashes}
         self.contracts[shot_id] = fingerprint(payload)
+        checklist = contract.get('visual_checklist')
         return {'contract_sha256': self.contracts[shot_id], 'visual':contract['visual'], 'has_dialogue':has_dialogue,
                 'source_images': {key: asset_hashes[key] for key in contract['source_image_asset_ids']},
                 **({'visual_references':self.visual_references(shot,versions,asset_hashes)} if include_references else {}),
+                **({'visual_checklist':True} if checklist else {}),
+                **({'review_items':self.visual_review_items(shot,opening,closing)} if checklist and include_references else {}),
                 **({'screen_text':contract['screen_text']} if contract.get('screen_text') else {})}
 
 

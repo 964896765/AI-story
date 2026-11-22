@@ -73,6 +73,7 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     assert approve(bible,'bad').status_code==422
 
     clean_shots[0][0].update(dialogue='好。',dialogue_ms=300,speaker_version_id=actor_a['version_id'])
+    clean_shots[0][0]['contract']['visual_checklist'] = True
     fixed_board = save(boards[0],{**boards[0]['content'],'shots':clean_shots[0]},'repair-board')
     plans[0]['storyboard_version_id'] = fixed_board['version_id']
     corrected = save(bible,payload,'repair-bible')
@@ -105,6 +106,10 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     assert manifest_response.status_code==200,manifest_response.text
     manifest = manifest_response.json()
     assert manifest['contract_sha256']==approved['provenance']['guardian_manifest']['ep1-shot1']
+    rows = manifest['review_items']
+    assert {item['key'].split(':')[0] for item in rows}=={'composition','style','scene','identity','wardrobe','props'}
+    assert any('左手 原来的纸信，右手 空手' in item['expected'] for item in rows)
+    assert 'review_items' not in report(approved)['episodes'][0]['shots'][0]['guardian']
     assert [(item['role'],item['version_id']) for item in manifest['references']]==[
         ('character',actor_a['version_id']),('character',actor_b['version_id']),('scene',scene_a['version_id']),('style',None)]
     assert all(item['asset_id']==image['id'] for item in manifest['references'])
@@ -143,7 +148,24 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     assert client.post(reworks,json={**rework,'reason':'不同返工原因'}).status_code==409
     assert worker.run_once()
     replacement_path = f"/api/generation/candidates/{new_task['id']}"
-    assert client.post(replacement_path+'/guardian-review',json={'decision':'approved','note':'已人工复核'}).status_code==200
+    approval = {'decision':'approved','note':'已人工复核'}
+    checklist = [{'key':row['key'],'frame':1} for row in rows]
+    assert client.post(replacement_path+'/guardian-review',json=approval).status_code==409
+    assert client.post(replacement_path+'/guardian-review',json={**approval,'checklist':checklist[:-1]}).status_code==409
+    assert client.post(replacement_path+'/guardian-review',json={**approval,'checklist':checklist+[checklist[0]]}).status_code==422
+    assert client.post(replacement_path+'/guardian-review',json={**approval,'checklist':[
+        *checklist[:-1],{'key':'identity:another-project','frame':1}]}).status_code==422
+    assert client.post(replacement_path+'/guardian-review',json={**approval,'checklist':[
+        *checklist[:-1],{**checklist[-1],'frame':9}]}).status_code==422
+    assert client.post(replacement_path+'/select',json=select).status_code==409
+    approval['checklist'] = checklist
+    checked = client.post(replacement_path+'/guardian-review',json=approval)
+    assert checked.status_code==200,checked.text
+    proof = checked.json()['checklist']
+    assert proof['contract_sha256']==manifest['contract_sha256']
+    frame = client.get(replacement_path+'/guardian-frames/1')
+    assert proof['items']==[{**row,'frame':{'index':1,'time_ms':500,'sha256':sha256(frame.content).hexdigest()}} for row in rows]
+    assert client.post(replacement_path+'/guardian-review',json={**approval,'checklist':checklist[::-1]}).json()==checked.json()
     task = task_status(new_task['id'])
     media = resolve(task['output']['storage_key'])
     original = media.read_bytes()

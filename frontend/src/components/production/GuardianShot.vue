@@ -10,6 +10,7 @@ export interface ShotContract {
   visual:string; facts:Record<string,string>; source_image_asset_ids:string[];
   opening:ActorState[]; closing:ActorState[]; continuity_note:string
   screen_text?:ScreenTextContract|null
+  visual_checklist?:boolean
 }
 export interface ScreenTextContract {language:string;required:string[];forbidden:string[]}
 const contract = defineModel<ShotContract|null>({ required:true })
@@ -55,6 +56,8 @@ function add(edge:'opening'|'closing') {
     <button v-if="!contract" type="button" @click="enable">设置镜头合同</button>
     <div v-else class="contract-form">
       <label>必须看到的画面<textarea v-model="contract.visual" required maxlength="1000"></textarea></label>
+      <label class="check"><input v-model="contract.visual_checklist" type="checkbox">要求逐项视觉审核</label>
+      <p v-if="contract.visual_checklist" class="hint">此版本获批后，每项需要选定证据帧才能通过候选审核。</p>
       <label>批准后可用的运镜源图<select v-model="contract.source_image_asset_ids" multiple>
         <option v-for="image in images" :key="image.id" :value="image.id">{{ image.name }}</option>
         <option v-for="id in contract.source_image_asset_ids.filter(id=>!images.some(image=>image.id===id))" :key="id" :value="id">{{ id }}</option>

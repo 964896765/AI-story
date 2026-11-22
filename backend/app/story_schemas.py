@@ -53,6 +53,7 @@ class ShotContract(Strict):
     closing: list[ShotActorState] = Field(default_factory=list,max_length=16)
     continuity_note: str = Field(default='',max_length=1000)
     screen_text: ScreenTextContract | None = None
+    visual_checklist: bool = Field(default=False, strict=True, exclude_if=lambda enabled:not enabled)
 
 class StyleLock(Strict):
     description: RuleText
