@@ -1,0 +1,223 @@
+{
+  "checked_at": "2026-11-22T16:02:30.678Z",
+  "episodes": 2,
+  "characters": 2,
+  "scenes": 2,
+  "shot_count": 10,
+  "accepted_original_candidates": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "visual_model_precision": null,
+  "visual_model_recall": null,
+  "technical_black_fixture": {
+    "task_id": "d95c115f-1d3a-4b50-b3a2-039f7c93609f",
+    "checked_frames": 24,
+    "black_frames": 24,
+    "issue": {
+      "code": "black_output",
+      "severity": "error",
+      "start_ms": 0,
+      "end_ms": 1000,
+      "frame_number": 11,
+      "evidence": {
+        "time_ms": 458,
+        "index": 3,
+        "sha256": "230bb37097816ef301ba5b251beafadb1c104eb083fa29e191fa054a880fe7b3"
+      }
+    },
+    "human_approval_blocked": true,
+    "rejection_preserved": true
+  },
+  "detected_scripted_continuity_blockers": [
+    [
+      "ep1-shot2",
+      "shot_state_change"
+    ],
+    [
+      "ep1-shot3",
+      "canon_fact_conflict"
+    ]
+  ],
+  "accepted_clean_plan_has_no_blockers": true,
+  "rule_sample_counts": {
+    "true_positive": 2,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "tested_viewport_widths": [
+    390,
+    1280,
+    1440,
+    1920
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "voice": "Microsoft Huihui Desktop",
+  "checked_final_batch": "4492db77-5f43-4e7f-9c7c-c0056a895402",
+  "screen_text": {
+    "matched": {
+      "rule_version": "guardian-screen-text-v1",
+      "output_sha256": "b1c88f8795a5da93293642f180da0d6595e86e12b2f4982f43ee6ee2b7227edb",
+      "contract": {
+        "language": "zh-Hans-CN",
+        "required": [
+          "灯塔坐标"
+        ],
+        "forbidden": [
+          "旧版标识"
+        ]
+      },
+      "status": "matched",
+      "adapter": {
+        "engine": "windows-ocr-v1",
+        "language": "zh-Hans-CN",
+        "system_version": "10.0.26300"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "b79abe029b2550368a2c01920b68c329fd202d73672ad02e01b906af3c54c909",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "5a3a65eaae0e0c3af2c96057ab8815c936998b301fa7fba660ff64d8125d2d77",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "03161ed3c8118988b14fe8b944b047d9d08e8292125c0d717fafcf479d620d92",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        }
+      ],
+      "findings": [],
+      "evidence": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "b79abe029b2550368a2c01920b68c329fd202d73672ad02e01b906af3c54c909"
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "5a3a65eaae0e0c3af2c96057ab8815c936998b301fa7fba660ff64d8125d2d77"
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "03161ed3c8118988b14fe8b944b047d9d08e8292125c0d717fafcf479d620d92"
+        }
+      ]
+    },
+    "mismatch": {
+      "rule_version": "guardian-screen-text-v1",
+      "output_sha256": "a429bbeba5277d796545fba1a053624cb8b4501698714d83473ab0eb7c3d2fb6",
+      "contract": {
+        "language": "zh-Hans-CN",
+        "required": [
+          "灯塔坐标"
+        ],
+        "forbidden": [
+          "旧版标识"
+        ]
+      },
+      "status": "review",
+      "adapter": {
+        "engine": "windows-ocr-v1",
+        "language": "zh-Hans-CN",
+        "system_version": "10.0.26300"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "23543ef63f4753b31d77b556182ec0860331d354f83aa3d965982c640d47f568",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "d0ff1891aa231f9b8f639420136f2605754ff03274423312a2e107261c1a02c9",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "708f222900476b9f86dd64ff3e82b986b8426536131c31c01b3510bc26f7ae72",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "code": "required_not_seen",
+          "term": "灯塔坐标",
+          "evidence_indices": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "code": "forbidden_seen",
+          "term": "旧版标识",
+          "evidence_indices": [
+            0,
+            1,
+            2
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "23543ef63f4753b31d77b556182ec0860331d354f83aa3d965982c640d47f568"
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "d0ff1891aa231f9b8f639420136f2605754ff03274423312a2e107261c1a02c9"
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "708f222900476b9f86dd64ff3e82b986b8426536131c31c01b3510bc26f7ae72"
+        }
+      ]
+    },
+    "explicit_review_gate": true,
+    "contract_saved_in_browser": true,
+    "export_included": true
+  },
+  "shot_rework": {
+    "task_id": "480b8a06-48d1-4eae-a553-191ec3b4f6d7",
+    "old_timeline": "2c825622-d1d1-4e45-90d6-05b9004d9a80",
+    "new_timeline": "ccabd07e-35bc-4482-ae38-9720e408918a",
+    "unchanged_clips_in_affected_episode": 4,
+    "original_timeline_preserved": true
+  },
+  "verified_delivery_bytes": 706287,
+  "verified_delivery_sha256": "32d83cdf54e455fe2be39d9545da10ec4bd6664428ba3d63db7ef0facdebd10c",
+  "guardian_delivery_manifest": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

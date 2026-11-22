@@ -71,6 +71,8 @@ def validate_content(db,project_id,kind,content):
             for key in shot['character_version_ids']:version(f"shot:{shot['number']}:character",key,{'character'})
             contract=shot['contract']
             if contract:
+                if contract['screen_text'] is None:
+                    contract.pop('screen_text')
                 for key in contract['source_image_asset_ids']:asset(f"shot:{shot['number']}:source_image",key,IMAGES)
                 for state in contract['opening']+contract['closing']:
                     version(f"shot:{shot['number']}:state",state['character_version_id'],{'character'})

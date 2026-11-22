@@ -4,6 +4,8 @@ import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request, statusLabels } from '../analysisApi'
 import GuardianShotRework from '../components/production/GuardianShotRework.vue'
 import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from '../components/production/VisualCandidateCheck.vue'
+import ScreenTextCheck, { type ScreenTextReport } from '../components/production/ScreenTextCheck.vue'
+import type { ScreenTextContract } from '../components/production/GuardianShot.vue'
 import { useWorkspace } from '../router/workspace'
 import { appearance } from '../stores/appearance'
 
@@ -15,7 +17,7 @@ interface Finding { code:string; severity:string; detail:string; episode:number;
 interface Shot {
   shot_id:string; number:number; description:string; start_ms:number; duration_ms:number; strategy:string
   scene_version_id:string|null; character_version_ids:string[]
-  guardian?:{contract_sha256:string; visual:string; source_images:Record<string,string>}|null
+  guardian?:{contract_sha256:string; visual:string; source_images:Record<string,string>;screen_text?:ScreenTextContract}|null
 }
 interface Episode {number:number;title:string;storyboard_version_id:string;shots:Shot[]}
 interface Report {approved:boolean;ready_for_review:boolean;issues:Finding[];episodes:Episode[];guardian?:{style:string;shot_count:number}}
@@ -24,6 +26,7 @@ interface Candidate {
   selected_asset_id:string|null;progress:number;error:string|null;rework?:{reason:string}
   parameters:{shot_id:string;preset:string;aspect:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
     guardian_visual?:VisualReport;
+    guardian_screen_text?:ScreenTextReport;
     guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
 interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
@@ -220,6 +223,7 @@ async function compare() {
                 </figure>
               </div>
               <VisualCandidateCheck v-if="candidate?.status==='succeeded'" :report="candidate.output.guardian_visual" @evidence="focusEvidence" />
+              <ScreenTextCheck v-if="candidate?.output.guardian_screen_text" :report="candidate.output.guardian_screen_text" @evidence="focusEvidence" />
               <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
               <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
               <p v-else-if="candidate" role="status">{{statusLabels[candidate.status] || candidate.status}} · {{Math.round(candidate.progress)}}%</p>
@@ -245,6 +249,11 @@ async function compare() {
               <template v-if="shot">
                 <dt>镜头合同</dt><dd><code>{{shot.guardian?.contract_sha256 || '待锁定'}}</code></dd>
                 <dt v-if="shot.guardian">画面约束</dt><dd v-if="shot.guardian">{{shot.guardian.visual}}</dd>
+                <template v-if="shot.guardian?.screen_text">
+                  <dt>固定文字语言</dt><dd>{{shot.guardian.screen_text.language}}</dd>
+                  <dt v-if="shot.guardian.screen_text.required.length">必现文字</dt><dd v-if="shot.guardian.screen_text.required.length">{{shot.guardian.screen_text.required.join('、')}}</dd>
+                  <dt v-if="shot.guardian.screen_text.forbidden.length">禁现文字</dt><dd v-if="shot.guardian.screen_text.forbidden.length">{{shot.guardian.screen_text.forbidden.join('、')}}</dd>
+                </template>
                 <dt>场景版本</dt><dd>{{shot.scene_version_id || '待锁定'}}</dd>
                 <dt>角色版本</dt><dd v-for="key in shot.character_version_ids" :key="key">{{key}}</dd>
                 <dt v-if="candidate">实际外部费用</dt><dd v-if="candidate">{{candidate.output.actual_external_cost_micros===0?'¥0':'未知'}}</dd>

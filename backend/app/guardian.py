@@ -135,7 +135,8 @@ class Guardian:
                    'asset_hashes': asset_hashes}
         self.contracts[shot_id] = fingerprint(payload)
         return {'contract_sha256': self.contracts[shot_id], 'visual':contract['visual'], 'has_dialogue':has_dialogue,
-                'source_images': {key: asset_hashes[key] for key in contract['source_image_asset_ids']}}
+                'source_images': {key: asset_hashes[key] for key in contract['source_image_asset_ids']},
+                **({'screen_text':contract['screen_text']} if contract.get('screen_text') else {})}
 
 
 def require_active_plan(db, version):

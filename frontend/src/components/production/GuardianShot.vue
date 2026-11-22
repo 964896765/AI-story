@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { ref, useId } from 'vue'
 import GuardianRules from './GuardianRules.vue'
+import { api } from '../../services/api'
 
 export interface ActorState {
   character_version_id:string; wardrobe_id:string; left_hand:string|null; right_hand:string|null; action:string; position:string
@@ -7,10 +9,33 @@ export interface ActorState {
 export interface ShotContract {
   visual:string; facts:Record<string,string>; source_image_asset_ids:string[];
   opening:ActorState[]; closing:ActorState[]; continuity_note:string
+  screen_text?:ScreenTextContract|null
 }
+export interface ScreenTextContract {language:string;required:string[];forbidden:string[]}
 const contract = defineModel<ShotContract|null>({ required:true })
 const props = defineProps<{ characters:{version_id:string; title:string; version:number}[]; images:{id:string; name:string}[] }>()
 const edges = [{id:'opening',label:'开场'},{id:'closing',label:'收尾'}] as const
+const textRules = [{id:'required',label:'必现文字'},{id:'forbidden',label:'禁现文字'}] as const
+const languages=ref<string[]|null>(null)
+const languageList=useId()
+const checking=ref(false)
+
+async function loadLanguages() {
+  if (checking.value || languages.value!==null) return
+  checking.value=true
+  try {
+    const status=await api<{capabilities:{id:string;languages?:string[]}[]}>('/analysis/capabilities')
+    languages.value=status.capabilities.find(item=>item.id==='ocr')?.languages || []
+  } catch {
+    languages.value=[]
+  } finally { checking.value=false }
+}
+
+function setScreenText() {
+  if (!contract.value) return
+  contract.value.screen_text={language:'zh-Hans-CN',required:[''],forbidden:[]}
+  void loadLanguages()
+}
 
 function enable() {
   contract.value = {visual:'',facts:{},source_image_asset_ids:[],opening:[],closing:[],continuity_note:''}
@@ -35,6 +60,26 @@ function add(edge:'opening'|'closing') {
         <option v-for="id in contract.source_image_asset_ids.filter(id=>!images.some(image=>image.id===id))" :key="id" :value="id">{{ id }}</option>
       </select></label>
       <GuardianRules v-model="contract.facts" label="镜头剧情事实" prefix="fact" :limit="32" />
+      <fieldset class="screen-text-rules">
+        <legend>画面文字核验</legend>
+        <button v-if="!contract.screen_text" type="button" @click="setScreenText">添加画面文字规则</button>
+        <template v-else>
+          <label>画面文字 OCR 语言<input v-model.trim="contract.screen_text.language" :list="languageList"
+            pattern="[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*" maxlength="35" required @focus="loadLanguages"></label>
+          <datalist :id="languageList"><option v-for="language in languages || []" :key="language" :value="language"></option></datalist>
+          <p v-if="checking" class="hint">正在读取本机 OCR 能力…</p>
+          <p v-else-if="languages && !languages.includes(contract.screen_text.language)" class="hint">此语言未确认可用，候选将要求人工核验。</p>
+          <div v-for="rule in textRules" :key="rule.id" class="screen-text-rules">
+            <div v-for="(_,index) in contract.screen_text[rule.id]" :key="index" class="text-rule-line">
+              <label>{{rule.label}} {{index+1}}<input v-model.trim="contract.screen_text[rule.id][index]" required maxlength="80"></label>
+              <button type="button" @click="contract.screen_text[rule.id].splice(index,1)">移除</button>
+            </div>
+            <button type="button" :disabled="contract.screen_text[rule.id].length>=8"
+              @click="contract.screen_text[rule.id].push('')">添加{{rule.label}}</button>
+          </div>
+          <button type="button" @click="contract.screen_text=null">关闭本镜头文字核验</button>
+        </template>
+      </fieldset>
       <fieldset v-for="edge in edges" :key="edge.id">
         <legend>{{ edge.label }}角色状态</legend>
         <div v-for="(state,index) in contract[edge.id]" :key="index" class="state-row">
@@ -60,5 +105,8 @@ function add(edge:'opening'|'closing') {
 <style scoped>
 .shot-contract { margin:12px 0; padding:12px }
 .contract-form { display:grid; gap:10px }
+.screen-text-rules { display:grid;gap:7px;min-width:0 }
+.screen-text-rules button { justify-self:start }
+.text-rule-line { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end }
 .state-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; padding:8px 0; border-bottom:1px solid var(--line-soft) }
 </style>

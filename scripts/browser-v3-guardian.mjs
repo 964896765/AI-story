@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { api, base, evidenceDir, openChrome, post, qaRoot, wait } from './chrome-qa.mjs'
 
@@ -42,6 +42,21 @@ const [coast,room,wrongIdentity,wrongWardrobe,wrongScene,wrongShot]=await Promis
   artwork('wrong-wardrobe',{coat:'0xf54d58'}),artwork('wrong-scene',{background:'0xf7b942'}),artwork('wrong-shot',{subject:false}),
 ])
 const blackArtwork=await artwork('technical-black',{black:true})
+const ocr=(await api('/analysis/capabilities')).capabilities.find(item=>item.id==='ocr')
+assert(ocr?.available && ocr.languages.includes('zh-Hans-CN'),'Installed Chinese OCR is required')
+await copyFile(join(process.env.SystemRoot || 'C:/Windows','Fonts','simhei.ttf'),join(qaRoot,'guardian-ocr-font.ttf'))
+async function sign(name,text) {
+  const filename=name+'.png'
+  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=white:s=960x960','-vf',
+    `drawtext=fontfile=guardian-ocr-font.ttf:text='${text}':fontsize=130:fontcolor=black:x=(w-tw)/2:y=(h-th)/2`,
+    '-frames:v','1','-threads','1',filename],{cwd:qaRoot,timeout:15000})
+  const body=new FormData()
+  body.set('file',new Blob([await readFile(join(qaRoot,filename))]),filename)
+  body.set('authorization','本机 FFmpeg 自制牌匾文字，供验收')
+  return api(path+'/assets',{method:'POST',body})
+}
+const correctSign=await sign('correct-sign','灯塔坐标')
+const wrongSign=await sign('wrong-sign','旧版标识')
 const installed=(await api('/voice/capabilities')).voices
 const voice=installed.find(item=>item.locale==='zh-CN')
 assert(voice,'Chinese Windows offline voice is required for this acceptance')
@@ -174,9 +189,27 @@ try {
   const assembling='/timeline'+path+'/assemble'
   const originalTimeline=await post(assembling,{series_version_id:approved.version_id,episode:2,
     title:'第 2 集时间轴',profile:'square',idempotency_key:'before-shot-rework'})
-  const edited=structuredClone(boards[1].content)
-  edited.shots[4].contract.visual='左侧阿青持白信，特写必须看到信封'
-  const updatedBoard=await revise(boards[1],edited,'new-shot-contract')
+  await command('Page.navigate',{url:appLink('/creative/storyboard',{version:boards[1].version_id,shot:'ep2-shot5'})})
+  await wait(()=>evaluate("document.activeElement.id==='guardian-shot-ep2-shot5'"),'latest storyboard shot opens for contract edit')
+  await evaluate(`(() => {
+    const contract=document.querySelector('#guardian-shot-ep2-shot5 .shot-contract');
+    contract.open=true;
+    const source=contract.querySelector('select[multiple]');
+    for (const option of source.options) option.selected=${JSON.stringify([correctSign.id,wrongSign.id])}.includes(option.value);
+    source.dispatchEvent(new Event('change',{bubbles:true}));
+    Array.from(contract.querySelectorAll('button')).find(button=>button.textContent.trim()==='添加画面文字规则').click();
+  })()`)
+  await setField('必现文字 1','灯塔坐标')
+  await click('添加禁现文字')
+  await setField('禁现文字 1','旧版标识')
+  await setField('本次版本说明','为第五镜锁定牌匾文字')
+  await click('保存新版本')
+  await wait(()=>contains('已保存数据库版本 v2'),'screen text contract saved in immutable storyboard')
+  const [boardHead]=await api('/story/entities/'+boards[1].id+'/versions')
+  const updatedBoard=await api('/story/versions/'+boardHead.version_id)
+  assert.deepEqual(updatedBoard.content.shots[4].contract.screen_text,
+    {language:'zh-Hans-CN',required:['灯塔坐标'],forbidden:['旧版标识']})
+  assert(!boards[1].content.shots[4].contract.screen_text)
   const updated=await revise(approved,{...approved.content,episodes:approved.content.episodes.map((item,index)=>index ?
     {...item,storyboard_version_id:updatedBoard.version_id}:item)},'local-rework')
   const latest=await approve(updated,'local-rework-approve')
@@ -194,20 +227,46 @@ try {
   await evaluate("document.querySelector('.rework-actions summary').click()")
   await setField('返工画幅','square')
   await setField('返工运镜','pull_out')
-  await setField('返工原因','按新版合同保留完整信封')
+  await setField('返工参考图',correctSign.id)
+  await setField('返工原因','按新版合同核对灯塔坐标')
   await click('提交单镜头返工')
-  await wait(()=>contains('按新版合同保留完整信封'),'rework reason persisted')
+  await wait(()=>contains('按新版合同核对灯塔坐标'),'rework reason persisted')
   const [regen]=await api('/generation'+path+'/candidates?shot_id=ep2-shot5&series_id='+latest.id)
-  assert.equal(regen.rework.reason,'按新版合同保留完整信封')
+  assert.equal(regen.rework.reason,'按新版合同核对灯塔坐标')
   assert.equal(regen.story_version_id,latest.version_id)
   assert.equal(regen.parameters.frames,24)
-  await wait(()=>ready([regen.id]),'one changed shot rerendered',35000)
+  const latestShot=(await continuity(latest)).episodes[1].shots[4]
+  const wrong=await enqueue(latest,latestShot,wrongSign,'screen-text-mismatch')
+  await wait(()=>ready([regen.id,wrong.id]),'both actual OCR candidates produced',35000)
+  const inspected=await api('/generation'+path+'/candidates?shot_id=ep2-shot5&series_id='+latest.id)
+  const matched=inspected.find(item=>item.id===regen.id).output.guardian_screen_text
+  const mismatch=inspected.find(item=>item.id===wrong.id).output.guardian_screen_text
+  assert.equal(matched.status,'matched',JSON.stringify(matched))
+  assert.equal(matched.adapter.language,'zh-Hans-CN')
+  assert(matched.samples.every(item=>item.lines.some(line=>line.replace(/\s/g,'').includes('灯塔坐标'))))
+  assert.equal(mismatch.status,'review')
+  assert.deepEqual(mismatch.findings.map(item=>item.code),['required_not_seen','forbidden_seen'])
+  await command('Page.navigate',{url:appLink('/ai/candidates',{plan:latest.version_id,shot:'ep2-shot5',asset:wrongSign.id,candidate:wrong.id})})
+  await wait(()=>evaluate("document.querySelector('[data-testid=screen-text-status]')?.textContent.trim()==='文字发现待人工核验'"),'actual OCR discrepancy in Chrome')
+  await setField('内容审核说明','采样发现错误的牌匾文字')
+  assert(await evaluate("document.querySelector('.content-review button').disabled"))
+  await blocked(taskRoot(wrong.id)+'/guardian-review',{decision:'approved',note:'尝试跳过人工文字确认'},409)
+  await evaluate("document.querySelector('.screen-check details').open=true")
+  await click('定位文字证据 0.500 秒')
+  await wait(()=>evaluate("Math.abs(document.querySelector('video[aria-label=当前候选]').currentTime-0.5)<0.05"),'seek to the actual OCR evidence')
+  await evaluate("document.querySelector('.screen-check').scrollIntoView({block:'center'})")
+  await screenshot('guardian-screen-text.png')
+  await setField('内容审核决定','rejected')
+  await setField('问题类别','screen_text')
+  await setField('问题证据帧','1')
+  await click('保存内容审核')
+  await wait(()=>contains('候选已退回，证据已保存'),'wrong sign rejected with timestamped evidence')
   const applyPath='/timeline'+path+'/shot-replacements'
   const replaceBody={series_version_id:latest.version_id,timeline_version_id:originalTimeline.version_id,
     shot_id:'ep2-shot5',candidate_id:regen.id,note:'确认只替换第五镜',idempotency_key:'blocked-unreviewed'}
   await blocked(applyPath,replaceBody,409)
   const followLink=label=>evaluate(`Array.from(document.querySelectorAll('a')).find(a=>a.textContent.trim()===${JSON.stringify(label)})?.click()`)
-  await followLink('打开生成与候选审核')
+  await command('Page.navigate',{url:appLink('/ai/candidates',{plan:latest.version_id,shot:'ep2-shot5',asset:correctSign.id,candidate:regen.id})})
   await wait(()=>evaluate(`document.querySelector('.candidate-evidence img[src*="${regen.id}/guardian-frames/1"]')?.naturalWidth>0`),'exact rework candidate evidence')
   await setField('内容审核说明','按新合同核对画面和信封')
   await click('保存内容审核')
@@ -289,6 +348,7 @@ try {
   assert.equal(createHash('sha256').update(bytes).digest('hex'),receipt.sha256)
   assert(bytes.includes(Buffer.from('guardian.json')) && bytes.includes(Buffer.from('guardian-contract-v1')))
   assert(bytes.includes(Buffer.from('guardian-visual-luma-v1')))
+  assert(bytes.includes(Buffer.from('guardian-screen-text-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -312,6 +372,7 @@ try {
     detected_scripted_continuity_blockers:blockingCodes,accepted_clean_plan_has_no_blockers:true,
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
     reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:run.id,
+    screen_text:{matched,mismatch,explicit_review_gate:true,contract_saved_in_browser:true,export_included:true},
     shot_rework:{task_id:regen.id,old_timeline:originalTimeline.version_id,new_timeline:replacement.version_id,
       unchanged_clips_in_affected_episode:4,original_timeline_preserved:true},
     verified_delivery_bytes:bytes.length,verified_delivery_sha256:receipt.sha256,guardian_delivery_manifest:true,

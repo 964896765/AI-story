@@ -20,6 +20,7 @@ from .creative import require, version_ref
 from .db import session
 from .media import probe
 from .guardian import require_active_plan
+from .guardian_ocr import inspect_screen_text
 from .models import Asset, Project, StoryVersion, Task, TaskEvent, now
 from .render import execute_ffmpeg, file_hash, validate_output, write_manifest
 from .series import approved_guardian_shot, series_report
@@ -53,9 +54,10 @@ class Selection(Strict):
 
 class CandidateReview(Strict):
     decision: Literal['approved','rejected']
-    category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','other'] | None=None
+    category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','screen_text','other'] | None=None
     frame: int | None=Field(default=None,ge=0,le=2+MAX_FINDINGS)
     note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
+    screen_text_verified: bool | None = Field(default=None,strict=True)
 
 
 class ShotRework(Strict):
@@ -70,6 +72,11 @@ class ShotRework(Strict):
 
 def shot_frames(shot):
     return round((shot['start_ms']+shot['duration_ms'])*24/1000)-round(shot['start_ms']*24/1000)
+
+
+def guardian_input(series_id, contract):
+    return {'series_id':series_id,'contract_sha256':contract['contract_sha256'],
+            **({'screen_text':contract['screen_text']} if contract.get('screen_text') else {})}
 
 
 @router.get('/capabilities')
@@ -132,7 +139,7 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
             frames = shot_frames(shot)
             if any(candidate.frames!=frames for candidate in body.candidates):
                 raise HTTPException(422,f'镜头合同要求候选输出 {frames} 帧')
-            guardian = {'series_id':entity.id,'contract_sha256':contract['contract_sha256']}
+            guardian = guardian_input(entity.id,contract)
     tasks = enqueue_motion(db, image, body.story_version_id, parameters, keys, guardian)
     db.commit()
     return [public(task) for task in tasks]
@@ -178,7 +185,7 @@ def rework_shot(project_id: str,body: ShotRework,db=Depends(session)):
     if not 12<=frames<=240:
         raise HTTPException(422,'本机运镜支持 12 至 240 帧，请先修订镜头合同')
     parameters = {'preset':body.preset,'aspect':body.aspect,'frames':frames,'shot_id':body.shot_id}
-    guardian = {'series_id':entity.id,'contract_sha256':contract['contract_sha256']}
+    guardian = guardian_input(entity.id,contract)
     task, = enqueue_motion(db,image,version.id,[parameters],[key],guardian,rework=request)
     db.commit()
     return public(task)
@@ -238,6 +245,18 @@ def require_visual_clearance(task):
         raise HTTPException(409,'候选未通过本机视觉技术检查，可记录退回并制作新候选')
 
 
+def require_screen_text_clearance(task, confirmed):
+    expected = task.input_snapshot['guardian'].get('screen_text')
+    if not expected:
+        return
+    report = task.output.get('guardian_screen_text') or {}
+    if (report.get('contract')!=expected or report.get('output_sha256')!=task.output['sha256']
+        or report.get('status') not in ('matched','review','unavailable')):
+        raise HTTPException(409,'缺少与当前候选匹配的画面文字报告，请重新制作')
+    if report['status']!='matched' and confirmed is not True:
+        raise HTTPException(409,'请对照实际画面，确认已人工核验必现和禁现文字')
+
+
 @router.post('/candidates/{task_id}/guardian-review')
 def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     task,path = finished_candidate(db,task_id)
@@ -246,6 +265,8 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     if not task.input_snapshot.get('guardian'):
         raise HTTPException(422,'该候选没有已锁定的 Guardian 镜头合同')
     request = body.model_dump()
+    if body.screen_text_verified is None:
+        request.pop('screen_text_verified')
     previous = task.output.get('guardian_review')
     if previous:
         if previous['request']!=request:
@@ -254,10 +275,15 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     require_active_plan(db,require(db,StoryVersion,task.story_version_id))
     if body.decision=='rejected' and (not body.category or body.frame is None):
         raise HTTPException(422,'退回候选需要选择问题类别与证据帧')
+    if body.decision=='rejected' and body.screen_text_verified is not None:
+        raise HTTPException(422,'文字核验确认仅用于通过候选')
+    if body.screen_text_verified is not None and not task.input_snapshot['guardian'].get('screen_text'):
+        raise HTTPException(422,'此候选没有固定画面文字规则')
     if body.decision=='approved' and (body.category is not None or body.frame is not None):
         raise HTTPException(422,'通过候选时只需填写审核说明')
     if body.decision=='approved':
         require_visual_clearance(task)
+        require_screen_text_clearance(task,body.screen_text_verified)
     checked = {item['index']:checked_frame(task,item['index'])[0] for item in task.output['guardian_frames']}
     if file_hash(path)!=task.output['sha256']:
         raise HTTPException(409,'候选文件校验失败，请重新制作')
@@ -293,6 +319,7 @@ def select_candidate(task_id: str,body: Selection,db=Depends(session)):
         raise HTTPException(409,'候选须通过 Guardian 人工内容审核后采纳')
     if guardian:
         require_visual_clearance(task)
+        require_screen_text_clearance(task,review['request'].get('screen_text_verified'))
     source = require(db,Asset,task.asset_id)
     asset = Asset(project_id=task.project_id,name=name,storage_key=task.output['storage_key'],
                   sha256=task.output['sha256'],size_bytes=task.output['size_bytes'],
@@ -329,11 +356,11 @@ def sample_candidate(path, commands, frames, visual):
     commands.run(['ffmpeg','-v','error','-nostdin','-n','-xerror','-filter_threads','2',
                   '-protocol_whitelist','file,pipe','-i',str(path),'-map','0:v:0',
                   '-vf',f'select={selection},scale=640:-2','-fps_mode','passthrough',
-                  '-frames:v',str(len(indices)),'-threads','1',str(commands.output/'review-%02d.jpg')],
+                  '-frames:v',str(len(indices)),'-threads','1',str(commands.output/'frame-%02d.jpg')],
                  'guardian_frames',98,timeout=45)
     evidence, files = [], {}
     for index, frame_number in enumerate(indices):
-        image = commands.output/f'review-{decoded_positions[frame_number]:02d}.jpg'
+        image = commands.output/f'frame-{decoded_positions[frame_number]:02d}.jpg'
         if not image.is_file() or not image.stat().st_size:
             raise ValueError('候选缺少完整的 Guardian 证据帧')
         descriptor = {'time_ms':round(frame_number*1000/24),'index':index,'sha256':file_hash(image)}
@@ -422,6 +449,8 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
         visual = inspect_video(commands,temporary,options.frames,digest)
         output['guardian_visual'] = visual
         output.update(sample_candidate(temporary,commands,options.frames,visual))
+        if screen_text := guardian.get('screen_text'):
+            output['guardian_screen_text'] = inspect_screen_text(commands,screen_text,output['files'],digest)
     update('publishing',99)
     target.parent.mkdir(parents=True,exist_ok=True)
     write_manifest(manifest,output)

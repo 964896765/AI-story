@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "1739cd060cb1a2d2d871b0359ef574d5345ae479273d0a006a98309bbe4bdbcb",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/guardian-ocr-518d347d8565",
+  "schema_changed": false
+}

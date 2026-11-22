@@ -1,0 +1,13 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "guardian_route_http": 200,
+  "storyboard_route_http": 200,
+  "windows_ocr_languages": [
+    "zh-Hans-CN"
+  ],
+  "manual_confirmation_api": true,
+  "live_api_authorized": false,
+  "live_budget_micros": 0
+}

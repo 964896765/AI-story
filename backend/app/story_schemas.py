@@ -1,4 +1,5 @@
 from typing import Annotated, Literal
+from unicodedata import normalize
 from pydantic import BaseModel,ConfigDict,Field,model_validator
 
 Kind=Literal['novel','script','character','scene','relationship','episode','storyboard','generation_plan','story_bible','timeline']
@@ -23,6 +24,27 @@ class ShotActorState(Strict):
     action: str = Field(default='',max_length=200)
     position: str = Field(default='',max_length=200)
 
+
+def screen_text_key(value: str) -> str:
+    return ''.join(char for char in normalize('NFKC',value).casefold() if not char.isspace())
+
+
+class ScreenTextContract(Strict):
+    language: str = Field(min_length=2,max_length=35,pattern=r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
+    required: list[Annotated[str, Field(min_length=1,max_length=80,pattern=r'\S')]] = Field(default_factory=list,max_length=8)
+    forbidden: list[Annotated[str, Field(min_length=1,max_length=80,pattern=r'\S')]] = Field(default_factory=list,max_length=8)
+
+    @model_validator(mode='after')
+    def valid_terms(self):
+        keys = [screen_text_key(term) for term in self.required + self.forbidden]
+        if not keys or not all(keys) or len(set(keys))!=len(keys):
+            raise ValueError('画面文字至少登记一项，必现和禁现文字不能重复')
+        if any(screen_text_key(blocked) in screen_text_key(expected)
+               for expected in self.required for blocked in self.forbidden):
+            raise ValueError('必现文字不能包含禁现文字')
+        return self
+
+
 class ShotContract(Strict):
     visual: RuleText
     facts: dict[RuleKey,RuleText] = Field(default_factory=dict,max_length=32)
@@ -30,6 +52,7 @@ class ShotContract(Strict):
     opening: list[ShotActorState] = Field(default_factory=list,max_length=16)
     closing: list[ShotActorState] = Field(default_factory=list,max_length=16)
     continuity_note: str = Field(default='',max_length=1000)
+    screen_text: ScreenTextContract | None = None
 
 class StyleLock(Strict):
     description: RuleText

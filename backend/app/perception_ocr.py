@@ -40,9 +40,9 @@ def recognizer(language):
     return {'engine': ENGINE, 'language': language, 'system_version': platform.version()}
 
 
-def recognize(commands, artifacts, adapter):
+def recognize(commands, artifacts, adapter, *, stage='analysis_ocr', progress=73):
     stdout, _ = commands.run([*command(), '-FrameDirectory', str(commands.output), '-Language', adapter['language']],
-                             'analysis_ocr', 73, timeout=180)
+                             stage, progress, timeout=180)
     frames = json.loads(stdout.read_bytes())
     if [item['name'] for item in frames] != [item['name'] for item in artifacts]:
         raise ValueError('OCR 输出与采样帧无法对应')

@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { request, statusLabels } from './analysisApi'
 import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from './components/production/VisualCandidateCheck.vue'
+import ScreenTextCheck, { type ScreenTextReport } from './components/production/ScreenTextCheck.vue'
 
 type Preset = 'push_in'|'pull_out'|'pan_right'
 interface Candidate {
@@ -12,7 +13,8 @@ interface Candidate {
   output:{duration?:number; width?:number; height?:number; reused_from_task_id?:string;
     guardian_frames?:{index:number;time_ms:number}[];
     guardian_visual?:VisualReport;
-    guardian_review?:{request:{decision:'approved'|'rejected';note:string;category:string|null};evidence:{time_ms:number}|null}}
+    guardian_screen_text?:ScreenTextReport;
+    guardian_review?:{request:{decision:'approved'|'rejected';note:string;category:string|null;screen_text_verified?:boolean};evidence:{time_ms:number}|null}}
 }
 const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialPlan?:string;initialShot?:string;initialAsset?:string;initialCandidate?:string}>()
 const emit=defineEmits<{assetsChanged:[]}>()
@@ -22,7 +24,8 @@ const aspect=ref('portrait'), frames=ref(72), presets=ref<Preset[]>(['push_in','
 const labels:Record<Preset,string>={push_in:'推进',pull_out:'拉远',pan_right:'向右横移'}
 const title=ref(''), review=ref(''), notice=ref(''), error=ref(''), busy=ref(false)
 const verdict=ref<'approved'|'rejected'>('approved'), category=ref(''), evidenceIndex=ref<number|null>(null), reviewNote=ref('')
-const categories={identity:'角色身份',wardrobe:'服装',prop:'道具',scene:'场景',continuity:'连续性',shot_mismatch:'画面与分镜不符',technical:'技术缺陷',other:'其他'}
+const categories={identity:'角色身份',wardrobe:'服装',prop:'道具',scene:'场景',continuity:'连续性',shot_mismatch:'画面与分镜不符',technical:'技术缺陷',screen_text:'画面文字',other:'其他'}
+const screenTextVerified=ref(false)
 const modeList=ref<{id:string; available:boolean; label:string}[]>([])
 const compareId=ref('')
 const player=ref<HTMLVideoElement|null>(null), markedEvidence=ref<number|null>(null)
@@ -33,6 +36,10 @@ const base=`/generation/projects/${props.projectId}`
 const selected=computed(()=>candidates.value.find(item=>item.id===preview.value))
 const evidenceFrames=computed(()=>(selected.value?.output.guardian_frames || []).slice().sort((a,b)=>a.time_ms-b.time_ms))
 const visualBlocked=computed(()=>selected.value?.output.guardian_visual?.status==='blocked')
+const textReviewRequired=computed(()=>{
+  const report=selected.value?.output.guardian_screen_text
+  return Boolean(report && report.status!=='matched')
+})
 
 async function run(action:()=>Promise<void>){
   busy.value=true
@@ -66,6 +73,7 @@ function open(candidate:Candidate){
   category.value=''
   evidenceIndex.value=null
   markedEvidence.value=null
+  screenTextVerified.value=false
   if (candidate.output.guardian_visual?.status==='blocked') markBlocked(candidate.output.guardian_visual)
 }
 function markBlocked(report:VisualReport) {
@@ -92,6 +100,7 @@ async function reviewContent(){
     const rejected=verdict.value==='rejected'
     await request(`/generation/candidates/${item.id}/guardian-review`,{
       decision:verdict.value,note:reviewNote.value,category:rejected?category.value:null,frame:rejected?evidenceIndex.value:null,
+      ...(!rejected && textReviewRequired.value ? {screen_text_verified:screenTextVerified.value} : {}),
     })
     await refresh()
     notice.value=rejected?'候选已退回，证据已保存':'内容审核已保存，可以采纳'
@@ -183,8 +192,10 @@ onUnmounted(()=>clearInterval(timer))
             </figure>
           </div>
           <VisualCandidateCheck :report="selected.output.guardian_visual" @evidence="seekEvidence" />
+          <ScreenTextCheck v-if="selected.output.guardian_screen_text" :report="selected.output.guardian_screen_text" @evidence="seekEvidence" />
           <p v-if="selected.output.guardian_review">{{selected.output.guardian_review.request.decision==='approved'?'人工内容审核通过':'候选已退回'}} · {{selected.output.guardian_review.request.note}}</p>
-          <form v-else class="create content-review" @submit.prevent="reviewContent">
+          <p v-if="selected.output.guardian_review?.request.screen_text_verified" class="hint">画面文字已记录人工核验。</p>
+          <form v-if="!selected.output.guardian_review" class="create content-review" @submit.prevent="reviewContent">
             <label>内容审核决定<select v-model="verdict"><option value="approved" :disabled="visualBlocked">通过</option><option value="rejected">退回</option></select></label>
             <template v-if="verdict==='rejected'">
               <label>问题类别<select v-model="category" required><option value="">选择问题类别</option>
@@ -194,8 +205,9 @@ onUnmounted(()=>clearInterval(timer))
                 <option v-for="frame in evidenceFrames" :key="frame.index" :value="frame.index">{{(frame.time_ms/1000).toFixed(3)}} 秒</option>
               </select></label>
             </template>
+            <label v-if="verdict==='approved' && textReviewRequired" class="check"><input v-model="screenTextVerified" type="checkbox"> 已对照实际画面核验必现和禁现文字</label>
             <label>内容审核说明<textarea v-model="reviewNote" required maxlength="2000"></textarea></label>
-            <button :disabled="busy || !reviewNote.trim() || (visualBlocked && verdict==='approved') || (verdict==='rejected' && (!category || evidenceIndex===null))">保存内容审核</button>
+            <button :disabled="busy || !reviewNote.trim() || (verdict==='approved' && (visualBlocked || (textReviewRequired && !screenTextVerified))) || (verdict==='rejected' && (!category || evidenceIndex===null))">保存内容审核</button>
           </form>
         </template>
         <form v-if="!selected?.selected_asset_id && selected?.status==='succeeded' && (!selected.guardian || selected.output.guardian_review?.request.decision==='approved')" class="create" @submit.prevent="accept">

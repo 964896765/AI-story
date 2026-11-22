@@ -183,6 +183,7 @@ def test_guardian_replacement_keeps_other_clips_and_audio(creative, tmp_path):
               'scene_version_id':scene['version_id'],'strategy':'still_motion',
               'contract':{'visual':'固定灯室','source_image_asset_ids':[image['id'],black_image['id']] if n==1 else [image['id']]}}
               for n in (1,2)]
+    shots[0]['contract']['screen_text'] = {'language':'qaa-ZZ','required':['灯室']}
     board = create('storyboard','灯室分镜',{'source_version_id':episode['version_id'],'shots':shots})
     bible = create('story_bible','灯室制作计划',{'script_version_id':source['version_id'],'theme':'灯光','world':'虚构灯室',
         'guardian':{'facts':{'location':'两个镜头都在灯室内'},'scene_version_ids':[scene['version_id']],
@@ -206,7 +207,17 @@ def test_guardian_replacement_keeps_other_clips_and_audio(creative, tmp_path):
 
     def adopt(task):
         root = f'/api/generation/candidates/{task}'
-        assert client.post(root+'/guardian-review',json={'decision':'approved','note':'逐帧核对'}).status_code==200
+        review = {'decision':'approved','note':'逐帧核对'}
+        output = task_status(task)['output']
+        if screen := output.get('guardian_screen_text'):
+            assert screen['reason']=='language_unavailable' and screen['status']=='unavailable'
+            assert screen['output_sha256']==output['sha256'] and not screen['samples'] and screen['evidence']
+            assert client.post(root+'/guardian-review',json=review).status_code==409
+            review['screen_text_verified'] = True
+        approved = client.post(root+'/guardian-review',json=review)
+        assert approved.status_code==200,approved.text
+        if 'screen_text_verified' in review:
+            assert approved.json()['request']['screen_text_verified'] is True
         selected = client.post(root+'/select',json={'title':'灯室镜头','note':'实测采纳'})
         assert selected.status_code==201,selected.text
         return selected.json()
@@ -221,6 +232,8 @@ def test_guardian_replacement_keeps_other_clips_and_audio(creative, tmp_path):
     root = f'/api/generation/candidates/{black_task}'
     assert point>=3 and client.get(f'{root}/guardian-frames/{point}').status_code==200
     assert client.post(root+'/guardian-review',json={'decision':'approved','note':'试图通过全黑候选'}).status_code==409
+    assert client.post(root+'/guardian-review',json={
+        'decision':'approved','note':'人工核验不能解除技术阻断','screen_text_verified':True}).status_code==409
     assert client.post(root+'/select',json={'title':'全黑候选','note':'试图采纳'}).status_code==409
     rejected = client.post(root+'/guardian-review',json={
         'decision':'rejected','category':'technical','frame':point,'note':'全黑证据'})
