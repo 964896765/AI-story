@@ -318,14 +318,43 @@ try {
   assert(await evaluate("document.querySelector('.content-review button').disabled"))
   await blocked(taskRoot(regen.id)+'/guardian-review',{decision:'approved',note:'尝试跳过逐项检查'},409)
   for(const [index,item] of checklistManifest.review_items.entries()) {
-    await setField('通过证据帧 · '+item.label,index===0?'1':'2')
+    assert(await evaluate(`(() => {
+      const field=[...document.querySelectorAll('.visual-checklist select')].find(select=>
+        select.getAttribute('aria-label')===${JSON.stringify('通过证据帧 · '+item.label)});
+      if (!field) return false;
+      field.value='${index===0?'1':'2'}';
+      field.dispatchEvent(new Event('change',{bubbles:true}));
+      return true;
+    })()`))
     if (index===0) assert(await evaluate("document.querySelector('.content-review button').disabled"))
   }
   await wait(()=>contains('8 / 8 项已选择通过证据'),'all item choices are distinct submissions')
   await click('定位证据 0.500 秒')
   await wait(()=>evaluate("Math.abs(document.querySelector('video[aria-label=当前候选]').currentTime-0.5)<0.05"),'checklist evidence points to real frame')
   await evaluate("document.querySelector('.visual-checklist').scrollIntoView({block:'start'}); window.scrollBy(0,-78)")
+  const desktopReview=await evaluate(`(() => {
+    const desk=document.querySelector('.generation-desk').getBoundingClientRect();
+    const review=document.querySelector('.generation-review').getBoundingClientRect();
+    const video=document.querySelector('.candidate-monitors video').getBoundingClientRect();
+    const records=document.querySelector('.candidate-list').getBoundingClientRect();
+    return {review_fraction:review.width/desk.width, checklist_columns:
+      getComputedStyle(document.querySelector('.visual-checklist ul')).gridTemplateColumns.split(' ').length,
+      monitor_visible:video.top>=60 && video.bottom<innerHeight && video.left>=review.right,
+      records_visible:records.height>75 && records.bottom<=innerHeight};
+  })()`)
+  assert(desktopReview.review_fraction>=0.63 && desktopReview.checklist_columns===2 &&
+    desktopReview.monitor_visible && desktopReview.records_visible,JSON.stringify(desktopReview))
   await screenshot('guardian-visual-checklist.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  await wait(()=>evaluate('innerWidth===390'),'mobile candidate viewport')
+  assert(await evaluate(`(() => {
+    const monitor=document.querySelector('.generation-monitor');
+    return document.documentElement.scrollWidth<=innerWidth+1 && getComputedStyle(monitor).position==='static' &&
+      monitor.getBoundingClientRect().bottom<=document.querySelector('.generation-review').getBoundingClientRect().top &&
+      getComputedStyle(document.querySelector('.visual-checklist ul')).gridTemplateColumns.split(' ').length===1;
+  })()`),'mobile review stacks without horizontal overflow')
+  await screenshot('guardian-visual-checklist-mobile.png')
+  await command('Emulation.clearDeviceMetricsOverride')
   await click('保存内容审核')
   await wait(()=>contains('内容审核已保存，可以采纳'),'rework review persisted')
   await wait(()=>contains('已记录 8 项通过证据'),'saved checklist shown in candidate review')
@@ -583,6 +612,7 @@ try {
       exact_preview_seek:true,verified_zip_contains_comparison:true},
     visual_checklist:{report:checklistReport,approved_in_browser:true,unchecked_api_blocked:true,shown_on_guardian:true,
       unchanged_shots:9,verified_zip_contains_checklist:true},
+    candidate_review_layout:{desktop:desktopReview,mobile_stacks_without_horizontal_overflow:true},
     dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
       muted_delivery_blocked:true,unchanged_episode_reused:true},
     dialogue_balance:{flagged:flaggedBalance,finding:maskingIssue,corrected:clearedBalance,

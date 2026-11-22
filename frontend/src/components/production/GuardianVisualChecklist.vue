@@ -29,23 +29,28 @@ watch(chosen,entries=>{
       <li v-for="item in rows" :key="item.key">
         <strong>{{item.label}}</strong>
         <p class="expected">{{item.expected}}</p>
-        <label v-if="editable">通过证据帧 · {{item.label}}<select v-model="choices[item.key]">
-          <option :value="undefined">选择核对后的证据帧</option>
-          <option v-for="frame in frames" :key="frame.index" :value="frame.index">{{seconds(frame.time_ms)}}</option>
-        </select></label>
-        <button v-if="item.frame" type="button" @click="emit('seek',item.frame)">定位证据 {{seconds(item.frame.time_ms)}}</button>
+        <div v-if="editable || item.frame" class="evidence-controls">
+          <label v-if="editable">通过证据帧<select v-model="choices[item.key]" :aria-label="`通过证据帧 · ${item.label}`">
+            <option :value="undefined">选择证据帧</option>
+            <option v-for="frame in frames" :key="frame.index" :value="frame.index">{{seconds(frame.time_ms)}}</option>
+          </select></label>
+          <button v-if="item.frame" type="button" @click="emit('seek',item.frame)">定位证据 {{seconds(item.frame.time_ms)}}</button>
+        </div>
       </li>
     </ul>
   </section>
 </template>
 
 <style scoped>
-.visual-checklist { margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-panel) }
+.visual-checklist { margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-panel);container-type:inline-size }
 .visual-checklist h3,.visual-checklist p { margin:0 0 6px }
-.visual-checklist ul { list-style:none;margin:0;padding:0 }
-.visual-checklist li { padding:8px 0;border-top:1px solid var(--line-soft);min-width:0 }
-.visual-checklist label { max-width:26rem }
+.visual-checklist ul { display:grid;list-style:none;margin:0;padding:0 }
+.visual-checklist li { display:flex;flex-direction:column;padding:9px 0;border-top:1px solid var(--line-soft);min-width:0 }
+.evidence-controls { display:flex;flex-wrap:wrap;align-items:end;gap:6px;margin-top:auto }
+.evidence-controls label { flex:1 1 100px;min-width:0 }
 .visual-checklist select { width:100%;min-width:0 }
-.visual-checklist button { margin-top:5px }
 .expected { white-space:pre-line;color:var(--ink-muted) }
+@container (min-width:560px) {
+  .visual-checklist ul { grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px }
+}
 </style>

@@ -99,6 +99,6 @@ watch(frameUrl,()=>{frameLoaded.value=false;frameError.value=false},{flush:'sync
 .comparison-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:9px 0 }
 .comparison-grid > div { min-width:0 }
 .comparison-grid select { width:100%;min-width:0 }
-.comparison-grid img { display:block;width:100%;aspect-ratio:1.25;object-fit:contain;margin:6px 0 0;background:var(--surface-base);border:1px solid var(--line);border-radius:6px }
+.comparison-grid img { display:block;width:100%;max-height:265px;aspect-ratio:1.25;object-fit:contain;margin:6px 0 0;background:var(--surface-base);border:1px solid var(--line);border-radius:6px }
 .attached-comparison { color:var(--accent);font-size:12px }
 </style>

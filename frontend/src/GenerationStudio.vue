@@ -97,6 +97,8 @@ function seekEvidence(frame:Pick<VisualEvidence,'index'|'time_ms'>) {
   markedEvidence.value=frame.index
   const media=player.value
   if (!media) return
+  const bounds=media.getBoundingClientRect()
+  if (bounds.top<0 || bounds.bottom>window.innerHeight) media.scrollIntoView({block:'center'})
   const seek=()=>{media.currentTime=frame.time_ms/1000}
   if (media.readyState) seek()
   else media.addEventListener('loadedmetadata',seek,{once:true})
@@ -148,7 +150,8 @@ onMounted(()=>{
     const linked=candidates.value.find(item=>item.id===props.initialCandidate && item.parameters.shot_id===shot.value)
     const match=linked || candidates.value.find(item=>item.parameters.shot_id===shot.value && item.story_version_id===plan.value
       && item.status==='succeeded' && (!assetId.value || item.asset_id===assetId.value))
-    if (match)open(match)
+    const initial=match || (!plan.value && !shot.value && candidates.value.find(item=>item.status==='succeeded'))
+    if (initial)open(initial)
   })
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3000)
 })
@@ -160,43 +163,71 @@ onUnmounted(()=>clearInterval(timer))
   <div v-else class="generation-workbench">
     <p v-if="error" role="alert" class="error">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <div class="generation-desk">
-      <section>
-        <h2>本地静图运镜</h2>
+    <details class="generation-setup" :open="selected?.status!=='succeeded'">
+      <summary>制作本机运镜候选</summary>
+      <div class="setup-content">
         <p class="hint">本机 CPU 输出 24 fps 的无声 MP4，外部调用费用 ¥0。<span v-if="modeList.length">{{ modeList.filter(mode=>!mode.available).map(mode=>mode.label).join('、') }}待接入。</span></p>
-        <form class="create" @submit.prevent="submit">
+        <form class="create generation-form" @submit.prevent="submit">
           <label>参考图片<select v-model="assetId" required>
             <option value="">选择项目授权图片</option><option v-for="asset in images" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
           </select></label>
-          <div class="editor-grid">
-            <label>画幅<select v-model="aspect"><option value="portrait">9:16</option><option value="landscape">16:9</option><option value="square">1:1</option></select></label>
-            <label>成片帧数<input v-model.number="frames" required type="number" min="12" max="240"></label>
-          </div>
+          <label>画幅<select v-model="aspect"><option value="portrait">9:16</option><option value="landscape">16:9</option><option value="square">1:1</option></select></label>
+          <label>成片帧数<input v-model.number="frames" required type="number" min="12" max="240"></label>
           <p class="hint">时长 {{ (frames/24).toFixed(2) }} 秒。画面居中裁剪至目标画幅。</p>
-          <fieldset>
+          <fieldset class="motion-options">
             <legend>候选运镜</legend>
             <label v-for="(label,key) in labels" :key="key" class="check"><input v-model="presets" :value="key" type="checkbox">{{ label }}</label>
           </fieldset>
           <details :open="!!initialPlan">
             <summary>固定已批准镜头</summary>
-            <label>制作计划版本 ID<input v-model="plan" maxlength="36"></label>
-            <label>稳定镜头 ID<input v-model="shot" maxlength="48"></label>
+            <div class="editor-grid">
+              <label>制作计划版本 ID<input v-model="plan" maxlength="36"></label>
+              <label>稳定镜头 ID<input v-model="shot" maxlength="48"></label>
+            </div>
           </details>
-          <button class="primary" :disabled="busy || !assetId || !presets.length">{{ busy ? '处理中' : '提交运镜候选' }}</button>
+          <div class="actions">
+            <button class="primary" :disabled="busy || !assetId || !presets.length">{{ busy ? '处理中' : '提交运镜候选' }}</button>
+            <RouterLink :to="{name:'models',query:{project:projectId}}">查看模型与预算</RouterLink>
+          </div>
         </form>
-      </section>
-      <section>
-        <h2>候选对比与采纳</h2>
-        <div v-if="selected?.status==='succeeded'" class="candidate-monitors" :class="{comparing:compareId && compareId!==selected.id}">
-          <video ref="player" :key="selected.id" controls preload="metadata" :src="`/api/generation/candidates/${selected.id}/video`" aria-label="当前候选"></video>
-          <video v-if="compareId && compareId!==selected.id" :key="compareId" controls preload="metadata" :src="`/api/generation/candidates/${compareId}/video`" aria-label="对比候选"></video>
-        </div>
-        <figure v-else-if="assetId" class="generation-reference"><img :src="`/api/assets/${assetId}/media`" alt="运镜参考图"><figcaption>输入参考图</figcaption></figure>
-        <p v-else class="empty">从记录中选择已验证候选。</p>
-        <label v-if="selected && candidates.some(candidate=>candidate.id!==selected?.id && candidate.status==='succeeded')" class="compare-control">A/B 对比候选<select v-model="compareId">
-          <option value="">仅预览当前候选</option><option v-for="item in candidates.filter(candidate=>candidate.id!==selected?.id && candidate.status==='succeeded')" :key="item.id" :value="item.id">{{labels[item.parameters.preset]}} · {{item.id.slice(0,8)}}</option>
-        </select></label>
-        <p v-if="selected?.selected_asset_id">已采纳为项目素材。</p>
+      </div>
+    </details>
+    <div class="generation-desk">
+      <aside class="generation-monitor" aria-label="候选监看与记录">
+        <section class="monitor-panel">
+          <header class="panel-heading"><h2>候选监看</h2><span v-if="selected?.parameters.shot_id">{{selected.parameters.shot_id}}</span></header>
+          <div v-if="selected?.status==='succeeded'" class="candidate-monitors" :class="{comparing:compareId && compareId!==selected.id}">
+            <video ref="player" :key="selected.id" controls preload="metadata" :src="`/api/generation/candidates/${selected.id}/video`" aria-label="当前候选"></video>
+            <video v-if="compareId && compareId!==selected.id" :key="compareId" controls preload="metadata" :src="`/api/generation/candidates/${compareId}/video`" aria-label="对比候选"></video>
+          </div>
+          <figure v-else-if="assetId" class="generation-reference"><img :src="`/api/assets/${assetId}/media`" alt="运镜参考图"><figcaption>输入参考图</figcaption></figure>
+          <p v-else class="hint">在候选记录中选择视频。</p>
+          <label v-if="selected && candidates.some(candidate=>candidate.id!==selected?.id && candidate.status==='succeeded')" class="compare-control">A/B 对比候选<select v-model="compareId">
+            <option value="">仅预览当前候选</option><option v-for="item in candidates.filter(candidate=>candidate.id!==selected?.id && candidate.status==='succeeded')" :key="item.id" :value="item.id">{{labels[item.parameters.preset]}} · {{item.id.slice(0,8)}}</option>
+          </select></label>
+        </section>
+        <section class="generation-records">
+          <header class="panel-heading"><h2>候选记录</h2><button :disabled="busy" @click="run(refresh)">刷新候选</button></header>
+          <p v-if="!candidates.length" class="hint">暂无候选。</p>
+          <div v-else class="candidate-list" tabindex="0" aria-label="候选任务列表">
+            <article v-for="item in candidates" :key="item.id" class="task" :class="{'active-candidate':preview===item.id}">
+              <div>
+                <strong>{{ labels[item.parameters.preset] }} · {{ assets.find(asset=>asset.id===item.asset_id)?.name }}</strong>
+                <p>{{statusLabels[item.status] || item.status}}<span v-if="(statusLabels[item.stage] || item.stage)!==(statusLabels[item.status] || item.status)"> · {{statusLabels[item.stage] || item.stage}}</span><span v-if="item.parameters.shot_id"> · {{item.parameters.shot_id}}</span></p>
+                <p v-if="item.output.guardian_visual?.status==='blocked'" class="error">技术检查阻断</p>
+                <p v-if="item.status==='succeeded'">{{ item.output.width }} × {{ item.output.height }} · {{ item.output.duration?.toFixed(2) }} 秒<span v-if="item.output.reused_from_task_id"> · 已核验复用</span></p>
+                <p v-if="item.error" class="error">{{ item.error }}</p>
+              </div>
+              <button v-if="item.status==='succeeded'" :aria-pressed="preview===item.id" @click="open(item)">预览{{ labels[item.parameters.preset] }}</button>
+              <button v-if="['queued','running'].includes(item.status)" :disabled="busy || item.cancel_requested" @click="taskAction(item,'cancel')">取消</button>
+              <button v-if="['failed','cancelled'].includes(item.status)" :disabled="busy" @click="taskAction(item,'retry')">重试</button>
+            </article>
+          </div>
+        </section>
+      </aside>
+      <section class="generation-review">
+        <header class="panel-heading"><h2>候选审核与采纳</h2><span v-if="selected?.selected_asset_id">已采纳为项目素材</span></header>
+        <p v-if="selected?.status!=='succeeded'" class="empty">从候选记录选择已验证的视频进行审核。</p>
         <template v-if="selected?.status==='succeeded' && selected.guardian">
           <div class="candidate-evidence">
             <figure><img :src="`/api/assets/${selected.asset_id}/media`" alt="批准源图"><figcaption>批准源图</figcaption></figure>
@@ -235,44 +266,41 @@ onUnmounted(()=>clearInterval(timer))
           <button class="primary" :disabled="busy || !title.trim() || !review.trim()">采纳为视频素材</button>
         </form>
       </section>
-      <section class="generation-checks">
-        <h2>生成前检查</h2>
-        <dl class="inspector-facts">
-          <div><dt>制作方式</dt><dd>本机 FFmpeg</dd></div>
-          <div><dt>参考图</dt><dd>{{images.find(item=>item.id===assetId)?.name || '待选择'}}</dd></div>
-          <div><dt>计划版本</dt><dd>{{plan || '独立候选'}}</dd></div>
-          <div><dt>目标镜头</dt><dd>{{shot || '待关联'}}</dd></div>
-          <div><dt>外部调用费用</dt><dd>¥0.00</dd></div>
-        </dl>
-        <RouterLink :to="{name:'models',query:{project:projectId}}">查看模型与预算</RouterLink>
-      </section>
     </div>
-    <section>
-      <div class="actions"><h2>候选记录</h2><button :disabled="busy" @click="run(refresh)">刷新候选</button></div>
-      <p v-if="!candidates.length" class="hint">暂无候选。</p>
-      <article v-for="item in candidates" :key="item.id" class="task">
-        <div>
-          <strong>{{ labels[item.parameters.preset] }} · {{ assets.find(asset=>asset.id===item.asset_id)?.name }}</strong>
-          <p v-if="item.parameters.shot_id" class="mono">{{ item.parameters.shot_id }}</p>
-          <p>{{ statusLabels[item.status] || item.status }} · {{ statusLabels[item.stage] || item.stage }}</p>
-          <p v-if="item.output.guardian_visual?.status==='blocked'" class="error">技术检查阻断</p>
-          <p v-if="item.status==='succeeded'">{{ item.output.width }} × {{ item.output.height }} · {{ item.output.duration?.toFixed(2) }} 秒<span v-if="item.output.reused_from_task_id"> · 已核验复用</span></p>
-          <p v-if="item.error" class="error">{{ item.error }}</p>
-        </div>
-        <button v-if="item.status==='succeeded'" :aria-pressed="preview===item.id" @click="open(item)">预览{{ labels[item.parameters.preset] }}</button>
-        <button v-if="['queued','running'].includes(item.status)" :disabled="busy || item.cancel_requested" @click="taskAction(item,'cancel')">取消</button>
-        <button v-if="['failed','cancelled'].includes(item.status)" :disabled="busy" @click="taskAction(item,'retry')">重试</button>
-      </article>
-    </section>
   </div>
 </template>
 
 <style scoped>
-.generation-workbench { display:grid; gap:18px }
-.generation-desk { display:grid;grid-template-columns:minmax(210px,.95fr) minmax(250px,2fr) minmax(165px,.82fr);gap:14px;align-items:start }
+.generation-workbench { display:grid; gap:14px }
+.generation-workbench > p { margin:0 }
+.generation-desk { display:grid;grid-template-columns:minmax(0,1fr) clamp(275px,32%,440px);gap:14px;align-items:start }
+.generation-review { grid-column:1;grid-row:1;min-width:0 }
+.generation-monitor { grid-column:2;grid-row:1;position:sticky;top:calc(var(--topbar-height) + 12px);display:flex;flex-direction:column;
+  gap:12px;min-width:0;max-height:calc(100dvh - var(--topbar-height) - 24px) }
+.panel-heading { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px }
+.panel-heading h2 { margin:0 }
+.panel-heading span { color:var(--ink-muted);font-size:12px;overflow-wrap:anywhere }
+.generation-records { display:flex;flex-direction:column;min-height:0 }
+.candidate-list { overflow:auto;min-height:0;scrollbar-width:thin;padding:1px 4px 1px 1px }
+.candidate-list:focus-visible { outline-offset:-2px }
+.candidate-list .task { margin:0 0 6px;padding:8px;gap:6px;flex-wrap:nowrap }
+.candidate-list .task > div { min-width:0 }
+.candidate-list .task strong { display:block;overflow-wrap:anywhere;font-size:12px }
+.candidate-list .task p { font-size:11px;color:var(--ink-muted);margin:2px 0 0 }
+.candidate-list .task .error { color:var(--negative) }
+.candidate-list .active-candidate { border-color:var(--accent);background:var(--accent-surface) }
+.candidate-list .task button { flex:none }
+.generation-setup summary { font-weight:700 }
+.setup-content { margin-top:12px }
+.generation-form { grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr));max-width:none;align-items:end }
+.generation-form > :is(p,fieldset,details,.actions) { grid-column:1/-1 }
+.generation-form > p { margin:0 }
+.motion-options { display:flex;flex-wrap:wrap;gap:12px }
 .candidate-monitors { display:grid;grid-template-columns:minmax(0,1fr);gap:8px }
 .candidate-monitors.comparing { grid-template-columns:repeat(2,minmax(0,1fr)) }
-.compare-control { margin:10px 0 }
+.candidate-monitors video { display:block;width:100%;max-height:min(38dvh,340px);aspect-ratio:auto 16/9;object-fit:contain;background:#0b0f15;border-radius:7px }
+.candidate-monitors.comparing video { aspect-ratio:16/9 }
+.compare-control { margin-top:9px }
 .generation-workbench fieldset,.generation-workbench details { margin:0 }
 .generation-reference { margin:0 0 10px; position:relative; background:var(--surface-raised); border-radius:8px; overflow:hidden }
 .generation-reference img { width:100%; max-height:320px; object-fit:contain; display:block }
@@ -282,6 +310,14 @@ onUnmounted(()=>clearInterval(timer))
 .candidate-evidence img { width:100%; aspect-ratio:1.25; object-fit:contain; background:var(--surface-base); border-radius:6px }
 .candidate-evidence figcaption { color:var(--ink-muted); font-size:12px }
 .candidate-evidence .marked-evidence img { outline:2px solid var(--accent);outline-offset:-2px }
-@media(max-width:1050px) { .generation-desk { grid-template-columns:minmax(200px,.95fr) minmax(250px,2fr) } .generation-checks { grid-column:1/-1 } }
-@media(max-width:700px) { .generation-desk,.candidate-monitors.comparing { grid-template-columns:minmax(0,1fr) } }
+@media(max-width:920px) {
+  .generation-desk { grid-template-columns:minmax(0,1fr) }
+  .generation-monitor,.generation-review { grid-column:1;grid-row:auto }
+  .generation-monitor { position:static;max-height:none }
+  .candidate-list { max-height:190px }
+}
+@media(max-width:560px) {
+  .generation-form { grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .generation-form > label:first-child { grid-column:1/-1 }
+}
 </style>
