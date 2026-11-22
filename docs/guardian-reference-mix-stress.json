@@ -1,0 +1,212 @@
+{
+  "checked_at": "2026-11-22T21:42:17.906272+00:00",
+  "source": "actual synthetic 4-second timeline MP4, voice at 1\u20132 s",
+  "measurement_window_seconds": [
+    3.35,
+    3.9
+  ],
+  "runs_per_thread_setting": 20,
+  "failed": 0,
+  "measurements": [
+    {
+      "filter_threads": 1,
+      "sample": 0,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 1,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 2,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 3,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 4,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 5,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 6,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 7,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 8,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 9,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 10,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 11,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 12,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 13,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 14,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 15,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 16,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 17,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 18,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 1,
+      "sample": 19,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 0,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 1,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 2,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 3,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 4,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 5,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 6,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 7,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 8,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 9,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 10,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 11,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 12,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 13,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 14,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 15,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 16,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 17,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 18,
+      "minimum_pcm_rms": 0.06244
+    },
+    {
+      "filter_threads": 2,
+      "sample": 19,
+      "minimum_pcm_rms": 0.06244
+    }
+  ]
+}

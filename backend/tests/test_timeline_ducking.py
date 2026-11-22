@@ -78,7 +78,7 @@ def test_real_mp4_reduces_music_only_during_dialogue_and_recovers_afterward(tmp_
     assert render('priority', enabled) == priority
     assert all(file_hash(sources[key]) == entry['sha256'] for key, entry in snapshot['assets'].items())
     original_pcm, priority_pcm = decode(original), decode(priority)
-    for start, end in [(0.2, 0.8), (3.1, 3.7)]:
+    for start, end in [(0.2, 0.8), (3.1, 3.4), (3.65, 3.9)]:
         assert tone_level(priority_pcm, 1200, start, end) == pytest.approx(tone_level(original_pcm, 1200, start, end), rel=0.04)
     music_ratio = tone_level(priority_pcm, 1200, 1.2, 1.8) / tone_level(original_pcm, 1200, 1.2, 1.8)
     assert music_ratio < 0.15

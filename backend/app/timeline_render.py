@@ -130,9 +130,11 @@ def music_ducking_applies(timeline):
 
 
 def duck_music(graph, dialogue, music, frames):
-    graph.append(audio_mix(dialogue,frames)+'[dialogueBus]')
+    # Match the block boundaries and timestamps of both compressor inputs, including their final partial blocks.
+    frame_audio = ',asetnsamples=n=1024:p=0,asetpts=N/SR/TB'
+    graph.append(audio_mix(dialogue,frames)+frame_audio+'[dialogueBus]')
     graph.append('[dialogueBus]asplit=2[heardDialogue][dialogueKey]')
-    graph.append(audio_mix(music,frames)+'[musicBus]')
+    graph.append(audio_mix(music,frames)+frame_audio+'[musicBus]')
     graph.append('[musicBus][dialogueKey]sidechaincompress=threshold=0.003:ratio=16:attack=15:release=320:'
                  'knee=2:link=maximum:detection=rms,aformat=sample_fmts=fltp[duckedMusic]')
     return '[heardDialogue]', '[duckedMusic]'
