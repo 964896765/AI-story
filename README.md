@@ -26,7 +26,9 @@ V3 第十批更新“批量生产 → 整剧生产与技术质检”。分集检
 
 在「故事圣经」启用 Production Guardian，可固定剧情事实、角色、场景、风格和镜头合同。在「质检与交付 → Guardian 质量控制」核对阻断项、候选证据和版本变更。现有本机静图运镜、Windows 离线配音、整剧生产和授权交付已接入 Guardian。 [使用与验收](docs/V3_GUARDIAN_ACCEPTANCE.md)
 
-全站 Web UI 使用 PRISM STUDIO 的 12 个主工作区和统一深浅主题。素材导入与智能解析位于「角色与场景」，运营位于「质检与交付」。AI 总导演可保存本地执行计划并交接到对应工作区，创作向导可按阶段打开实际业务。 [导航、截图与回滚](docs/V3_PRISM_WEB_UI_ACCEPTANCE.md)
+全站 Web UI 使用 PRISM STUDIO 的 12 个主工作区和统一深浅主题。素材导入与智能解析位于「角色与场景」，运营位于「质检与交付」。创作向导可按阶段打开实际业务。 [导航、截图与回滚](docs/V3_PRISM_WEB_UI_ACCEPTANCE.md)
+
+在「AI 总导演」选择已保存的固定时间轴版本，或选择已通过技术质检和要求的人工复核的整剧批次。保存计划后，点击「批准并执行」可在本机渲染或生成授权交付包。计划、批准时间及任务状态保存在 PostgreSQL，成片可预览和下载。交付计划在批准时再次校验授权。 [总导演验收](docs/V3_DIRECTOR_ACCEPTANCE.md)
 
 面向 Windows 的本机生产工作台。支持授权媒体解析、改编审核、故事圣经与分镜、本机配音、多轨合成、整剧技术质检及分集返工、授权交付、人工发行登记和结算导入。对外付费模型调用默认关闭，真实预算为 0。 [阶段验收](docs/ACCEPTANCE.md) · [能力矩阵](docs/CAPABILITY_MATRIX.md)
 
@@ -89,7 +91,7 @@ PostgreSQL 集成测试需独立测试数据库，先以其 `DATABASE_URL` 执�
 
 已配置完成时，也可在根目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start.ps1` 隐藏启动三个进程。日志和 PID 存于 `data/runtime`；如需关闭，先核对记录 PID 的实际命令行再停止对应进程。脚本遇到端口占用会退出，不终止其他服务。P3 记录进程启动时间和可执行文件，过期记录由启动脚本归档；`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1 -WhatIf` 可检查将停止的本项目进程，再去掉 `-WhatIf` 实际停止。身份不匹配就拒绝操作，不按端口或复用 PID 杀进程。停止前建议等待任务结束或取消；强制停止的任务通过租约恢复。
 
-升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（V2.0 为 0013），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [独立恢复与发布](docs/PRODUCTION_RUNBOOK.md)
+升级时先停止本项目 API 与 Worker，备份数据库与 data，在 backend 执行 `..\.venv\Scripts\alembic upgrade head`（当前版本为 0014），再重新启动。前端重新执行 `npm run build` 或使用 Vite 开发服务。 [独立恢复与发布](docs/PRODUCTION_RUNBOOK.md)
 
 P2 实机验证脚本：服务运行后根目录执行 `.\.venv\Scripts\python scripts/p2_smoke.py`，会创建明确标识的验收项目与自有测试视频，并生成两条真实成片。浏览器验证使用本机 Chrome：`node --experimental-websocket scripts/browser-p2.mjs`，独立临时浏览器配置，不下载浏览器或模型；会再创建一条真实任务。
 

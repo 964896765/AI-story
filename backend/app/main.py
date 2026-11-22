@@ -27,6 +27,7 @@ from .series import router as series_router
 from .generation import router as generation_router
 from .voice import router as voice_router
 from .timeline import router as timeline_router
+from .director import router as director_router
 from .production import router as production_router
 from .library import router as library_router
 from .delivery import router as delivery_router
@@ -45,6 +46,7 @@ app.include_router(series_router)
 app.include_router(generation_router)
 app.include_router(voice_router)
 app.include_router(timeline_router)
+app.include_router(director_router)
 app.include_router(production_router)
 app.include_router(library_router)
 app.include_router(delivery_router)
@@ -128,7 +130,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0013'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0014'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})

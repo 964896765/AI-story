@@ -29,7 +29,7 @@ try{
   const additional=(await evaluate(scripts)).filter(path=>!initial.includes(path))
   assert(additional.some(path=>path.includes('SystemStudio-')))
   const observed=await api('/system/metrics')
-  assert.equal(observed.database_revision,'0013')
+  assert.equal(observed.database_revision,'0014')
   assert(observed.disk.free>0&&observed.workers.some(worker=>worker.online))
   assert.equal(observed.projects,projectCount)
   const blocked=await fetch(base+'/api/projects',{method:'POST',headers:{'Content-Type':'application/json','Sec-Fetch-Site':'cross-site'},

@@ -104,6 +104,20 @@ class Task(Base):
 Index('ix_tasks_project_recent',Task.project_id,Task.created_at.desc(),Task.id)
 Index('ix_tasks_dispatch_ready',Task.status,Task.next_run_at,Task.created_at,Task.id)
 
+class DirectorPlan(Base):
+    __tablename__ = 'director_plans'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'), index=True)
+    request_key: Mapped[str] = mapped_column(String(64))
+    instruction: Mapped[str] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(String(20))
+    parameters: Mapped[dict] = mapped_column(JSON)
+    input_hash: Mapped[str] = mapped_column(String(64))
+    task_id: Mapped[str | None] = mapped_column(ForeignKey('tasks.id'), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint('project_id','request_key'),)
+
 class ProductionRun(Base):
     __tablename__ = 'production_runs'
     id: Mapped[str] = mapped_column(String(36),primary_key=True,default=uid)

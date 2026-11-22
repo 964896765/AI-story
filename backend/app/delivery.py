@@ -144,17 +144,26 @@ def submit(project_id:str,body:Packaging,db=Depends(session)):
         if previous.kind!='delivery' or previous.parameters!=params:
             raise HTTPException(409,'请求键已用于其他交付')
         return public(previous)
-    run=require(db,ProductionRun,body.run_id)
+    run,snapshot=package_snapshot(db,project_id,params)
+    task=enqueue_package(db,project_id,run,key,params,snapshot)
+    db.commit()
+    return public(task)
+
+
+def package_snapshot(db,project_id,params):
+    run=require(db,ProductionRun,params['run_id'])
     if run.project_id!=project_id:
         raise HTTPException(422,'生产批次不属于当前项目')
     _,report,rights=eligible(db,params)
+    return run,{'rights':rights,'qc_files':[unit['qc']['output_sha256'] for unit in report['episodes']]}
+
+
+def enqueue_package(db,project_id,run,key,params,snapshot):
     task=Task(project_id=project_id,kind='delivery',story_version_id=run.plan_version_id,
-              parameters=params,idempotency_key=key,input_snapshot={'rights':rights,
-              'qc_files':[unit['qc']['output_sha256'] for unit in report['episodes']]})
+              parameters=params,idempotency_key=key,input_snapshot=snapshot)
     db.add(task);db.flush()
     db.add(TaskEvent(task_id=task.id,attempt=0,message='权利和技术质检已核对，交付任务已排队'))
-    db.commit()
-    return public(task)
+    return task
 
 
 @router.get('/projects/{project_id}/packages')

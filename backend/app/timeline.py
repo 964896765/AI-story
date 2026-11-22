@@ -49,6 +49,12 @@ def render(project_id:str,body:Enqueue,db=Depends(session)):
         if previous.kind!='timeline_render' or previous.story_version_id!=version.id:
             raise HTTPException(409,'请求键已用于不同时间轴版本')
         return previous
+    task = enqueue_render(db,project_id,version,key,render_snapshot(db,project_id,version,timeline))
+    db.commit()
+    return task
+
+
+def render_snapshot(db,project_id,version,timeline):
     if not any(track.role=='main' and track.enabled and track.clips for track in timeline.tracks):
         raise HTTPException(422,'主画面轨道必须含已启用片段')
     if timeline.source_version_id:
@@ -67,13 +73,15 @@ def render(project_id:str,body:Enqueue,db=Depends(session)):
             require_reviewed_timeline(db,source,episode,version.content)
         if entity.kind=='storyboard' and any(shot.get('contract') for shot in source.content['shots']):
             raise HTTPException(422,'锁定分镜的渲染须引用已批准 Guardian 故事圣经')
+    return {'version_hash':version.content_hash,'assets':all_source_versions(db,project_id,version.content)}
+
+
+def enqueue_render(db,project_id,version,key,snapshot):
     task = Task(project_id=project_id,asset_id=None,kind='timeline_render',idempotency_key=key,
-        story_version_id=version.id,parameters={'timeline':version.content},input_snapshot={
-            'version_hash':version.content_hash,'assets':all_source_versions(db,project_id,version.content)})
+        story_version_id=version.id,parameters={'timeline':version.content},input_snapshot=snapshot)
     db.add(task)
     db.flush()
     db.add(TaskEvent(task_id=task.id,attempt=0,message='固定版本的多轨渲染任务已排队'))
-    db.commit()
     return task
 
 

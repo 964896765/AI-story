@@ -20,7 +20,7 @@ const name = computed(() => route.name as Destination)
 const group = computed(() => workspaces.find(item => item.pages.includes(name.value)))
 const title = computed(() => name.value === 'overview' ? '项目总览' : group.value?.label || String(route.meta.title))
 const descriptions: Partial<Record<Destination,string>> = {
-  director:'整理制作指令，确认执行范围后交接到对应工作区。',
+  director:'审核固定版本、批准本机制作并查看实际产物。',
   wizard:'从立项到交付，逐步核对制作条件。',
   assets:'查找、预览和导入项目素材，随时核对授权来源。',
   analysis:'在同一时间轴核对镜头、字幕、波形和画面文字。',

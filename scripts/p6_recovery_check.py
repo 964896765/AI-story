@@ -62,7 +62,7 @@ def manifest(connection, storage, revision, complete=False):
             files[output['caption_storage_key']] = output.get('caption_sha256')
         for item in output.get('files', {}).values() if isinstance(output.get('files'), dict) else ():
             files[item['storage_key']] = item['sha256']
-    if revision in ('0007','0008','0009','0010','0011','0012','0013'):
+    if revision in ('0007','0008','0009','0010','0011','0012','0013','0014'):
         for (payload,) in connection.execute('SELECT payload FROM media_analyses'):
             for artifact in payload['artifacts']:
                 files[artifact['storage_key']] = artifact['sha256']
@@ -74,15 +74,18 @@ def manifest(connection, storage, revision, complete=False):
                     files.setdefault(location,None)
     return files, len(assets)
 
-def verify_restored_api(url,path,projects,assets):
+def verify_restored_api(url,path,projects,assets,revision):
     env={**os.environ,'DATABASE_URL':url.render_as_string(hide_password=False),
-         'STORAGE_ROOT':str(path),'AI_STORY_ENABLE_PAID_TEXT':'0'}
+         'STORAGE_ROOT':str(path),'AI_STORY_ENABLE_PAID_TEXT':'0','AI_STORY_RESTORE_REVISION':revision}
     command = """
 from fastapi.testclient import TestClient
 from app.main import app
-import json
+import json, os
 with TestClient(app) as client:
-    assert client.get('/api/health').status_code == 200
+    health = client.get('/api/health').json()['checks']
+    assert health['database'] and health['ffmpeg'] and health['ffprobe']
+    if os.environ['AI_STORY_RESTORE_REVISION'] == '0014':
+        assert health['schema']
     projects = client.get('/api/projects').json()
     assets = [asset for project in projects for asset in client.get('/api/projects/'+project['id']+'/assets').json()]
     media = next((asset for asset in assets if asset['name'].lower().endswith(('.mp4','.mkv','.mov','.wav'))),None)
@@ -137,7 +140,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
                 for key, digest in copied.items():
                     if sha256(safe_child(restored_store,key)) != digest:
                         raise RuntimeError('Restored file hash differs: ' + key)
-                api = verify_restored_api(restored,restored_store,projects,assets) if complete else None
+                api = verify_restored_api(restored,restored_store,projects,assets,target) if complete else None
             return {'before_revision':before,'tested_revision':target,'restored_separate_database':True,
                     'restored_separate_storage':True,'projects_verified':projects,'assets_verified':assets,
                     'files_verified':len(copied),'dump_sha256':sha256(dump),
@@ -150,7 +153,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
-    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14'], default='p6')
+    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14','director'], default='p6')
     args = parser.parse_args()
     if args.upgrade:
         for port in (18000, 15173):
@@ -173,11 +176,12 @@ def main():
         raise SystemExit('Project PostgreSQL is not running')
     before, target = {
         'p6':('0006','0007'),'p7':('0007','0008'),'p10':('0008','0009'),'p11':('0009','0010'),
-        'p12':('0010','0011'),'p13':('0011','0012'),'p14':('0012','0013')
+        'p12':('0010','0011'),'p13':('0011','0012'),'p14':('0012','0013'),
+        'director':('0013','0014'),
     }[args.stage]
     directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
-    report = snapshot_and_verify(source, storage, container, directory, before, target, complete=args.stage=='p14')
+    report = snapshot_and_verify(source, storage, container, directory, before, target, complete=args.stage in ('p14','director'))
     report['backup_directory'] = directory.relative_to(ROOT).as_posix()
     if args.upgrade:
         run_alembic(source,'upgrade',target)

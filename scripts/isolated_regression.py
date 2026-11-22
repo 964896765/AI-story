@@ -18,7 +18,7 @@ from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
 BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)))
-V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr', 'v3-guardian')
+V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr', 'v3-guardian', 'v3-director')
 LOAD_PHASE = 'v3-production-load'
 
 def run_browser(env, path, phases):
