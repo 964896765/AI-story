@@ -5,7 +5,8 @@ from sqlalchemy import select
 
 from .creative import append_version, pack, require, validate_content, version_ref
 from .db import session
-from .models import StoryEntity, StoryVersion
+from .guardian import Guardian, RULE_VERSION, latest_approved
+from .models import Project, StoryEntity, StoryVersion
 from .story_schemas import Strict
 
 router = APIRouter(prefix='/api/series', tags=['series-planning'])
@@ -22,8 +23,13 @@ def series_report(db, entity, version):
     issues, episodes = [], []
     cache = {}
 
-    def issue(code, episode, detail, severity='error', shot=None):
-        issues.append({'code':code, 'episode':episode, 'detail':detail, 'severity':severity, 'shot':shot})
+    def issue(code, episode, detail, severity='error', shot=None, start_ms=None, evidence=None):
+        item = {'code':code, 'episode':episode, 'detail':detail, 'severity':severity, 'shot':shot}
+        if start_ms is not None:
+            item['start_ms'] = start_ms
+        if evidence is not None:
+            item['evidence'] = evidence
+        issues.append(item)
 
     def get(key, kind):
         if key not in cache:
@@ -42,6 +48,12 @@ def series_report(db, entity, version):
     previous = {}
     script_id = content['script_version_id']
     seen_shots = set()
+    canon = content.get('guardian')
+    guardian = Guardian(db,canon,get,issue) if canon else None
+    if guardian:
+        _, script = get(script_id,'script')
+        guardian.check_roster(script.content['character_version_ids'],script.content['scene_version_ids'],
+                              lambda code,detail,**kwargs: issue(code,0,detail,**kwargs))
     for index, block in enumerate(content['episodes'],1):
         _, episode = get(block['episode_version_id'],'episode')
         storyboard, board_version = get(block['storyboard_version_id'],'storyboard')
@@ -54,6 +66,11 @@ def series_report(db, entity, version):
             issue('storyboard_source',number,'分镜必须直接引用本集固定版本')
         opener = boundary(block['opener'],number,'开场')
         closer = boundary(block['closer'],number,'收尾')
+        if guardian:
+            states = block['opener']+block['closer']
+            guardian.check_roster(episode.content['character_version_ids']+[s['character_version_id'] for s in states],
+                                  episode.content['scene_version_ids']+[s['scene_version_id'] for s in states if s['scene_version_id']],
+                                  lambda code,detail,**kwargs: issue(code,number,detail,**kwargs))
         if index > 1:
             carried = previous.keys() | opener.keys()
             for character_id in sorted(carried):
@@ -67,7 +84,7 @@ def series_report(db, entity, version):
         previous = closer
         shots = []
         planned_ms = 0
-        for shot in sorted(board_version.content['shots'],key=lambda item:item['number']):
+        for shot_index, shot in enumerate(sorted(board_version.content['shots'],key=lambda item:item['number'])):
             shot_id = shot.get('shot_id') or f"{storyboard.id}-{shot['number']}"
             if shot_id in seen_shots:
                 issue('duplicate_shot_id',number,'稳定镜头 ID 已存在于本季其他镜头',shot=shot_id)
@@ -79,6 +96,9 @@ def series_report(db, entity, version):
                           'duration_ms':length, 'description':shot['description'][:300],
                           'strategy':shot.get('strategy','manual'), 'scene_version_id':shot.get('scene_version_id'),
                           'character_version_ids':shot['character_version_ids']})
+            if guardian:
+                shots[-1]['guardian'] = guardian.check_shot(shot,shot_id,number,planned_ms,
+                                                            block['bridge_note'] if shot_index==0 else '')
             planned_ms += length
         target = block['target_duration_ms']
         if abs(planned_ms-target)>max(250,round(target*0.03)):
@@ -93,9 +113,13 @@ def series_report(db, entity, version):
         elif payoff is None:
             issue('open_thread',setup,f'伏笔「{thread["label"]}」尚未指定回收集','warning')
     should_block = any(item['severity']=='error' for item in issues)
-    return {'version_id':version.id,'rule_version':'continuity-v1','analysis_kind':'deterministic',
+    result = {'version_id':version.id,'rule_version':RULE_VERSION if guardian else 'continuity-v1','analysis_kind':'deterministic',
             'approved':bool(version.provenance.get('series_approved')),
             'ready_for_review':not should_block,'episodes':episodes,'issues':issues}
+    if guardian:
+        result['guardian'] = {'shot_count':len(seen_shots),'contracts':guardian.contracts,
+                              'style':canon['style']['description']}
+    return result
 
 
 @router.get('/versions/{version_id}/continuity')
@@ -107,8 +131,41 @@ def continuity(version_id: str, db=Depends(session)):
     return series_report(db,entity,version)
 
 
+@router.get('/versions/{version_id}/impact')
+def impact(version_id: str, baseline_version_id: str, db=Depends(session)):
+    current = require(db,StoryVersion,version_id)
+    previous = require(db,StoryVersion,baseline_version_id)
+    entity = require(db,StoryEntity,current.entity_id)
+    if entity.kind!='story_bible' or previous.entity_id!=entity.id:
+        raise HTTPException(422,'影响分析需要同一故事圣经的两个版本')
+    reports = [series_report(db,entity,edition) for edition in (previous,current)]
+    if any(not report.get('guardian') for report in reports):
+        raise HTTPException(422,'两个版本均需启用 Guardian')
+    shots = [{shot['shot_id']:{'episode':episode['number'],'start_ms':shot['start_ms'],
+                             'contract_sha256':(shot.get('guardian') or {}).get('contract_sha256')}
+              for episode in report['episodes'] for shot in episode['shots']} for report in reports]
+    before, after = shots
+    changes = []
+    for key in sorted(before.keys() | after.keys()):
+        old, new = before.get(key), after.get(key)
+        if old is None:
+            kind = 'added'
+        elif new is None:
+            kind = 'removed'
+        elif not new['contract_sha256'] or old['contract_sha256']!=new['contract_sha256']:
+            kind = 'contract_changed'
+        elif old!=new:
+            kind = 'moved'
+        else:
+            kind = 'unchanged'
+        changes.append({'shot_id':key,'kind':kind,'before':old,'after':new})
+    return {'version_id':current.id,'baseline_version_id':previous.id,'shots':changes}
+
+
 @router.post('/entities/{entity_id}/approve', status_code=201)
 def approve(entity_id: str, body: Approval, db=Depends(session)):
+    initial = require(db,StoryEntity,entity_id)
+    db.scalar(select(Project).where(Project.id==initial.project_id).with_for_update())
     entity = db.scalar(select(StoryEntity).where(StoryEntity.id==entity_id).with_for_update())
     if entity is None or entity.kind!='story_bible':
         raise HTTPException(404,'故事圣经不存在')
@@ -122,13 +179,18 @@ def approve(entity_id: str, body: Approval, db=Depends(session)):
         raise HTTPException(409,'工作稿已变化，请重新读取后审核')
     source = db.scalar(select(StoryVersion).where(StoryVersion.entity_id==entity.id,
                     StoryVersion.number==entity.current_version))
+    last_approved = latest_approved(db,entity.id)
+    if last_approved and last_approved.content.get('guardian') and not source.content.get('guardian'):
+        raise HTTPException(422,'已启用 Guardian 的故事圣经必须保留制作约束')
     report = series_report(db,entity,source)
     if not report['ready_for_review']:
         raise HTTPException(422,{'message':'计划仍有阻断项','issues':report['issues']})
     normalized, refs = validate_content(db,entity.project_id,'story_bible',source.content)
+    provenance = {'series_approved':True,'reviewed_version':source.number,'reviewed_version_id':source.id,
+                  'review_rule_version':report['rule_version'],'warning_count':len(report['issues'])}
+    if report.get('guardian'):
+        provenance['guardian_manifest'] = report['guardian']['contracts']
     entity.current_version += 1
-    approved = append_version(db,entity,source.title,normalized,refs,key,body.note,
-        {'series_approved':True,'reviewed_version':source.number,'reviewed_version_id':source.id,
-         'review_rule_version':report['rule_version'],'warning_count':len(report['issues'])})
+    approved = append_version(db,entity,source.title,normalized,refs,key,body.note,provenance)
     db.commit()
     return pack(db,entity,approved)

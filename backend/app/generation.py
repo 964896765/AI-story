@@ -14,11 +14,13 @@ from pydantic import Field
 from sqlalchemy import select
 
 from . import storage
+from .analysis_engine import Commands
 from .asset_validation import IMAGE_SUFFIXES
 from .creative import require, version_ref
 from .db import session
 from .media import probe
-from .models import Asset, Project, Task, TaskEvent, now
+from .guardian import require_active_plan
+from .models import Asset, Project, StoryVersion, Task, TaskEvent, now
 from .render import execute_ffmpeg, file_hash, validate_output, write_manifest
 from .series import series_report
 from .story_schemas import Strict
@@ -48,6 +50,13 @@ class Selection(Strict):
     note: str=Field(min_length=1,max_length=2000,pattern=r'.*\S.*')
 
 
+class CandidateReview(Strict):
+    decision: Literal['approved','rejected']
+    category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','other'] | None=None
+    frame: int | None=Field(default=None,ge=0,le=2)
+    note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
+
+
 @router.get('/capabilities')
 def capabilities():
     return {'modes': [
@@ -59,10 +68,11 @@ def capabilities():
 
 
 def public(task):
+    output = {key:value for key,value in task.output.items() if key not in ('storage_key','files')}
     return {'id':task.id,'asset_id':task.asset_id,'story_version_id':task.story_version_id,
             'mode':'local_still_motion','status':task.status,'stage':task.stage,'progress':task.progress,
             'parameters':task.parameters,'cancel_requested':task.cancel_requested,'error':task.error,
-            'output':{key:value for key,value in task.output.items() if key!='storage_key'},
+            'output':output,'guardian':task.input_snapshot.get('guardian'),
             'created_at':task.created_at}
 
 
@@ -75,11 +85,6 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
         raise HTTPException(422,'请选择同项目的图片素材')
     if bool(body.story_version_id)!=bool(body.shot_id):
         raise HTTPException(422,'制作计划和镜头 ID 必须一起固定')
-    if body.story_version_id:
-        entity, version = version_ref(db,project_id,body.story_version_id,{'story_bible'})
-        report = series_report(db,entity,version)
-        if not report['approved'] or not any(shot['shot_id']==body.shot_id for episode in report['episodes'] for shot in episode['shots']):
-            raise HTTPException(422,'只能使用已批准计划中存在的镜头')
     parameters = [{**candidate.model_dump(),'shot_id':body.shot_id} for candidate in body.candidates]
     if any(item in parameters[:i] for i,item in enumerate(parameters)):
         raise HTTPException(422,'候选参数不得重复')
@@ -93,10 +98,32 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
             or task.parameters!=option for task,option in zip(result,parameters)):
             raise HTTPException(409,'请求键已用于其他候选配置')
         return [public(task) for task in result]
+    guardian = None
+    if body.story_version_id:
+        entity, version = version_ref(db,project_id,body.story_version_id,{'story_bible'})
+        require_active_plan(db,version)
+        report = series_report(db,entity,version)
+        shot = next((shot for episode in report['episodes'] for shot in episode['shots']
+                     if shot['shot_id']==body.shot_id),None)
+        if not report['approved'] or not shot:
+            raise HTTPException(422,'只能使用已批准计划中存在的镜头')
+        if report.get('guardian'):
+            contract = shot['guardian']
+            if not contract or (version.provenance.get('guardian_manifest') or {}).get(body.shot_id)!=contract['contract_sha256']:
+                raise HTTPException(409,'镜头合同与批准记录不符')
+            if shot['strategy']!='still_motion' or contract['source_images'].get(image.id)!=image.sha256:
+                raise HTTPException(422,'运镜方式或源图不符合已批准镜头合同')
+            frames = round((shot['start_ms']+shot['duration_ms'])*24/1000)-round(shot['start_ms']*24/1000)
+            if any(candidate.frames!=frames for candidate in body.candidates):
+                raise HTTPException(422,f'镜头合同要求候选输出 {frames} 帧')
+            guardian = {'series_id':entity.id,'contract_sha256':contract['contract_sha256']}
+    snapshot = {'image':{'id':image.id,'storage_key':image.storage_key,'sha256':image.sha256}}
+    if guardian:
+        snapshot['guardian'] = guardian
     timestamp = now()
     tasks = [Task(project_id=project_id,asset_id=image.id,kind='still_motion',story_version_id=body.story_version_id,
         idempotency_key=key,parameters=option,created_at=timestamp+timedelta(microseconds=index),
-        input_snapshot={'image':{'id':image.id,'storage_key':image.storage_key,'sha256':image.sha256}})
+        input_snapshot=snapshot)
         for index,(option,key) in enumerate(zip(parameters,keys))]
     db.add_all(tasks)
     db.flush()
@@ -131,6 +158,54 @@ def video(task_id: str,db=Depends(session)):
     return FileResponse(path,media_type='video/mp4',headers={'X-Content-Type-Options':'nosniff'})
 
 
+def checked_frame(task, index):
+    frame = task.output.get('files',{}).get(f'guardian-{index}')
+    if not frame:
+        raise HTTPException(404,'候选证据帧不存在')
+    path = storage.resolve_key(frame['storage_key'])
+    if not path.is_file() or file_hash(path)!=frame['sha256']:
+        raise HTTPException(409,'候选证据帧完整性检查失败')
+    return frame,path
+
+
+@router.get('/candidates/{task_id}/guardian-frames/{index}')
+def guardian_frame(task_id: str,index: int,db=Depends(session)):
+    task,_ = finished_candidate(db,task_id)
+    _,path = checked_frame(task,index)
+    return FileResponse(path,media_type='image/jpeg',headers={'X-Content-Type-Options':'nosniff'})
+
+
+@router.post('/candidates/{task_id}/guardian-review')
+def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
+    task,path = finished_candidate(db,task_id)
+    db.scalar(select(Project).where(Project.id==task.project_id).with_for_update())
+    db.refresh(task)
+    if not task.input_snapshot.get('guardian'):
+        raise HTTPException(422,'该候选没有已锁定的 Guardian 镜头合同')
+    request = body.model_dump()
+    previous = task.output.get('guardian_review')
+    if previous:
+        if previous['request']!=request:
+            raise HTTPException(409,'此候选已有审核记录，可提交新的返工候选')
+        return previous
+    require_active_plan(db,require(db,StoryVersion,task.story_version_id))
+    if body.decision=='rejected' and (not body.category or body.frame is None):
+        raise HTTPException(422,'退回候选需要选择问题类别与证据帧')
+    if body.decision=='approved' and (body.category is not None or body.frame is not None):
+        raise HTTPException(422,'通过候选时只需填写审核说明')
+    frames = [checked_frame(task,index)[0] for index in range(3)]
+    if file_hash(path)!=task.output['sha256']:
+        raise HTTPException(409,'候选文件校验失败，请重新制作')
+    evidence = frames[body.frame] if body.frame is not None else None
+    review = {'request':request,'source':'local_operator','created_at':now().isoformat(),
+              'output_sha256':task.output['sha256'],
+              'evidence':{'time_ms':evidence['time_ms'],'sha256':evidence['sha256']} if evidence else None}
+    task.output = {**task.output,'guardian_review':review}
+    db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='Guardian 候选人工审核 · '+body.decision))
+    db.commit()
+    return review
+
+
 @router.post('/candidates/{task_id}/select',status_code=201)
 def select_candidate(task_id: str,body: Selection,db=Depends(session)):
     task,path = finished_candidate(db,task_id)
@@ -143,6 +218,12 @@ def select_candidate(task_id: str,body: Selection,db=Depends(session)):
         return selected
     if file_hash(path)!=task.output['sha256']:
         raise HTTPException(409,'候选文件校验失败，请重新制作')
+    guardian=task.input_snapshot.get('guardian')
+    if task.story_version_id:
+        require_active_plan(db,require(db,StoryVersion,task.story_version_id))
+    review = task.output.get('guardian_review')
+    if guardian and (not review or review['request']['decision']!='approved' or review['output_sha256']!=task.output['sha256']):
+        raise HTTPException(409,'候选须通过 Guardian 人工内容审核后采纳')
     source = require(db,Asset,task.asset_id)
     asset = Asset(project_id=task.project_id,name=name,storage_key=task.output['storage_key'],
                   sha256=task.output['sha256'],size_bytes=task.output['size_bytes'],
@@ -150,6 +231,9 @@ def select_candidate(task_id: str,body: Selection,db=Depends(session)):
                       'origin':'local_still_motion','generated_from_asset':source.id,'task_id':task.id,
                       'story_version_id':task.story_version_id,'shot_id':task.parameters.get('shot_id'),
                       'selection_note':body.note,'fps':24,'duration':task.output['duration'],
+                      **({'guardian_series_id':guardian['series_id'],'guardian_contract_sha256':guardian['contract_sha256'],
+                          'guardian_aspect':task.parameters['aspect']}
+                         if guardian else {}),
                   })
     db.add(asset)
     db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='已人工采纳为项目视频素材'))
@@ -169,6 +253,26 @@ def image_dimensions(source, demuxer):
         raise ValueError('图片尺寸超过静图运镜限制')
 
 
+def sample_candidate(path, work, frames, update):
+    commands = Commands(work,update)
+    indices = (0,frames//2,frames-1)
+    selection = '+'.join(f'eq(n\\,{index})' for index in indices)
+    commands.run(['ffmpeg','-v','error','-nostdin','-n','-xerror','-filter_threads','2',
+                  '-protocol_whitelist','file,pipe','-i',str(path),'-map','0:v:0',
+                  '-vf',f'select={selection},scale=640:-2','-fps_mode','passthrough',
+                  '-frames:v',str(len(indices)),'-threads','1',str(commands.output/'review-%02d.jpg')],
+                 'guardian_frames',98,timeout=45)
+    evidence, files = [], {}
+    for index, frame_number in enumerate(indices):
+        image = commands.output/f'review-{index+1:02d}.jpg'
+        if not image.is_file() or not image.stat().st_size:
+            raise ValueError('候选缺少完整的 Guardian 证据帧')
+        descriptor = {'time_ms':round(frame_number*1000/24),'index':index,'sha256':file_hash(image)}
+        evidence.append(descriptor)
+        files[f'guardian-{index}'] = {**descriptor,'storage_key':image.relative_to(storage.resolve_key('tmp').parent).as_posix()}
+    return {'guardian_frames':evidence,'files':files}
+
+
 def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     options = StillMotion.model_validate({key:value for key,value in parameters.items() if key!='shot_id'})
     item = input_snapshot['image']
@@ -178,7 +282,11 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     target = storage.resolve_key(storage_key)
     manifest = target.parent / 'motion.json'
     expected = {'size':SIZES[options.aspect],'audio':False,'duration':options.frames/24}
-    signature = hashlib.sha256(json.dumps([PIPELINE,item['sha256'],options.model_dump()],sort_keys=True).encode()).hexdigest()
+    guardian = input_snapshot.get('guardian')
+    signature_parts = [PIPELINE,item['sha256'],options.model_dump()]
+    if guardian:
+        signature_parts.append(guardian)
+    signature = hashlib.sha256(json.dumps(signature_parts,sort_keys=True).encode()).hexdigest()
 
     def check():
         update('inspecting',0)
@@ -232,6 +340,8 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     digest = file_hash(temporary,lambda *_:update('validating',98))
     output = {**metadata,'storage_key':storage_key,'sha256':digest,'signature':signature,
               'pipeline':PIPELINE,'actual_external_cost_micros':0,'reused_from_task_id':cached.id if cached else None}
+    if guardian:
+        output.update(sample_candidate(temporary,work,options.frames,update))
     update('publishing',99)
     target.parent.mkdir(parents=True,exist_ok=True)
     write_manifest(manifest,output)

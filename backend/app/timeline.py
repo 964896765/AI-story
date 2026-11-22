@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from .creative import create_entity, pack, require, version_ref
 from .db import session
+from .guardian import candidate_matches, require_active_plan, require_reviewed_timeline
 from .models import Asset, Project, StoryEntity, StoryVersion, Task, TaskEvent
 from .series import series_report
 from .story_schemas import Strict, Timeline
@@ -50,6 +51,22 @@ def render(project_id:str,body:Enqueue,db=Depends(session)):
         return previous
     if not any(track.role=='main' and track.enabled and track.clips for track in timeline.tracks):
         raise HTTPException(422,'主画面轨道必须含已启用片段')
+    if timeline.source_version_id:
+        entity, source = version_ref(db,project_id,timeline.source_version_id,{'storyboard','story_bible'})
+        if entity.kind=='story_bible' and source.content.get('guardian'):
+            require_active_plan(db,source)
+            if not source.provenance.get('guardian_manifest'):
+                raise HTTPException(422,'Guardian 整剧渲染须引用批准版本')
+            first = min((clip for track in timeline.tracks if track.enabled and track.role=='main'
+                         for clip in track.clips),key=lambda clip: clip.at)
+            asset = require(db,Asset,first.asset_id)
+            report = series_report(db,entity,source)
+            episode = next((item for item in report['episodes'] if candidate_matches(asset,source,item['shots'][0])),None)
+            if not episode:
+                raise HTTPException(422,'主画面未引用批准计划的分集开场镜头')
+            require_reviewed_timeline(db,source,episode,version.content)
+        if entity.kind=='storyboard' and any(shot.get('contract') for shot in source.content['shots']):
+            raise HTTPException(422,'锁定分镜的渲染须引用已批准 Guardian 故事圣经')
     task = Task(project_id=project_id,asset_id=None,kind='timeline_render',idempotency_key=key,
         story_version_id=version.id,parameters={'timeline':version.content},input_snapshot={
             'version_hash':version.content_hash,'assets':all_source_versions(db,project_id,version.content)})
@@ -95,16 +112,21 @@ def assemble(project_id:str,body:AutoAssemble,db=Depends(session)):
     report = series_report(db,series_entity,series)
     if not report['approved']:
         raise HTTPException(422,'只有已批准的计划可以自动剪辑')
+    require_active_plan(db,series)
     episode = next((entry for entry in report['episodes'] if entry['number']==body.episode),None)
     if not episode:
         raise HTTPException(422,'所选分集不在固定制作计划中')
-    keys = {shot['shot_id'] for shot in episode['shots']}
+    shots = {shot['shot_id']:shot for shot in episode['shots']}
+    scope = (Asset.media_info['guardian_series_id'].as_string()==series.entity_id if report.get('guardian')
+             else Asset.media_info['story_version_id'].as_string()==series.id)
     assets = db.scalars(select(Asset).where(Asset.project_id==project_id,
-        Asset.media_info['story_version_id'].as_string()==series.id)).all()
+        scope)).all()
     by_shot = {}
     for asset in assets:
         shot_id = asset.media_info.get('shot_id')
-        if shot_id in keys and asset.media_info.get('origin')=='local_still_motion':
+        if shot_id in shots and asset.media_info.get('origin')=='local_still_motion' and candidate_matches(asset,series,shots[shot_id]):
+            if report.get('guardian') and asset.media_info.get('guardian_aspect')!=body.profile:
+                continue
             by_shot.setdefault(shot_id,[]).append(asset)
     clips = []
     for shot in episode['shots']:

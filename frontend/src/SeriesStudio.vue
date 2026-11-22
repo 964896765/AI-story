@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { request } from './analysisApi'
+import GuardianRules from './components/production/GuardianRules.vue'
+
+interface Canon {
+  facts:Record<string,string>; props:Record<string,string>; character_version_ids:string[]; scene_version_ids:string[]
+  style:{description:string;reference_asset_ids:string[]}
+}
 
 type EntityKind = 'script' | 'episode' | 'storyboard' | 'character' | 'scene' | 'story_bible'
 interface Boundary {
@@ -13,6 +19,7 @@ interface Episode {
 interface Bible {
   script_version_id: string; theme: string; world: string; rules: string; timeline: string; episodes: Episode[]
   threads: {label:string; setup_episode:number; payoff_episode:number|null}[]
+  guardian?:Canon|null
 }
 interface Edition {
   id:string; kind:EntityKind; title:string; version_id:string; version:number; current_version:number
@@ -24,7 +31,8 @@ interface Report {
   episodes: {number:number; title:string; episode_version_id:string; planned_duration_ms:number; target_duration_ms:number;
     shots:{shot_id:string;description:string;number:number;start_ms:number;duration_ms:number}[]}[]
 }
-const props = defineProps<{ projectId:string }>()
+const props = defineProps<{ projectId:string; assets:{id:string;name:string}[]; initialVersion?:string }>()
+const imageAssets = computed(()=>props.assets.filter(asset=>/\.(png|jpe?g|webp)$/i.test(asset.name)))
 const kinds: EntityKind[] = ['script','episode','storyboard','character','scene','story_bible']
 const collections = reactive<Record<EntityKind,Edition[]>>({script:[],episode:[],storyboard:[],character:[],scene:[],story_bible:[]})
 const path = `/projects/${props.projectId}/story/entities`
@@ -32,7 +40,7 @@ const history = ref<Edition[]>([]), selected = ref<Edition|null>(null), report =
 const title = ref(''), reviewNote = ref(''), saved = ref(''), error = ref(''), info = ref(''), busy = ref(false)
 const referenceKind = ref<EntityKind>('script'), manualVersion = ref(''), manualRefs = ref<Edition[]>([])
 const keys = new Map<string,string>()
-const defaults = ():Bible => ({script_version_id:'',theme:'',world:'',rules:'',timeline:'',episodes:[],threads:[]})
+const defaults = ():Bible => ({script_version_id:'',theme:'',world:'',rules:'',timeline:'',episodes:[],threads:[],guardian:null})
 const plan=reactive(defaults())
 const dirty=computed(()=>saved.value!==JSON.stringify([title.value,plan]))
 const boundaries=[{id:'opener',name:'开场状态'},{id:'closer',name:'收尾状态'}] as const
@@ -76,7 +84,7 @@ async function open(edition: Edition) {
   const data=edition.content ? edition : await request<Edition>('/story/versions/'+edition.version_id)
   selected.value=data
   title.value=data.title
-  Object.assign(plan,data.content as Bible)
+  Object.assign(plan,defaults(),data.content as Bible)
   saved.value=JSON.stringify([title.value,plan])
   const [result,versions] = await Promise.all([
     request<Report>('/series/versions/'+data.version_id+'/continuity'),
@@ -125,7 +133,14 @@ function addEpisode() {
 function addState(list: Boundary[]) {
   list.push({character_version_id:'',scene_version_id:null,wardrobe:'',prop_state:'',condition:''})
 }
-onMounted(()=>void run(list))
+onMounted(()=>void run(async()=>{
+  await list()
+  if (props.initialVersion) {
+    const item=await request<Edition & {project_id:string}>('/story/versions/'+encodeURIComponent(props.initialVersion))
+    if (item.kind!=='story_bible' || item.project_id!==props.projectId) throw new Error('此版本不属于当前项目的故事圣经')
+    await open(item)
+  }
+}))
 </script>
 
 <template>
@@ -167,6 +182,28 @@ onMounted(()=>void run(list))
             <label>叙事规则<textarea v-model="plan.rules" maxlength="8000"></textarea></label>
             <label>主线时间轴<textarea v-model="plan.timeline" maxlength="8000"></textarea></label>
           </div>
+          <details :open="!!plan.guardian" class="guardian-canon">
+            <summary>Guardian 正史与风格锁</summary>
+            <button v-if="!plan.guardian" type="button" @click="plan.guardian={facts:{},props:{},character_version_ids:[],scene_version_ids:[],style:{description:'',reference_asset_ids:[]}}">启用 Guardian 制作约束</button>
+            <template v-else>
+              <GuardianRules v-model="plan.guardian.facts" label="剧情事实" prefix="fact" :limit="100" />
+              <GuardianRules v-model="plan.guardian.props" label="道具" prefix="prop" :limit="100" />
+              <div class="editor-grid">
+                <label>固定角色版本<select v-model="plan.guardian.character_version_ids" multiple>
+                  <option v-for="edition in options('character',plan.guardian.character_version_ids)" :key="edition.version_id" :value="edition.version_id">{{ label(edition) }}</option>
+                </select></label>
+                <label>固定场景版本<select v-model="plan.guardian.scene_version_ids" multiple required>
+                  <option v-for="edition in options('scene',plan.guardian.scene_version_ids)" :key="edition.version_id" :value="edition.version_id">{{ label(edition) }}</option>
+                </select></label>
+              </div>
+              <label>全剧美术风格<textarea v-model="plan.guardian.style.description" maxlength="1000" required></textarea></label>
+              <label>风格参考图<select v-model="plan.guardian.style.reference_asset_ids" multiple>
+                <option v-for="asset in imageAssets" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
+                <option v-for="id in plan.guardian.style.reference_asset_ids.filter(id=>!imageAssets.some(asset=>asset.id===id))" :key="id" :value="id">{{ id }}</option>
+              </select></label>
+              <button type="button" @click="plan.guardian=null">移除本草稿的 Guardian 约束</button>
+            </template>
+          </details>
           <fieldset v-for="(episode,index) in plan.episodes" :key="index">
             <legend>第 {{ index+1 }} 集</legend>
             <div class="editor-grid">
@@ -226,7 +263,7 @@ onMounted(()=>void run(list))
       <p v-else-if="report.ready_for_review">规则检查已完成，可以人工审核。</p>
       <ul v-if="report.issues.length">
         <li v-for="(issue,i) in report.issues" :key="i" :class="{failed:issue.severity==='error'}">
-          第 {{ issue.episode }} 集 · {{ issue.severity==='error'?'待修正':'人工复核' }} · {{ issue.detail }}
+          {{ issue.episode ? `第 ${issue.episode} 集` : '全剧' }} · {{ issue.severity==='error'?'待修正':'人工复核' }} · {{ issue.detail }}
         </li>
       </ul>
       <details v-for="episode in report.episodes" :key="episode.episode_version_id">
@@ -237,6 +274,7 @@ onMounted(()=>void run(list))
         <label>审核说明<textarea v-model="reviewNote" maxlength="4000"></textarea></label>
         <button :disabled="busy || dirty || !reviewNote.trim()" @click="approve">批准固定制作计划</button>
       </div>
+      <RouterLink v-if="plan.guardian && selected" :to="{name:'guardian',query:{project:projectId,version:selected.version_id}}">打开 Guardian 质检工作台</RouterLink>
     </section>
   </div>
 </template>

@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="5.759" timestamp="2026-11-22T10:14:58.804345+08:00" hostname="admin"><testcase classname="tests.test_guardian" name="test_guardian_contracts_and_continuity" time="4.314" /></testsuite></testsuites>

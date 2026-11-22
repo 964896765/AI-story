@@ -16,6 +16,7 @@ const views: Record<Destination, RouteRecordRaw['component']> = {
   video: () => import('../pages/VideoPage.vue'),
   production: () => import('../pages/ProductionPage.vue'),
   quality: () => import('../pages/QualityPage.vue'),
+  guardian: () => import('../pages/GuardianPage.vue'),
   library: () => import('../pages/LibraryPage.vue'),
   operations: () => import('../pages/OperationsPage.vue'),
   system: () => import('../SystemStudio.vue'),

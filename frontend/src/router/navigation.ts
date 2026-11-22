@@ -16,6 +16,7 @@ export const destinations = {
   video: { path: '/edit/video', label: '智能二创' },
   production: { path: '/production', label: '批量生产' },
   quality: { path: '/delivery/review', label: '质检与导出' },
+  guardian: { path: '/delivery/guardian', label: 'Guardian 质量控制' },
   library: { path: '/delivery/library', label: '资源与交付' },
   operations: { path: '/operations', label: '运营中心' },
   system: { path: '/settings/system', label: '运行诊断' },
@@ -39,7 +40,7 @@ export const navigation = [
   { label: '制作与交付', links: [
     { label: '剪辑与时间轴', icon: Film, pages: ['timeline', 'video'] },
     { label: '批量生产', icon: Clapperboard, pages: ['production'] },
-    { label: '质检与交付', icon: ClipboardCheck, pages: ['quality', 'library'] },
+    { label: '质检与交付', icon: ClipboardCheck, pages: ['quality', 'guardian', 'library'] },
   ] },
   { label: '管理', links: [
     { label: '发行与运营', icon: Radio, pages: ['operations'] },

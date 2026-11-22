@@ -1,10 +1,46 @@
-from typing import Literal
+from typing import Annotated, Literal
 from pydantic import BaseModel,ConfigDict,Field,model_validator
 
 Kind=Literal['novel','script','character','scene','relationship','episode','storyboard','generation_plan','story_bible','timeline']
 
 class Strict(BaseModel):
     model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
+
+VersionId = Annotated[str, Field(min_length=1,max_length=36)]
+RuleKey = Annotated[str, Field(pattern=r'^[a-z][a-z0-9_-]{0,47}$')]
+RuleText = Annotated[str, Field(min_length=1,max_length=1000,pattern=r'\S')]
+
+class IdentityLock(Strict):
+    traits: RuleText
+    wardrobes: dict[RuleKey,RuleText] = Field(min_length=1,max_length=24)
+    local_voice: str | None = Field(default=None,min_length=1,max_length=100,pattern=r'\S')
+
+class ShotActorState(Strict):
+    character_version_id: VersionId
+    wardrobe_id: RuleKey
+    left_hand: RuleKey | None = None
+    right_hand: RuleKey | None = None
+    action: str = Field(default='',max_length=200)
+    position: str = Field(default='',max_length=200)
+
+class ShotContract(Strict):
+    visual: RuleText
+    facts: dict[RuleKey,RuleText] = Field(default_factory=dict,max_length=32)
+    source_image_asset_ids: list[VersionId] = Field(default_factory=list,max_length=12)
+    opening: list[ShotActorState] = Field(default_factory=list,max_length=16)
+    closing: list[ShotActorState] = Field(default_factory=list,max_length=16)
+    continuity_note: str = Field(default='',max_length=1000)
+
+class StyleLock(Strict):
+    description: RuleText
+    reference_asset_ids: list[VersionId] = Field(default_factory=list,max_length=12)
+
+class GuardianCanon(Strict):
+    facts: dict[RuleKey,RuleText] = Field(min_length=1,max_length=100)
+    props: dict[RuleKey,RuleText] = Field(default_factory=dict,max_length=100)
+    character_version_ids: list[VersionId] = Field(default_factory=list,max_length=100)
+    scene_version_ids: list[VersionId] = Field(min_length=1,max_length=100)
+    style: StyleLock
 
 class Novel(Strict):
     text: str=Field(min_length=1,max_length=1_000_000,pattern=r'.*\S.*')
@@ -23,6 +59,7 @@ class Character(Strict):
     personality: str=Field(default='',max_length=20000)
     voice: Voice=Field(default_factory=Voice)
     reference_asset_ids: list[str]=Field(default_factory=list,max_length=20)
+    identity: IdentityLock | None=None
 
 class Scene(Strict):
     description: str=Field(default='',max_length=20000)
@@ -72,6 +109,7 @@ class Shot(Strict):
     sound_cue: str=Field(default='',max_length=300)
     transition: str=Field(default='',max_length=200)
     strategy: Literal['manual','still_motion','reference_video','generated_video']='manual'
+    contract: ShotContract | None=None
 
     @model_validator(mode='after')
     def dialogue_fits(self):
@@ -125,6 +163,7 @@ class StoryBible(Strict):
     timeline: str=Field(default='',max_length=8000)
     episodes: list[SeriesEpisode]=Field(min_length=1,max_length=60)
     threads: list[StoryThread]=Field(default_factory=list,max_length=100)
+    guardian: GuardianCanon | None=None
 
 class TimelineClip(Strict):
     id: str=Field(pattern=r'^[a-zA-Z0-9_-]{1,48}$')

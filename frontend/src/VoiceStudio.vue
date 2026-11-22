@@ -3,8 +3,9 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { clock, request, statusLabels } from './analysisApi'
 
 interface Voice { name:string; locale:string }
-interface Edition { version_id:string; title:string; version:number; content:{shots:{dialogue:string;speaker_version_id?:string}[]} | null }
-interface Binding { character_version_id:string; title:string; voice:string; rate:number; authorization:string }
+interface Edition { version_id:string; title:string; version:number; content:{shots?:{dialogue:string;speaker_version_id?:string;contract?:object}[];
+  identity?:{local_voice?:string}} | null; provenance?:{guardian_manifest?:object} }
+interface Binding { character_version_id:string; title:string; voice:string; rate:number; authorization:string; locked:boolean }
 interface Job {
   id:string;status:string;stage:string;error:string|null;storyboard_version_id:string
   output:{duration_ms?:number;cues?:{text:string;voice:string;start_ms:number;end_ms:number;shot_number:number}[]}
@@ -12,6 +13,7 @@ interface Job {
 const props=defineProps<{projectId:string}>()
 const emit=defineEmits<{assetsChanged:[]}>()
 const voices=ref<Voice[]>([]), boards=ref<Edition[]>([]), storyboard=ref(''), bindings=ref<Binding[]>([])
+const plans=ref<Edition[]>([]), planId=ref(''), needsPlan=ref(false)
 const jobs=ref<Job[]>([]), selectedId=ref(''), title=ref(''), note=ref('')
 const error=ref(''), message=ref(''), busy=ref(false), missingSpeaker=ref(false)
 const selected=computed(()=>jobs.value.find(item=>item.id===selectedId.value))
@@ -31,32 +33,40 @@ async function refresh(){
 }
 async function load(){
   if(!props.projectId)return
-  const [status,items]=await Promise.all([
+  const [status,items,bibles]=await Promise.all([
     request<{voices:Voice[]}>('/voice/capabilities'),
     request<{items:Edition[]}>(`/projects/${props.projectId}/story/entities?kind=storyboard`),
+    request<{items:Edition[]}>(`/projects/${props.projectId}/story/entities?kind=story_bible`),
   ])
   voices.value=status.voices
   boards.value=items.items
+  plans.value=bibles.items.filter(item=>item.provenance?.guardian_manifest)
   await refresh()
 }
 watch(storyboard,()=>{
   bindings.value=[]
   missingSpeaker.value=false
+  needsPlan.value=false
+  planId.value=''
   const id=storyboard.value
   if(!id)return
   void run(async()=>{
     const board=await request<Edition>('/story/versions/'+id)
-    const shots=board.content?.shots.filter(shot=>shot.dialogue.trim()) || []
+    const shots=board.content?.shots?.filter(shot=>shot.dialogue.trim()) || []
     const ids=[...new Set(shots.map(shot=>shot.speaker_version_id).filter((value):value is string=>!!value))]
     const speakers=await Promise.all(ids.map(key=>request<Edition>('/story/versions/'+key)))
     if(storyboard.value!==id)return
     missingSpeaker.value=shots.some(shot=>!shot.speaker_version_id)
-    bindings.value=speakers.map(speaker=>({character_version_id:speaker.version_id,title:speaker.title,voice:'',rate:0,authorization:''}))
+    needsPlan.value=board.content?.shots?.some(shot=>shot.contract) || false
+    bindings.value=speakers.map(speaker=>({character_version_id:speaker.version_id,title:speaker.title,
+      voice:needsPlan.value ? speaker.content?.identity?.local_voice || '' : '', rate:0,authorization:'',
+      locked:needsPlan.value && !!speaker.content?.identity?.local_voice}))
   })
 })
 async function submit(){
   await run(async()=>{
-    const body={storyboard_version_id:storyboard.value,bindings:bindings.value.map(({title,...binding})=>binding)}
+    const body={storyboard_version_id:storyboard.value,series_version_id:needsPlan.value ? planId.value : null,
+      bindings:bindings.value.map(({title,locked,...binding})=>binding)}
     const signature=JSON.stringify(body)
     if(!keys.has(signature))keys.set(signature,crypto.randomUUID())
     const job=await request<Job>(root,{...body,idempotency_key:keys.get(signature)})
@@ -96,17 +106,20 @@ onUnmounted(()=>clearInterval(timer))
           <label>固定分镜<select v-model="storyboard" required :disabled="busy">
             <option value="">选择带对白的分镜</option><option v-for="board in boards" :key="board.version_id" :value="board.version_id">{{ board.title }} · v{{ board.version }}</option>
           </select></label>
+          <label v-if="needsPlan">批准的 Guardian 制作计划<select v-model="planId" required>
+            <option value="">选择批准计划</option><option v-for="item in plans" :key="item.version_id" :value="item.version_id">{{item.title}} · v{{item.version}}</option>
+          </select></label>
           <p v-if="missingSpeaker" class="error">存在未绑定固定说话者的对白。请在漫剧定制中补齐分镜。</p>
           <p v-else-if="storyboard && !bindings.length" class="hint">此分镜没有待合成的对白。</p>
           <fieldset v-for="binding in bindings" :key="binding.character_version_id">
             <legend>{{ binding.title }}</legend>
-            <label>离线音色<select v-model="binding.voice" required>
+            <label>离线音色<select v-model="binding.voice" required :disabled="binding.locked">
               <option value="">选择音色</option><option v-for="voice in voices" :key="voice.name" :value="voice.name">{{ voice.name }} · {{ voice.locale }}</option>
             </select></label>
             <label>语速<input v-model.number="binding.rate" type="number" min="-5" max="5" required></label>
             <label>使用授权说明<textarea v-model="binding.authorization" minlength="4" maxlength="2000" required></textarea></label>
           </fieldset>
-          <button class="primary" :disabled="busy || !voices.length || !bindings.length || missingSpeaker">生成配音和字幕</button>
+          <button class="primary" :disabled="busy || !voices.length || !bindings.length || missingSpeaker || (needsPlan && !planId)">生成配音和字幕</button>
         </form>
       </section>
       <section>

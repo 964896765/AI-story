@@ -1,0 +1,270 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { AlertTriangle, GitCompareArrows, Moon, Sun } from 'lucide-vue-next'
+import { request } from '../analysisApi'
+import { useWorkspace } from '../router/workspace'
+
+interface Edition {
+  id:string; version_id:string; title:string; version:number; project_id:string
+  kind:string; content:null | {guardian?:unknown;script_version_id:string}; provenance:{guardian_manifest?:object}
+}
+interface Finding { code:string; severity:string; detail:string; episode:number; shot:string|null; start_ms?:number; evidence?:Record<string,unknown> }
+interface Shot {
+  shot_id:string; number:number; description:string; start_ms:number; duration_ms:number; strategy:string
+  scene_version_id:string|null; character_version_ids:string[]
+  guardian?:{contract_sha256:string; visual:string; source_images:Record<string,string>}|null
+}
+interface Episode {number:number;title:string;storyboard_version_id:string;shots:Shot[]}
+interface Report {approved:boolean;ready_for_review:boolean;issues:Finding[];episodes:Episode[];guardian?:{style:string;shot_count:number}}
+interface Candidate {
+  id:string;asset_id:string;story_version_id:string;status:string;guardian?:{contract_sha256:string;series_id:string}
+  parameters:{shot_id:string;preset:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
+    guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null}}
+}
+interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
+
+const { workbench, query, link, go } = useWorkspace()
+const choices=ref<Edition[]>([]), history=ref<Edition[]>([]), version=ref<Edition|null>(null), report=ref<Report|null>(null)
+const candidates=ref<Candidate[]>([]), episodeNo=ref(0), selectedShot=ref(''), finding=ref<Finding|null>(null), candidateId=ref('')
+const loading=ref(true), failure=ref(''), impactFailure=ref(''), baseline=ref(''), changes=ref<Change[]|null>(null), comparing=ref(false)
+const theme=ref(localStorage.getItem('ai-story-guardian-theme')==='dark' ? 'dark' : 'light')
+const episodes=computed(()=>report.value?.episodes || [])
+const episode=computed(()=>episodes.value.find(item=>item.number===episodeNo.value))
+const shot=computed(()=>episode.value?.shots.find(item=>item.shot_id===selectedShot.value))
+const issues=computed(()=>report.value?.issues.filter(item=>episodeNo.value===0 ? item.episode===0 : item.episode===episodeNo.value) || [])
+const blockers=computed(()=>report.value?.issues.filter(item=>item.severity==='error').length ?? 0)
+const warnings=computed(()=>report.value?.issues.filter(item=>item.severity==='warning').length ?? 0)
+const editionOptions=computed(()=>Array.from(new Map([...choices.value,...(version.value?[version.value]:[])]
+  .map(item=>[item.version_id,item])).values()))
+const activeCandidates=computed(()=>candidates.value.filter(item=>item.guardian?.series_id===version.value?.id
+  && item.guardian?.contract_sha256===shot.value?.guardian?.contract_sha256 && item.parameters.shot_id===shot.value?.shot_id))
+const candidate=computed(()=>activeCandidates.value.find(item=>item.id===candidateId.value) || activeCandidates.value[0])
+const issueCount=(number:number)=>report.value?.issues.filter(item=>item.episode===number).length || 0
+const time=(ms:number)=>(ms/1000).toFixed(3)+' 秒'
+const kinds:Record<string,string>={added:'新增',removed:'移除',contract_changed:'合同变化',moved:'位置变化',unchanged:'可按原合同复用'}
+const evidenceLabels:Record<string,string>={expected:'预期值',observed:'实际登记',previous_episode:'前一集',previous_shot:'前一镜头',
+  character_version_id:'角色版本',fields:'差异字段',transition_note:'衔接说明',fact:'事实键名',field:'检查字段',allowed:'可用服装',
+  observed_version_id:'实际版本',allowed_version_ids:'已锁定版本',wardrobe_id:'服装',left_hand:'左手',right_hand:'右手',action:'动作',
+  position:'位置',scene_version_id:'场景版本'}
+const changedFields=computed(()=>finding.value?.evidence?.fields as Record<string,{expected:unknown;observed:unknown}>|undefined)
+const displayValue=(value:unknown)=>value==null || value==='' ? '—' : typeof value==='object' ? JSON.stringify(value) : String(value)
+
+function toggleTheme() {
+  theme.value=theme.value==='light'?'dark':'light'
+  localStorage.setItem('ai-story-guardian-theme',theme.value)
+}
+function pickEpisode(number:number) {
+  episodeNo.value=number
+  finding.value=issues.value[0] || null
+  selectedShot.value=finding.value?.shot || episode.value?.shots[0]?.shot_id || ''
+  candidateId.value=''
+}
+function pickFinding(item:Finding) {
+  finding.value=item
+  selectedShot.value=item.shot || ''
+  candidateId.value=''
+}
+function pickShot(id:string) {
+  selectedShot.value=id
+  finding.value=issues.value.find(item=>item.shot===id) || null
+  candidateId.value=''
+}
+let loadToken=0
+watch(()=>workbench.projectId,async(project)=>{
+  const token=++loadToken
+  choices.value=[]; history.value=[]; version.value=null; report.value=null; candidates.value=[]
+  loading.value=!!project; failure.value=''
+  if(!project)return
+  try {
+    const path='/projects/'+encodeURIComponent(project)+'/story/entities?kind=story_bible'
+    const [list,rows]=await Promise.all([
+      request<{items:Edition[]}>(path),request<Candidate[]>('/generation/projects/'+encodeURIComponent(project)+'/candidates'),
+    ])
+    if(token!==loadToken)return
+    choices.value=list.items
+    candidates.value=rows
+    const id=query('version') || list.items[0]?.version_id
+    if(!id)return
+    const current=await request<Edition>('/story/versions/'+encodeURIComponent(id))
+    if(token!==loadToken)return
+    if(current.project_id!==project || current.kind!=='story_bible')throw new Error('此版本不属于当前项目的故事圣经')
+    const [result,versions]=await Promise.all([
+      request<Report>('/series/versions/'+encodeURIComponent(id)+'/continuity'),
+      request<Edition[]>('/story/entities/'+current.id+'/versions'),
+    ])
+    if(token!==loadToken)return
+    version.value=current; report.value=result; history.value=versions
+    pickEpisode(result.issues[0]?.episode ?? result.episodes[0]?.number ?? 0)
+  }catch(error){if(token===loadToken)failure.value=String(error)}finally{if(token===loadToken)loading.value=false}
+},{immediate:true})
+
+async function compare() {
+  if(!version.value || !baseline.value)return
+  comparing.value=true; impactFailure.value=''; changes.value=null
+  try {
+    const result=await request<{shots:Change[]}>(`/series/versions/${version.value.version_id}/impact?baseline_version_id=${encodeURIComponent(baseline.value)}`)
+    changes.value=result.shots
+  } catch(error){impactFailure.value=String(error)} finally{comparing.value=false}
+}
+</script>
+
+<template>
+  <div class="guardian-workbench" :data-theme="theme">
+    <header class="guardian-header">
+      <p>审查正史、镜头合同与制作候选</p>
+      <button type="button" :aria-label="theme==='light'?'切换深色主题':'切换浅色主题'" @click="toggleTheme">
+        <Moon v-if="theme==='light'" :size="16" aria-hidden="true" /><Sun v-else :size="16" aria-hidden="true" />
+        {{ theme==='light'?'深色':'浅色' }}
+      </button>
+    </header>
+    <p v-if="loading" role="status">正在读取制作约束与审核记录…</p>
+    <p v-else-if="failure" role="alert" class="guardian-error">{{ failure }}</p>
+    <p v-else-if="!workbench.projectId">请选择项目。</p>
+    <p v-else-if="!version">先在故事圣经建立制作计划。 <RouterLink :to="link('bible')">打开故事圣经</RouterLink></p>
+    <template v-else>
+      <div class="guardian-toolbar">
+        <label>故事圣经<select :value="version.version_id" @change="go('guardian',{version:($event.target as HTMLSelectElement).value})">
+          <option v-for="item in editionOptions" :key="item.version_id" :value="item.version_id">{{ item.title }} · v{{ item.version }}</option>
+        </select></label>
+        <label>历史版本<select :value="version.version_id" @change="go('guardian',{version:($event.target as HTMLSelectElement).value})">
+          <option v-for="item in history" :key="item.version_id" :value="item.version_id">v{{item.version}}</option>
+        </select></label>
+        <RouterLink :to="link('bible',{version:version.version_id})">打开固定故事圣经</RouterLink>
+      </div>
+      <p v-if="!report?.guardian" class="guardian-panel">所选版本沿用基础连续性检查。可在故事圣经的「Guardian 正史与风格锁」启用规则。</p>
+      <template v-else>
+        <dl class="guardian-metrics">
+          <div><dt>规则状态</dt><dd :class="{'guardian-error':blockers}">{{ blockers?'存在阻断':report.approved?'已批准':'待批准' }}</dd></div>
+          <div><dt>固定镜头</dt><dd>{{ report.guardian.shot_count }}</dd></div>
+          <div><dt>阻断问题</dt><dd>{{ blockers }}</dd></div>
+          <div><dt>规则告警</dt><dd>{{ warnings }}</dd></div>
+        </dl>
+        <div class="guardian-layout">
+          <section class="guardian-panel issue-panel" aria-label="分集与问题">
+            <h2>分集与问题</h2>
+            <button type="button" :aria-pressed="episodeNo===0" @click="pickEpisode(0)">全剧 <span>{{ issueCount(0) }}</span></button>
+            <button v-for="unit in episodes" :key="unit.number" type="button" :aria-pressed="episodeNo===unit.number" @click="pickEpisode(unit.number)">
+              {{ unit.title === `第 ${unit.number} 集` ? unit.title : `第 ${unit.number} 集 · ${unit.title}` }} <span>{{ issueCount(unit.number) }}</span>
+            </button>
+            <div v-if="issues.length" class="guardian-issues">
+              <button v-for="(item,index) in issues" :key="index" type="button" :aria-pressed="finding===item" @click="pickFinding(item)">
+                <AlertTriangle :size="16" aria-hidden="true" /><span>{{ item.detail }}<small>{{item.severity==='error'?'阻断':'人工复核'}}<template v-if="item.shot"> · {{item.shot}}</template></small></span>
+              </button>
+            </div>
+            <p v-else class="guardian-muted">这一范围暂无规则发现。</p>
+          </section>
+
+          <section class="guardian-panel evidence-panel">
+            <h2>问题与证据</h2>
+            <label v-if="episode">镜头<select :value="selectedShot" @change="pickShot(($event.target as HTMLSelectElement).value)">
+              <option value="">选择镜头</option>
+              <option v-for="item in episode.shots" :key="item.shot_id" :value="item.shot_id">{{item.number}} · {{item.description}}</option>
+            </select></label>
+            <article v-if="finding" class="finding-detail">
+              <strong :class="{'guardian-error':finding.severity==='error'}">{{ finding.detail }}</strong>
+              <p>{{ finding.code }}<template v-if="finding.start_ms!==undefined"> · {{time(finding.start_ms)}}</template></p>
+              <dl v-if="finding.evidence" class="evidence-values">
+                <template v-for="(value,key) in finding.evidence" :key="key">
+                  <template v-if="key!=='fields'"><dt>{{ evidenceLabels[key] || key }}</dt><dd>{{ displayValue(value) }}</dd></template>
+                </template>
+              </dl>
+              <table v-if="changedFields" class="state-comparison">
+                <thead><tr><th scope="col">状态</th><th scope="col">前镜收尾</th><th scope="col">当前开场</th></tr></thead>
+                <tbody><tr v-for="(difference,key) in changedFields" :key="key">
+                  <th scope="row">{{evidenceLabels[key] || key}}</th><td>{{displayValue(difference.expected)}}</td><td>{{displayValue(difference.observed)}}</td>
+                </tr></tbody>
+              </table>
+            </article>
+            <template v-if="shot">
+              <label v-if="activeCandidates.length">生成候选<select :value="candidate?.id" @change="candidateId=($event.target as HTMLSelectElement).value">
+                <option v-for="item in activeCandidates" :key="item.id" :value="item.id">{{item.parameters.preset}} · {{item.id.slice(0,8)}}</option>
+              </select></label>
+              <div v-if="candidate?.output.guardian_frames?.length" class="evidence-grid">
+                <figure><img :src="`/api/assets/${candidate.asset_id}/media`" alt="锁定运镜源图"><figcaption>锁定源图</figcaption></figure>
+                <figure v-for="frame in candidate.output.guardian_frames" :key="frame.index">
+                  <img :src="`/api/generation/candidates/${candidate.id}/guardian-frames/${frame.index}`" :alt="`候选 ${time(frame.time_ms)}`">
+                  <figcaption>{{time(frame.time_ms)}}</figcaption>
+                </figure>
+              </div>
+              <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
+              <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
+              <p v-else class="guardian-muted">此合同暂无已验证候选证据。</p>
+            </template>
+            <p v-else-if="!finding" class="guardian-muted">请选择分集或镜头以查看证据。</p>
+          </section>
+
+          <aside class="guardian-panel lock-panel">
+            <h2>版本检查器</h2>
+            <dl class="evidence-values">
+              <dt>故事圣经</dt><dd>{{version.title}} · v{{version.version}}</dd>
+              <dt>风格锁</dt><dd>{{report.guardian.style}}</dd>
+              <template v-if="shot">
+                <dt>镜头合同</dt><dd><code>{{shot.guardian?.contract_sha256 || '待锁定'}}</code></dd>
+                <dt v-if="shot.guardian">画面约束</dt><dd v-if="shot.guardian">{{shot.guardian.visual}}</dd>
+                <dt>场景版本</dt><dd>{{shot.scene_version_id || '待锁定'}}</dd>
+                <dt>角色版本</dt><dd v-for="key in shot.character_version_ids" :key="key">{{key}}</dd>
+                <dt v-if="candidate">实际外部费用</dt><dd v-if="candidate">{{candidate.output.actual_external_cost_micros===0?'¥0':'未知'}}</dd>
+              </template>
+            </dl>
+            <RouterLink v-if="episode" :to="link('storyboard',{version:episode.storyboard_version_id,shot:shot?.shot_id})">打开固定分镜</RouterLink>
+            <RouterLink v-if="report.approved && shot?.guardian && shot.strategy==='still_motion'" :to="link('generation',{plan:version.version_id,shot:shot.shot_id,asset:Object.keys(shot.guardian.source_images)[0]})">打开生成与候选审核</RouterLink>
+          </aside>
+        </div>
+        <section v-if="history.length>1" class="guardian-panel impact-panel">
+          <h2><GitCompareArrows :size="18" aria-hidden="true" /> 版本影响分析</h2>
+          <form class="compare-form" @submit.prevent="compare">
+            <label>对比基线<select v-model="baseline" required><option value="">选择同一故事圣经历史版本</option>
+              <option v-for="item in history.filter(item=>item.version_id!==version?.version_id)" :key="item.version_id" :value="item.version_id">v{{item.version}}</option>
+            </select></label>
+            <button type="submit" :disabled="!baseline || comparing">{{ comparing?'正在比较…':'比较镜头合同' }}</button>
+          </form>
+          <p v-if="impactFailure" role="alert" class="guardian-error">{{impactFailure}}</p>
+          <ul v-if="changes" class="impact-list"><li v-for="change in changes" :key="change.shot_id">{{change.shot_id}} · {{kinds[change.kind]}}</li></ul>
+        </section>
+      </template>
+    </template>
+  </div>
+</template>
+
+<style scoped>
+.guardian-workbench { --gb:#f5f7fb; --gp:#fff; --ga:#edf1ff; --gl:#e3e8f1; --gt:#1b2536; --gm:#53647e; --gx:#485fc6; --ge:#a52d39; color-scheme:light; color:var(--gt); background:var(--gb); padding:clamp(12px,2vw,26px); border:1px solid var(--gl); border-radius:14px; }
+.guardian-workbench[data-theme=dark] { --gb:#101725; --gp:#1b2535; --ga:#2e3c62; --gl:#35435a; --gt:#eef3fd; --gm:#b1bdd1; --gx:#a9b8ff; --ge:#ff9ca7; color-scheme:dark }
+.guardian-header,.guardian-toolbar,.compare-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:14px }
+.guardian-header { justify-content:space-between; align-items:center }
+.guardian-workbench h2 { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--gt) }
+.guardian-header p,.guardian-muted,.guardian-workbench small { color:var(--gm); margin:0 }
+.guardian-workbench a { color:var(--gx); display:block; padding:7px 0; overflow-wrap:anywhere }
+.guardian-workbench label { color:var(--gm); min-width:0 }
+.guardian-workbench button,.guardian-workbench select { appearance:none; border:1px solid var(--gl); background-color:var(--gp); color:var(--gt); max-width:100%; transition:none }
+.guardian-workbench select { padding-right:28px; background-image:linear-gradient(45deg,transparent 50%,var(--gm) 50%),linear-gradient(135deg,var(--gm) 50%,transparent 50%); background-position:right 15px center,right 10px center; background-size:5px 5px; background-repeat:no-repeat }
+.guardian-workbench button { display:inline-flex; align-items:center; gap:8px }
+.guardian-workbench button[aria-pressed=true],.guardian-workbench button:hover:not(:disabled) { background:var(--ga); border-color:var(--gx); color:var(--gx) }
+.guardian-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0 0 14px }
+.guardian-metrics div,.guardian-workbench .guardian-panel { padding:14px; border:1px solid var(--gl); background:var(--gp); border-radius:14px; min-width:0; margin:0 }
+.guardian-metrics dt { color:var(--gm); font-size:12px }
+.guardian-metrics dd { font-size:21px; margin:4px 0 0; font-weight:700 }
+.guardian-layout { display:grid; grid-template-columns:minmax(170px,1fr) minmax(250px,2.1fr) minmax(180px,1fr); gap:12px; align-items:start }
+.issue-panel button { width:100%; justify-content:space-between; margin-bottom:6px; text-align:left }
+.issue-panel button span { overflow-wrap:anywhere }
+.guardian-issues { border-top:1px solid var(--gl); padding-top:9px; margin-top:8px }
+.guardian-issues button { justify-content:start }
+.guardian-issues svg { flex:none }
+.guardian-issues small { display:block }
+.evidence-panel select { margin-bottom:8px }
+.guardian-error { color:var(--ge) }
+.finding-detail { background:var(--gb); border:1px solid var(--gl); border-radius:10px; padding:10px; margin-bottom:10px; overflow-wrap:anywhere }
+.evidence-values { display:grid; gap:5px; margin:8px 0; overflow-wrap:anywhere }
+.evidence-values dt { color:var(--gm); font-size:12px }
+.evidence-values dd { margin:0 0 4px; white-space:pre-wrap }
+.state-comparison { width:100%; table-layout:fixed; border-collapse:collapse; text-align:left }
+.state-comparison :is(th,td) { padding:6px; border-top:1px solid var(--gl); overflow-wrap:anywhere }
+.state-comparison thead th { font-size:12px; color:var(--gm) }
+.evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(80px,1fr)); gap:6px }
+.evidence-grid figure { margin:0; min-width:0 }
+.evidence-grid img { display:block; width:100%; aspect-ratio:1.3; object-fit:contain; background:var(--gb); border:1px solid var(--gl); border-radius:8px }
+.evidence-grid figcaption { font-size:11px; color:var(--gm) }
+.guardian-workbench .impact-panel { margin-top:12px }
+.impact-list { max-height:230px; overflow:auto }
+@media(max-width:1250px) { .guardian-layout { grid-template-columns:minmax(150px,1fr) minmax(220px,1.8fr) } .lock-panel { grid-column:2 } }
+@media(max-width:760px) { .guardian-layout { grid-template-columns:minmax(0,1fr) } .lock-panel { grid-column:auto } .guardian-metrics { grid-template-columns:repeat(2,minmax(0,1fr)) } }
+</style>

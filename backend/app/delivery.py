@@ -16,7 +16,8 @@ from .analysis_service import fingerprint
 from .creative import require
 from .db import session
 from .library import Region, Slug, latest_rights, restriction
-from .models import Asset, ProductionRun, Project, StoryReference, Task, TaskEvent, now
+from .guardian import RULE_VERSION
+from .models import Asset, ProductionRun, Project, StoryReference, StoryVersion, Task, TaskEvent, now
 from .production import project_run, public as run_public
 from .render import file_hash, write_manifest
 from .story_schemas import Strict
@@ -199,13 +200,40 @@ def make_cover(src,dst):
         raise ValueError('无法从已质检成片提取封面')
 
 
+def guardian_evidence(db, plan, batches):
+    reviewed = plan.provenance.get('guardian_manifest')
+    if not reviewed:
+        return None
+    episodes = []
+    for unit,_,timeline,_ in batches:
+        clips = sorted((clip for track in timeline['tracks'] if track['enabled'] and track['role']=='main'
+                        for clip in track['clips']),key=lambda clip:clip['at'])
+        shots = []
+        for clip in clips:
+            asset = require(db,Asset,clip['asset_id'])
+            meta = asset.media_info
+            contract = reviewed.get(meta.get('shot_id'))
+            if not contract or meta.get('guardian_contract_sha256')!=contract:
+                raise ValueError('交付时间轴存在未锁定的镜头内容')
+            task = require(db,Task,meta['task_id'])
+            review = task.output.get('guardian_review')
+            if not review or review['request']['decision']!='approved' or review['output_sha256']!=asset.sha256:
+                raise ValueError('交付镜头缺少与成片哈希匹配的人工审核证据')
+            shots.append({'shot_id':meta['shot_id'],'at_frame':clip['at'],'contract_sha256':contract,
+                          'candidate_task_id':task.id,'asset_id':asset.id,'asset_sha256':asset.sha256,
+                          'content_review':review,'evidence_frames':task.output.get('guardian_frames',[])})
+        episodes.append({'number':unit['number'],'timeline_version_id':unit['timeline_version_id'],'shots':shots})
+    return {'rule_version':plan.provenance.get('review_rule_version',RULE_VERSION),
+            'approved_plan_version_id':plan.id,'plan_content_hash':plan.content_hash,'episodes':episodes}
+
+
 def deliver(task_id,attempt,params,snapshot,update,factory):
     key=f'outputs/{task_id}/delivery.zip'
     target=storage.resolve_key(key)
     signature=fingerprint([SCHEMA,params,snapshot])
     with factory() as db:
         try:
-            _,report,rights=eligible(db,params,snapshot['rights'])
+            run,report,rights=eligible(db,params,snapshot['rights'])
         except HTTPException as exc:
             raise ValueError(json.dumps(exc.detail,ensure_ascii=False)) from None
         units=report['episodes']
@@ -215,6 +243,7 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
         for unit in units:
             render=require(db,Task,unit['render_task_id'])
             batches.append((unit,render.output,render.parameters['timeline'],render.attempt))
+        guardian = guardian_evidence(db,require(db,StoryVersion,run.plan_version_id),batches)
     manifest_file=target.parent/'delivery.json'
     if target.is_file():
         saved=json.loads(manifest_file.read_text(encoding='utf-8'))
@@ -268,6 +297,8 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
             save_json(prefix+'/timeline.json',{'version_id':unit['timeline_version_id'],'timeline':timeline})
             save_json(prefix+'/quality.json',{'technical':unit['qc'],'human_review':unit['review']})
         save_json('rights.json',rights)
+        if guardian:
+            save_json('guardian.json',guardian)
         archive.writestr('manifest.json',json.dumps({'schema':SCHEMA,'run_id':params['run_id'],'title':params['title'],
             'platform':params['platform'],'region':params['region'],'files':files},ensure_ascii=False,indent=2).encode('utf-8'))
     with ZipFile(temporary,'r') as archive:

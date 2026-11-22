@@ -1,0 +1,47 @@
+{
+  "checked_at": "2026-11-22T02:13:40.288Z",
+  "episodes": 2,
+  "characters": 2,
+  "scenes": 2,
+  "shot_count": 10,
+  "accepted_original_candidates": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "visual_model_precision": null,
+  "visual_model_recall": null,
+  "detected_scripted_continuity_blockers": [
+    [
+      "ep1-shot2",
+      "shot_state_change"
+    ],
+    [
+      "ep1-shot3",
+      "canon_fact_conflict"
+    ]
+  ],
+  "accepted_clean_plan_has_no_blockers": true,
+  "rule_sample_counts": {
+    "true_positive": 2,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "tested_viewport_widths": [
+    390,
+    1280,
+    1440,
+    1920
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "voice": "Microsoft Huihui Desktop",
+  "checked_final_batch": "6e740f02-f4b3-492f-99d8-8312d085facf",
+  "verified_delivery_bytes": 735156,
+  "verified_delivery_sha256": "59d0232f99cfef73fd4e9473ec9b4e62b02fa3b3fdec10be4c763390861929f3",
+  "guardian_delivery_manifest": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

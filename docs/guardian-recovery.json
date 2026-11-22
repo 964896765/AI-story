@@ -1,0 +1,24 @@
+{
+  "before_revision": "0013",
+  "tested_revision": "0013",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "fb503a11293bc08a8be301f47a9cc346c05afe0ab15279ab9466e2c1f17a26d0",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "migration_roundtrip": [
+    "upgrade 0013",
+    "schema check",
+    "downgrade 0013",
+    "upgrade 0013",
+    "schema check"
+  ],
+  "backup_directory": "data/backups/guardian-before-2178ba3c39dc"
+}

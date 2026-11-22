@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import GuardianShot, { type ShotContract } from './components/production/GuardianShot.vue'
+
 export interface Shot {
   shot_id?: string; number:number; description:string; dialogue:string; planned_duration:number
   scene_version_id:string|null; character_version_ids:string[]
@@ -6,8 +8,14 @@ export interface Shot {
   lighting?:string; composition?:string; wardrobe_and_props?:string; speaker_version_id?:string|null
   dialogue_ms?:number|null; emotion?:string; sound_cue?:string; transition?:string
   strategy?:'manual'|'still_motion'|'reference_video'|'generated_video'
+  contract?:ShotContract|null
 }
-defineProps<{ shot: Shot; characters:{version_id:string; title:string; version:number}[] }>()
+const props = defineProps<{ shot: Shot; characters:{version_id:string; title:string; version:number}[]; images:{id:string;name:string}[] }>()
+
+function setContract(value:ShotContract|null) {
+  props.shot.contract = value
+  if (value && !props.shot.shot_id) props.shot.shot_id = crypto.randomUUID()
+}
 </script>
 
 <template>
@@ -40,6 +48,9 @@ defineProps<{ shot: Shot; characters:{version_id:string; title:string; version:n
       </select></label>
     </div>
   </details>
+  <GuardianShot :model-value="shot.contract ?? null" :images="images"
+    :characters="characters.filter(item=>shot.character_version_ids.includes(item.version_id))"
+    @update:model-value="setContract" />
 </template>
 
 <style scoped>

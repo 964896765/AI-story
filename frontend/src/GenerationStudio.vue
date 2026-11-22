@@ -5,16 +5,22 @@ import { request, statusLabels } from './analysisApi'
 type Preset = 'push_in'|'pull_out'|'pan_right'
 interface Candidate {
   id:string; asset_id:string; status:string; stage:string; progress:number; error:string|null
+  story_version_id:string|null
   cancel_requested:boolean; selected_asset_id:string|null; parameters:{preset:Preset;shot_id:string|null}
-  output:{duration?:number; width?:number; height?:number; reused_from_task_id?:string}
+  guardian?:{contract_sha256:string}|null
+  output:{duration?:number; width?:number; height?:number; reused_from_task_id?:string;
+    guardian_frames?:{index:number;time_ms:number}[];
+    guardian_review?:{request:{decision:'approved'|'rejected';note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[]}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialPlan?:string;initialShot?:string;initialAsset?:string}>()
 const emit=defineEmits<{assetsChanged:[]}>()
 const images=computed(()=>props.assets.filter(item=>/\.(png|jpe?g|webp)$/i.test(item.name)))
-const candidates=ref<Candidate[]>([]), assetId=ref(''), preview=ref(''), plan=ref(''), shot=ref('')
+const candidates=ref<Candidate[]>([]), assetId=ref(props.initialAsset||''), preview=ref(''), plan=ref(props.initialPlan||''), shot=ref(props.initialShot||'')
 const aspect=ref('portrait'), frames=ref(72), presets=ref<Preset[]>(['push_in','pan_right'])
 const labels:Record<Preset,string>={push_in:'推进',pull_out:'拉远',pan_right:'向右横移'}
 const title=ref(''), review=ref(''), notice=ref(''), error=ref(''), busy=ref(false)
+const verdict=ref<'approved'|'rejected'>('approved'), category=ref(''), evidenceIndex=ref<number|null>(null), reviewNote=ref('')
+const categories={identity:'角色身份',wardrobe:'服装',prop:'道具',scene:'场景',continuity:'连续性',shot_mismatch:'画面与分镜不符',technical:'技术缺陷',other:'其他'}
 const modeList=ref<{id:string; available:boolean; label:string}[]>([])
 const keys=new Map<string,string>()
 let timer:ReturnType<typeof setInterval>|undefined
@@ -49,6 +55,22 @@ function open(candidate:Candidate){
   preview.value=candidate.id
   title.value=(props.assets.find(asset=>asset.id===candidate.asset_id)?.name.split('.').slice(0,-1).join('.') || '静图')+' · '+labels[candidate.parameters.preset]
   review.value=''
+  reviewNote.value=''
+  verdict.value='approved'
+  category.value=''
+  evidenceIndex.value=null
+}
+async function reviewContent(){
+  const item=selected.value
+  if(!item?.guardian)return
+  await run(async()=>{
+    const rejected=verdict.value==='rejected'
+    await request(`/generation/candidates/${item.id}/guardian-review`,{
+      decision:verdict.value,note:reviewNote.value,category:rejected?category.value:null,frame:rejected?evidenceIndex.value:null,
+    })
+    await refresh()
+    notice.value=rejected?'候选已退回，证据已保存':'内容审核已保存，可以采纳'
+  })
 }
 async function accept(){
   const item=selected.value
@@ -69,7 +91,15 @@ async function taskAction(candidate:Candidate,action:'retry'|'cancel'){
 onMounted(()=>{
   void run(async()=>{
     modeList.value=(await request<{modes:typeof modeList.value}>('/generation/capabilities')).modes
+    if (plan.value && shot.value) {
+      const result=await request<{episodes:{shots:{shot_id:string;start_ms:number;duration_ms:number}[]}[]}>(`/series/versions/${plan.value}/continuity`)
+      const fixed=result.episodes.flatMap(episode=>episode.shots).find(item=>item.shot_id===shot.value)
+      if (fixed)frames.value=Math.round((fixed.start_ms+fixed.duration_ms)*24/1000)-Math.round(fixed.start_ms*24/1000)
+    }
     await refresh()
+    const match=candidates.value.find(item=>item.parameters.shot_id===shot.value && item.story_version_id===plan.value
+      && item.status==='succeeded' && (!assetId.value || item.asset_id===assetId.value))
+    if (match)open(match)
   })
   timer=setInterval(()=>{if(!busy.value)void refresh().catch(failure=>{error.value=String(failure)})},3000)
 })
@@ -98,7 +128,7 @@ onUnmounted(()=>clearInterval(timer))
             <legend>候选运镜</legend>
             <label v-for="(label,key) in labels" :key="key" class="check"><input v-model="presets" :value="key" type="checkbox">{{ label }}</label>
           </fieldset>
-          <details>
+          <details :open="!!initialPlan">
             <summary>固定已批准镜头</summary>
             <label>制作计划版本 ID<input v-model="plan" maxlength="36"></label>
             <label>稳定镜头 ID<input v-model="shot" maxlength="48"></label>
@@ -112,7 +142,30 @@ onUnmounted(()=>clearInterval(timer))
         <figure v-else-if="assetId" class="generation-reference"><img :src="`/api/assets/${assetId}/media`" alt="运镜参考图"><figcaption>输入参考图</figcaption></figure>
         <p v-else class="empty">从记录中选择已验证候选。</p>
         <p v-if="selected?.selected_asset_id">已采纳为项目素材。</p>
-        <form v-else-if="selected?.status==='succeeded'" class="create" @submit.prevent="accept">
+        <template v-if="selected?.status==='succeeded' && selected.guardian">
+          <div class="candidate-evidence">
+            <figure><img :src="`/api/assets/${selected.asset_id}/media`" alt="批准源图"><figcaption>批准源图</figcaption></figure>
+            <figure v-for="frame in selected.output.guardian_frames" :key="frame.index">
+              <img :src="`/api/generation/candidates/${selected.id}/guardian-frames/${frame.index}`" :alt="`证据帧 ${frame.time_ms} 毫秒`">
+              <figcaption>{{(frame.time_ms/1000).toFixed(3)}} 秒</figcaption>
+            </figure>
+          </div>
+          <p v-if="selected.output.guardian_review">{{selected.output.guardian_review.request.decision==='approved'?'人工内容审核通过':'候选已退回'}} · {{selected.output.guardian_review.request.note}}</p>
+          <form v-else class="create content-review" @submit.prevent="reviewContent">
+            <label>内容审核决定<select v-model="verdict"><option value="approved">通过</option><option value="rejected">退回</option></select></label>
+            <template v-if="verdict==='rejected'">
+              <label>问题类别<select v-model="category" required><option value="">选择问题类别</option>
+                <option v-for="(label,key) in categories" :key="key" :value="key">{{label}}</option>
+              </select></label>
+              <label>问题证据帧<select v-model="evidenceIndex" required><option :value="null" disabled>选择时间点</option>
+                <option v-for="frame in selected.output.guardian_frames" :key="frame.index" :value="frame.index">{{(frame.time_ms/1000).toFixed(3)}} 秒</option>
+              </select></label>
+            </template>
+            <label>内容审核说明<textarea v-model="reviewNote" required maxlength="2000"></textarea></label>
+            <button :disabled="busy || !reviewNote.trim() || (verdict==='rejected' && (!category || evidenceIndex===null))">保存内容审核</button>
+          </form>
+        </template>
+        <form v-if="!selected?.selected_asset_id && selected?.status==='succeeded' && (!selected.guardian || selected.output.guardian_review?.request.decision==='approved')" class="create" @submit.prevent="accept">
           <label>素材标题<input v-model="title" required maxlength="200"></label>
           <label>采纳说明<textarea v-model="review" required maxlength="2000"></textarea></label>
           <button class="primary" :disabled="busy || !title.trim() || !review.trim()">采纳为视频素材</button>
@@ -144,4 +197,8 @@ onUnmounted(()=>clearInterval(timer))
 .generation-reference { margin:0 0 10px; position:relative; background:#10181e; border-radius:8px; overflow:hidden }
 .generation-reference img { width:100%; max-height:320px; object-fit:contain; display:block }
 .generation-reference figcaption { padding:8px 10px; color:var(--ink-muted) }
+.candidate-evidence { display:grid; grid-template-columns:repeat(auto-fit,minmax(95px,1fr)); gap:8px; margin:12px 0 }
+.candidate-evidence figure { margin:0; min-width:0 }
+.candidate-evidence img { width:100%; aspect-ratio:1.25; object-fit:contain; background:var(--surface-base); border-radius:6px }
+.candidate-evidence figcaption { color:var(--ink-muted); font-size:12px }
 </style>

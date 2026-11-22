@@ -9,6 +9,7 @@ from . import storage
 from .analysis_service import fingerprint
 from .creative import require, version_ref
 from .db import session
+from .guardian import require_active_plan, require_reviewed_timeline
 from .models import ProductionEpisode, ProductionRun, Project, QualityReview, Task, TaskEvent, now
 from .render import file_hash
 from .series import series_report
@@ -165,6 +166,7 @@ def submit(project_id:str,body:RunRequest,db=Depends(session)):
     plan_report = series_report(db,entity,plan)
     if not plan_report['approved']:
         raise HTTPException(422,'请选已批准的整剧计划版本')
+    require_active_plan(db,plan)
     old_rows = {}
     keep_quality = False
     if body.previous_run_id:
@@ -194,6 +196,7 @@ def submit(project_id:str,body:RunRequest,db=Depends(session)):
         assembly = timeline.provenance.get('assembly_request')
         if assembly and assembly['episode']!=number:
             raise HTTPException(422,f'第 {number} 集和自动装配记录不匹配')
+        require_reviewed_timeline(db,plan,entry,timeline.content)
         old = old_rows.get(number)
         render = prior_qc = None
         if old and old.timeline_version_id==timeline.id:

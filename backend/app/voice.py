@@ -18,8 +18,10 @@ from .analysis_engine import Commands
 from .config import ROOT
 from .creative import require, version_ref
 from .db import session
-from .models import Asset, Project, Task, TaskEvent
+from .guardian import require_active_plan
+from .models import Asset, Project, StoryVersion, Task, TaskEvent
 from .render import file_hash, write_manifest
+from .series import series_report
 from .story_schemas import Strict
 
 router = APIRouter(prefix='/api/voice',tags=['local-voice'])
@@ -37,6 +39,7 @@ class Binding(Strict):
 
 class VoiceRequest(Strict):
     storyboard_version_id: str=Field(min_length=1,max_length=36)
+    series_version_id: str | None=Field(default=None,min_length=1,max_length=36)
     bindings: list[Binding]=Field(min_length=1,max_length=16)
     idempotency_key: str=Field(min_length=1,max_length=64)
 
@@ -109,12 +112,29 @@ def submit(project_id: str,body:VoiceRequest,db=Depends(session)):
     bindings = [item.model_dump() for item in body.bindings]
     lines,duration = plan_lines(version.content,bindings)
     params = {'engine':ENGINE,'bindings':bindings}
+    if body.series_version_id:
+        params['guardian_plan_version_id'] = body.series_version_id
     key = 'local-voice:'+body.idempotency_key
     prior = db.scalar(select(Task).where(Task.project_id==project_id,Task.idempotency_key==key))
     if prior:
         if prior.kind!='local_voice' or prior.story_version_id!=version.id or prior.parameters!=params:
             raise HTTPException(409,'请求键已用于其他配音参数')
         return public(prior)
+    guarded = any(shot.get('contract') for shot in version.content['shots'])
+    if guarded != bool(body.series_version_id):
+        raise HTTPException(422,'Guardian 分镜须固定批准计划后才能配音')
+    if guarded:
+        entity, plan = version_ref(db,project_id,body.series_version_id,{'story_bible'})
+        require_active_plan(db,plan)
+        report = series_report(db,entity,plan)
+        if (not plan.provenance.get('guardian_manifest') or not report['ready_for_review']
+            or not any(episode['storyboard_version_id']==version.id for episode in report['episodes'])):
+            raise HTTPException(422,'分镜需属于已批准的 Guardian 计划')
+        for binding in bindings:
+            _, character = version_ref(db,project_id,binding['character_version_id'],{'character'})
+            voice = (character.content.get('identity') or {}).get('local_voice')
+            if binding['voice']!=voice:
+                raise HTTPException(422,f'角色「{character.title}」的配音与固定音色不符')
     available = {voice['name'] for voice in installed_voices()}
     if not available or any(binding['voice'] not in available for binding in bindings):
         raise HTTPException(409,'所选语音未在本机安装')
@@ -175,10 +195,16 @@ def select_assets(task_id:str,body:VoiceSelection,db=Depends(session)):
         path = storage.resolve_key(entry['storage_key'])
         if not path.is_file() or file_hash(path)!=entry['sha256']:
             raise HTTPException(409,'产物校验失败，请重新制作')
+        plan_id = task.parameters.get('guardian_plan_version_id')
+        plan = None
+        if plan_id:
+            plan = require(db,StoryVersion,plan_id)
+            require_active_plan(db,plan)
         note = '\n'.join(item['authorization'] for item in task.parameters['bindings'])
         asset = Asset(project_id=task.project_id,name=filename,storage_key=entry['storage_key'],
             sha256=entry['sha256'],size_bytes=entry['size_bytes'],authorization=note,media_info={
-                'origin':ENGINE,'story_version_id':task.story_version_id,'task_id':task.id,'selection_note':body.note})
+                'origin':ENGINE,'story_version_id':task.story_version_id,'task_id':task.id,'selection_note':body.note,
+                **({'guardian_plan_version_id':plan.id,'guardian_series_id':plan.entity_id} if plan else {})})
         db.add(asset)
         rows.append(asset)
     if db.new:

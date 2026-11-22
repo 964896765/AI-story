@@ -53,6 +53,8 @@ def validate_content(db,project_id,kind,content):
     if kind in ('character','scene'):
         for key in normalized['reference_asset_ids']:asset('reference_image',key,IMAGES)
     if kind=='character':asset('voice_reference',normalized['voice']['reference_audio_asset_id'],{'.wav','.mp3'})
+    if kind=='character' and normalized['identity'] is None:
+        normalized.pop('identity')
     if kind in ('script','episode'):
         version('source',normalized['source_version_id'],{'novel','script','episode'})
         for key in normalized['character_version_ids']:version('character',key,{'character'})
@@ -67,12 +69,24 @@ def validate_content(db,project_id,kind,content):
         for shot in normalized['shots']:
             version(f"shot:{shot['number']}:scene",shot['scene_version_id'],{'scene'})
             for key in shot['character_version_ids']:version(f"shot:{shot['number']}:character",key,{'character'})
+            contract=shot['contract']
+            if contract:
+                for key in contract['source_image_asset_ids']:asset(f"shot:{shot['number']}:source_image",key,IMAGES)
+                for state in contract['opening']+contract['closing']:
+                    version(f"shot:{shot['number']}:state",state['character_version_id'],{'character'})
             # Legacy request hashes include exactly the original shot keys and defaults.
             for field, definition in Shot.model_fields.items():
                 if field not in old_fields and shot[field]==definition.default:
                     shot.pop(field)
     if kind=='story_bible':
         version('series_source',normalized['script_version_id'],{'script'})
+        canon=normalized['guardian']
+        if canon:
+            for key in canon['character_version_ids']:version('guardian:character',key,{'character'})
+            for key in canon['scene_version_ids']:version('guardian:scene',key,{'scene'})
+            for key in canon['style']['reference_asset_ids']:asset('guardian:style',key,IMAGES)
+        else:
+            normalized.pop('guardian')
         for index, block in enumerate(normalized['episodes'],1):
             version(f'series:{index}:episode',block['episode_version_id'],{'episode'})
             version(f'series:{index}:board',block['storyboard_version_id'],{'storyboard'})

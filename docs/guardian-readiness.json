@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-11-22T02:13:20.6752773+00:00",
+  "url": "http://127.0.0.1:15173/delivery/guardian",
+  "ready": true,
+  "online_workers": 1,
+  "database_revision": "0013",
+  "projects": 7,
+  "assets": 13,
+  "browser_route_http": 200,
+  "bundle_http": 200,
+  "frontend_bundle": "/assets/index-DFNrURMw.js",
+  "guardian_endpoints": [
+    "/api/series/versions/{version_id}/impact",
+    "/api/generation/candidates/{task_id}/guardian-review",
+    "/api/generation/candidates/{task_id}/guardian-frames/{index}"
+  ],
+  "live_authorized": false,
+  "live_budget_micros": 0
+}

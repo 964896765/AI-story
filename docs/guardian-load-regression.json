@@ -1,0 +1,22 @@
+{
+  "checked_at": "2026-11-22T02:16:01.067Z",
+  "resolution": [
+    1280,
+    720
+  ],
+  "fps": 24,
+  "episode_count": 6,
+  "seconds_per_episode": 30,
+  "generated_video_seconds": 180,
+  "worker_count": 1,
+  "logical_cpus": 16,
+  "full_batch_wall_seconds": 39.89,
+  "recheck_only_wall_seconds": 5.403,
+  "total_render_task_seconds": 33.779999999999745,
+  "renders": 6,
+  "qc_tasks": 12,
+  "rechecked_without_rerender": 6,
+  "output_bytes": 49356882,
+  "verified_download_sha256": "98c18c37736b997275d3cea937978bfa7d434202d7cf6898c6c50fbce4158c9c",
+  "external_paid_calls": 0
+}
