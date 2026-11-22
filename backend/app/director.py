@@ -5,15 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field, StringConstraints
 from sqlalchemy import select
 
-from . import delivery, production, timeline
+from . import delivery, director_guidance, production, text_service, timeline
 from .analysis_service import fingerprint
 from .creative import require, version_ref
 from .db import session
 from .library import Region, Slug
 from .guardian import require_active_plan
-from .models import DirectorPlan, ProductionRun, Project, StoryEntity, StoryVersion, Task, now, uid
+from .models import DirectorPlan, ModelCall, ProductionRun, Project, StoryEntity, StoryVersion, Task, now, uid
 from .series import series_report
 from .story_schemas import Strict, Timeline
+from .text_schemas import DirectorAdviceInput, DirectorAdviceReview, ReconcileInput, RetryInput
 
 router = APIRouter(prefix='/api/director/projects/{project_id}', tags=['director'])
 
@@ -121,6 +122,91 @@ def scoped_plan(db, project_id, plan_id):
     if not plan or plan.project_id != project_id:
         raise HTTPException(404, '执行计划不存在')
     return plan
+
+
+def scoped_advice(db, project_id, call_id):
+    row = db.get(ModelCall, call_id)
+    if not row or row.project_id!=project_id or row.prompt_version!=director_guidance.PROMPT_VERSION:
+        raise HTTPException(404,'导演建议记录不存在')
+    return row
+
+
+@router.get('/advice')
+def advice_history(project_id: str, db=Depends(session)):
+    require(db, Project, project_id)
+    rows = db.scalars(select(ModelCall).where(ModelCall.project_id==project_id,
+        ModelCall.prompt_version==director_guidance.PROMPT_VERSION)
+        .order_by(ModelCall.created_at.desc(),ModelCall.id).limit(30))
+    return [text_service.call_public(row) for row in rows]
+
+
+@router.get('/advice/{call_id}')
+def get_advice(project_id: str,call_id: str,db=Depends(session)):
+    return text_service.call_public(scoped_advice(db,project_id,call_id))
+
+
+@router.post('/advice',status_code=201)
+def request_advice(project_id: str,body: DirectorAdviceInput,db=Depends(session)):
+    call = text_service.reserve_call(db,project_id,body)
+    db.commit()
+    return text_service.call_public(call)
+
+
+@router.post('/advice/{call_id}/cancel')
+def cancel_advice(project_id: str,call_id: str,db=Depends(session)):
+    call = scoped_advice(db,project_id,call_id)
+    task = db.scalar(select(Task).where(Task.id==call.task_id).with_for_update())
+    call = text_service.cancel_locked(db,task)
+    db.commit()
+    return text_service.call_public(call)
+
+
+@router.post('/advice/{call_id}/retry',status_code=201)
+def retry_advice(project_id: str,call_id: str,body: RetryInput,db=Depends(session)):
+    row = text_service.retry_call(db,scoped_advice(db,project_id,call_id),body)
+    db.commit()
+    return text_service.call_public(row)
+
+
+@router.post('/advice/{call_id}/reconcile')
+def reconcile_advice(project_id: str,call_id: str,body: ReconcileInput,db=Depends(session)):
+    scoped_advice(db,project_id,call_id)
+    row = text_service.reconcile(db,call_id,body)
+    db.commit()
+    return text_service.call_public(row)
+
+
+@router.post('/advice/{call_id}/review')
+def review_advice(project_id: str,call_id: str,body: DirectorAdviceReview,db=Depends(session)):
+    lock_project(db,project_id)
+    scoped_advice(db,project_id,call_id)
+    task,_,call = text_service.locked_call(db,call_id)
+    request = body.model_dump()
+    if call.review:
+        if call.review['request']!=request:
+            raise HTTPException(409,'此建议已有审核记录')
+        return text_service.call_public(call)
+    if call.status!='awaiting_review' or call.budget_status!='settled' or call.draft_revision!=body.draft_revision:
+        raise HTTPException(409,'建议状态或草稿版本已变化，请重新读取')
+    plan_id = None
+    if body.action=='accept':
+        plan_id = call.request['plan_ids'][call.draft['choice']-1]
+        plan = scoped_plan(db,project_id,plan_id)
+        if plan.approved_at:
+            raise HTTPException(409,'建议所选计划已执行，请重新选择待审批计划')
+        if plan.action=='batch':
+            _,_,_,digest = prepare_batch(db,project_id,plan.parameters)
+        else:
+            _,snapshot = fixed_input(db,project_id,plan.action,plan.parameters)
+            digest = fingerprint(snapshot)
+        if digest!=plan.input_hash:
+            raise HTTPException(409,'计划输入或授权已变化，请重新准备执行计划')
+    call.status = 'accepted' if plan_id else 'rejected'
+    call.review = {'request':request,'plan_id':plan_id,'recorded_at':now().isoformat()}
+    text_service.event(db,task,'导演建议审核已记录'+(' · '+plan_id if plan_id else ' · 已退回'))
+    text_service.sync_task_after_manual_action(task,call)
+    db.commit()
+    return text_service.call_public(call)
 
 
 @router.get('/plans')

@@ -12,7 +12,7 @@ interface Metrics {
 const metrics=ref<Metrics|null>(null), error=ref(''), busy=ref(false)
 const workerCount=computed(()=>metrics.value?.workers.filter(worker=>worker.online).length||0)
 let timer:ReturnType<typeof setInterval>|undefined
-const names:Record<string,string>={probe:'媒体基础探测',analyze:'智能解析',render:'视频剪辑',adapt:'剧情改编',
+const names:Record<string,string>={probe:'媒体基础探测',analyze:'智能解析',render:'视频剪辑',adapt:'文本模型任务',
   still_motion:'静图运镜',local_voice:'本机配音',timeline_render:'多轨渲染',qc_review:'技术质检',delivery:'整剧交付',promotion:'推广包'}
 const bytes=(n:number)=>n>=1024**3?(n/(1024**3)).toFixed(2)+' GiB':(n/(1024**2)).toFixed(2)+' MiB'
 async function refresh(){

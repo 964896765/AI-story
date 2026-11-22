@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "d2960d8ec5ef6edfd8cb0fffe3e3a2d8a37d6020372312f436d267690ec88f4e",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/director-advice-ccbf0bd9e1a8",
+  "schema_changed": false
+}

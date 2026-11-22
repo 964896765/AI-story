@@ -39,6 +39,9 @@ class MockTextAdapter:
         if scenario=='server_error':raise CallFailure('SERVER_ERROR_OUTCOME_UNKNOWN',True)
         if scenario=='timeout':raise CallFailure('TIMEOUT_OUTCOME_UNKNOWN',True)
         draft={'title':'模拟改编草稿（非AI生成）','synopsis':'仅用于预算与人工审核流程验收，不代表模型创作质量。','body':'【模拟结果，非真实AI创作】\n'+request.parameters.get('source_text','')[:4000],'episodes':[{'number':1,'title':'模拟第一集','synopsis':'展示待审核分集结构。'}],'dialogues':[{'speaker':'模拟角色','text':'这是模拟对白，请人工修订。'}]}
+        if request.parameters.get('director_advice'):
+            draft={'choice':1,'rationale':'离线模拟按提交顺序选择第一个方案，供验证审核流程。',
+                   'checks':['核对固定输入版本','查看执行计划与授权条件','由制作人员单独批准执行']}
         content=json.dumps(draft,ensure_ascii=False)
         if scenario=='invalid_output':content='not valid JSON'
         usage={'prompt_tokens':min(100,self.settings['input_token_limit']),'completion_tokens':min(80,request.parameters['max_output_tokens']),'total_tokens':0}

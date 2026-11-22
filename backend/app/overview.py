@@ -7,6 +7,7 @@ from .asset_validation import IMAGE_SUFFIXES
 from .creative import require
 from .db import session
 from .models import Asset, ModelBudget, ModelCall, ProductionRun, Project, StoryEntity, StoryVersion, Task
+from .director_guidance import PROMPT_VERSION as DIRECTOR_PROMPT_VERSION
 from .production import public as production_summary
 from .text_adapters import live_gate
 
@@ -39,7 +40,8 @@ def overview(project_id: str, db=Depends(session)):
                 'duration': task.output.get('duration'), 'width': task.output.get('width'), 'height': task.output.get('height')}
                for task, title, name in recent]
 
-    review_scope = (ModelCall.project_id == project.id, ModelCall.status == 'awaiting_review')
+    review_scope = (ModelCall.project_id == project.id, ModelCall.status == 'awaiting_review',
+                    ModelCall.prompt_version != DIRECTOR_PROMPT_VERSION)
     draft_count = db.scalar(select(func.count()).select_from(ModelCall).where(*review_scope))
     calls = db.execute(select(ModelCall.id, ModelCall.simulated, StoryVersion.title)
         .join(StoryVersion, StoryVersion.id == ModelCall.source_version_id).where(*review_scope)

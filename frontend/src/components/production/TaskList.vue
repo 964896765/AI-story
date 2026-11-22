@@ -26,7 +26,8 @@ const isRender = (task: Task) => ['render', 'timeline_render'].includes(task.kin
 const finished = (task: Task) => isRender(task) && task.status === 'succeeded'
 const shown = computed(() => tasks.value.slice(0,pageSize))
 const hasNext = computed(() => tasks.value.length > pageSize)
-const title = (task: Task) => workbench.assets.find(asset => asset.id === task.asset_id)?.name || kinds[task.kind] || task.kind
+const title = (task: Task) => task.kind==='adapt' && task.parameters.purpose==='director_advice' ? '总导演规划建议'
+  : workbench.assets.find(asset => asset.id === task.asset_id)?.name || kinds[task.kind] || task.kind
 
 async function refresh() {
   if (!workbench.projectId) return

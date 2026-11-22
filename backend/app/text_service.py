@@ -4,9 +4,10 @@ import json
 import os
 from fastapi import HTTPException
 from sqlalchemy import func, select, text
+from . import director_guidance
 from .models import Project,Task,TaskEvent,TextProvider,ModelBudget,ModelCall,ModelLedger,ModelDraft,StoryEntity,StoryVersion,now,uid
 from .creative import require,version_ref,create_entity,append_version,validate_content,pack
-from .text_schemas import AdaptInput,AdaptedDraft
+from .text_schemas import AdaptInput,AdaptedDraft,DirectorAdviceInput,DirectorAdviceDraft
 from .text_adapters import approved_endpoint,build_adapter,live_gate,configured_key,redact,CallFailure
 from .adaptation_policy import PROMPT_VERSION,SYSTEM_PROMPT,prompt_for,reserve_quote,priced_cost,validated_usage,validated_draft
 from .model_adapters import ModelRequest
@@ -85,19 +86,29 @@ def enforce_global_ceiling(db, currency, upper):
 def reserve_call(db,project_id,body):
     if not db.scalar(select(Project).where(Project.id==project_id).with_for_update()):raise HTTPException(404,'项目不存在')
     request=body.model_dump(exclude={'idempotency_key'})
+    director = isinstance(body,DirectorAdviceInput)
+    prompt_version = director_guidance.PROMPT_VERSION if director else PROMPT_VERSION
     fingerprint=hashlib.sha256(json.dumps(request,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     previous=db.scalar(select(ModelCall).where(ModelCall.project_id==project_id,ModelCall.request_key==body.idempotency_key))
     if previous:
-        if previous.request_hash!=fingerprint:raise HTTPException(409,'改编幂等键已用于不同请求')
+        if previous.request_hash!=fingerprint or previous.prompt_version!=prompt_version:
+            raise HTTPException(409,'模型调用幂等键已用于不同请求')
         return previous
     provider=require(db,TextProvider,body.provider_id)
     if not provider.enabled:raise HTTPException(409,'供应商配置已停用')
-    entity,version=version_ref(db,project_id,body.source_version_id,{'novel','script','episode'})
-    source=version.content.get('text') or version.content.get('body')
-    if not source:raise HTTPException(422,'源版本无可改编正文')
-    prompt=prompt_for(source,request)
+    if director:
+        if provider.kind!='mock':
+            raise HTTPException(403,'导演规划当前仅使用离线模拟供应商')
+        version,prompt=director_guidance.prepare_prompt(db,project_id,body.plan_ids,body.goal)
+        system_prompt=director_guidance.SYSTEM_PROMPT
+    else:
+        _,version=version_ref(db,project_id,body.source_version_id,{'novel','script','episode'})
+        source=version.content.get('text') or version.content.get('body')
+        if not source:raise HTTPException(422,'源版本无可改编正文')
+        prompt=prompt_for(source,request)
+        system_prompt=SYSTEM_PROMPT
     # Reserve the entire verified input/context bound, rather than guessing tokenizer ratios.
-    if len((prompt+SYSTEM_PROMPT).encode())+4096>provider.settings['input_token_limit']:
+    if len((prompt+system_prompt).encode())+4096>provider.settings['input_token_limit']:
         raise HTTPException(422,'原文或提示词超过保守输入边界，请选择较小的分集或核实模型输入上限')
     upper=quote(provider,body.max_output_tokens)['upper_bound_micros']
     if upper is None:raise HTTPException(409,'价格未知，无法可靠预留预算，已阻止调用')
@@ -111,9 +122,12 @@ def reserve_call(db,project_id,body):
         raise HTTPException(409,'预算不足、未设置或账户已暂停，未发起请求')
     if mode=='live' and not budget.authorization_id:raise HTTPException(403,'真实项目预算未授权')
     call_id,task_id=uid(),uid()
-    task=Task(id=task_id,project_id=project_id,asset_id=None,kind='adapt',story_version_id=version.id,idempotency_key='text-call:'+call_id,parameters={'model_call_id':call_id},input_snapshot={'source_version_id':version.id,'content_hash':version.content_hash},max_attempts=1)
+    parameters={'model_call_id':call_id}
+    if director:
+        parameters['purpose']='director_advice'
+    task=Task(id=task_id,project_id=project_id,asset_id=None,kind='adapt',story_version_id=version.id,idempotency_key='text-call:'+call_id,parameters=parameters,input_snapshot={'source_version_id':version.id,'content_hash':version.content_hash},max_attempts=1)
     db.add(task);db.flush()
-    call=ModelCall(id=call_id,project_id=project_id,task_id=task_id,provider_id=provider.id,budget_id=budget.id,source_version_id=version.id,request_key=body.idempotency_key,request_hash=fingerprint,request=request,provider_snapshot={'kind':provider.kind,'label':provider.label,**provider.settings},prompt_version=PROMPT_VERSION,prompt=prompt,simulated=mode=='mock',reserved_micros=upper)
+    call=ModelCall(id=call_id,project_id=project_id,task_id=task_id,provider_id=provider.id,budget_id=budget.id,source_version_id=version.id,request_key=body.idempotency_key,request_hash=fingerprint,request=request,provider_snapshot={'kind':provider.kind,'label':provider.label,**provider.settings},prompt_version=prompt_version,prompt=prompt,simulated=mode=='mock',reserved_micros=upper)
     db.add(call);db.flush()
     budget.reserved_micros+=upper
     ledger(db,budget,call,'reserve',upper,'模拟资金占用' if call.simulated else '真实调用最坏费用占用')
@@ -152,6 +166,16 @@ def require_call_by_task(db,task_id):
     if not call:raise HTTPException(404,'模型调用记录不存在')
     return call
 
+
+def retry_call(db,old,body):
+    if old.status not in ('failed','invalid_output','cancelled') or old.budget_status not in ('released','settled'):
+        raise HTTPException(409,'结果未知或尚未结束，禁止重发；请先对账')
+    if old.sent_at and not body.acknowledge_new_charge:
+        raise HTTPException(409,'这是新的模型调用，可能再次收费，需明确确认')
+    schema = DirectorAdviceInput if old.prompt_version==director_guidance.PROMPT_VERSION else AdaptInput
+    request = schema.model_validate({**old.request,'idempotency_key':body.idempotency_key})
+    return reserve_call(db,old.project_id,request)
+
 def sync_task_after_manual_action(task,call):
     # A running worker re-reads the call before its final write; don't steal ownership.
     if task.status=='running':return
@@ -172,7 +196,13 @@ def finalize_receipt(db,call_id):
     if not call.receipt:raise HTTPException(409,'没有持久化响应，禁止猜测结算或重发')
     usage=validated_usage(call.receipt.get('usage'))
     call.usage=usage
-    try:parsed=validated_draft(call.receipt)
+    try:
+        if call.prompt_version==director_guidance.PROMPT_VERSION:
+            parsed=validated_draft(call.receipt,DirectorAdviceDraft)
+            if parsed['choice']>len(call.request['plan_ids']):
+                raise CallFailure('DIRECTOR_OPTION_OUT_OF_SCOPE')
+        else:
+            parsed=validated_draft(call.receipt)
     except CallFailure as exc:parsed=None;call.error_code=exc.code
     if parsed and call.draft_revision==0:
         call.draft=parsed;call.draft_revision=1
@@ -201,9 +231,12 @@ def execute_text_task(task_id,factory):
         call_id=call.id
         if call.status=='queued':
             provider=require(db,TextProvider,call.provider_id)
+            director=call.prompt_version==director_guidance.PROMPT_VERSION
             try:
                 if task.cancel_requested:raise CallFailure('CANCELLED_BEFORE_DISPATCH')
                 if not provider.enabled:raise CallFailure('PROVIDER_DISABLED')
+                if director and (not call.simulated or provider.kind!='mock' or call.provider_snapshot['kind']!='mock'):
+                    raise CallFailure('DIRECTOR_LIVE_CALLS_DISABLED')
                 if not call.simulated:
                     check_live(provider,budget)
                     if budget.halted:raise CallFailure('BUDGET_HALTED_BEFORE_DISPATCH')
@@ -217,7 +250,13 @@ def execute_text_task(task_id,factory):
                 task.stage='dispatching'
                 event(db,task,'发送意图已持久化；中断后禁止自动重复调用')
                 settings=dict(call.provider_snapshot)
-                request=ModelRequest(call.project_id,call.id,'text',call.prompt,(call.source_version_id,),{'max_output_tokens':call.request['max_output_tokens'],'system_prompt':SYSTEM_PROMPT,'source_text':require(db,StoryVersion,call.source_version_id).content.get('text') or require(db,StoryVersion,call.source_version_id).content.get('body','')})
+                parameters={'max_output_tokens':call.request['max_output_tokens']}
+                if director:
+                    parameters.update(system_prompt=director_guidance.SYSTEM_PROMPT,director_advice=True)
+                else:
+                    content=require(db,StoryVersion,call.source_version_id).content
+                    parameters.update(system_prompt=SYSTEM_PROMPT,source_text=content.get('text') or content.get('body',''))
+                request=ModelRequest(call.project_id,call.id,'text',call.prompt,(call.source_version_id,),parameters)
         elif call.status in ('dispatching','unknown'):
             failure=CallFailure('MODEL_OUTCOME_UNKNOWN',True)
         elif call.status=='cancelled':failure=CallFailure('CANCELLED')
@@ -344,6 +383,8 @@ def record_billing(db, call_id, body):
 
 def save_draft(db,call_id,body):
     _,_,call=locked_call(db,call_id)
+    if call.prompt_version==director_guidance.PROMPT_VERSION:
+        raise HTTPException(422,'导演建议须在总导演中审核')
     if call.status!='awaiting_review':raise HTTPException(409,'仅待审核且费用明确的草稿可编辑')
     payload=body.draft.model_dump()
     if len(json.dumps(payload,ensure_ascii=False).encode())>2*1024**2:raise HTTPException(422,'草稿超过2 MiB')
@@ -360,6 +401,8 @@ def review_call(db,call_id,body):
     initial=require(db,ModelCall,call_id)
     db.scalar(select(Project).where(Project.id==initial.project_id).with_for_update())
     task,budget,call=locked_call(db,call_id)
+    if call.prompt_version==director_guidance.PROMPT_VERSION:
+        raise HTTPException(422,'导演建议须在总导演中审核')
     request=body.model_dump()
     if call.review:
         if call.review['request']!=request:raise HTTPException(409,'此调用已审核，不能覆盖原审核结果')

@@ -8,6 +8,7 @@ from .models import TextProvider,ModelBudget,ModelCall,ModelLedger,ModelDraft,Ta
 from .text_schemas import ProviderInput,BudgetInput,AdaptInput,ReviewInput,DraftEditInput,ReconcileInput,RetryInput,BillingInput
 from .text_adapters import live_gate
 from . import text_service as service
+from .director_guidance import PROMPT_VERSION as DIRECTOR_PROMPT_VERSION
 from .creative import require
 
 router=APIRouter(prefix='/api/text',tags=['text-model-governance'])
@@ -53,7 +54,8 @@ def create_call(project_id:str,body:AdaptInput,db=Depends(session)):
 @router.get('/projects/{project_id}/calls')
 def calls(project_id:str,db=Depends(session)):
     result=[]
-    for row in db.scalars(select(ModelCall).options(defer(ModelCall.draft),defer(ModelCall.receipt),defer(ModelCall.prompt),defer(ModelCall.review)).where(ModelCall.project_id==project_id).order_by(ModelCall.created_at.desc()).limit(100)):
+    for row in db.scalars(select(ModelCall).options(defer(ModelCall.draft),defer(ModelCall.receipt),defer(ModelCall.prompt),defer(ModelCall.review)).where(
+        ModelCall.project_id==project_id,ModelCall.prompt_version!=DIRECTOR_PROMPT_VERSION).order_by(ModelCall.created_at.desc()).limit(100)):
         result.append(service.call_public(row,False))
     return result
 
@@ -68,12 +70,7 @@ def cancel(call_id:str,db=Depends(session)):
 
 @router.post('/calls/{call_id}/retry',status_code=201)
 def retry(call_id:str,body:RetryInput,db=Depends(session)):
-    old=require(db,ModelCall,call_id)
-    if old.status not in ('failed','invalid_output','cancelled') or old.budget_status not in ('released','settled'):
-        raise HTTPException(409,'结果未知或尚未结束，禁止重发；请先对账')
-    if old.sent_at and not body.acknowledge_new_charge:raise HTTPException(409,'这是新的模型调用，可能再次收费，需明确确认')
-    request=AdaptInput(**old.request,idempotency_key=body.idempotency_key)
-    row=service.reserve_call(db,old.project_id,request);db.commit();return service.call_public(row)
+    row=service.retry_call(db,require(db,ModelCall,call_id),body);db.commit();return service.call_public(row)
 
 @router.post('/calls/{call_id}/settle')
 def settle(call_id:str,db=Depends(session)):
@@ -111,7 +108,10 @@ def draft_revision(call_id:str,number:int,db=Depends(session)):
 
 @router.get('/calls/{call_id}/compare')
 def compare(call_id:str,db=Depends(session)):
-    call=require(db,ModelCall,call_id);source=require(db,StoryVersion,call.source_version_id)
+    call=require(db,ModelCall,call_id)
+    if call.prompt_version==DIRECTOR_PROMPT_VERSION:
+        raise HTTPException(422,'导演建议须在总导演中审核')
+    source=require(db,StoryVersion,call.source_version_id)
     if not call.draft:raise HTTPException(409,'没有通过结构校验的草稿')
     original=source.content.get('text') or source.content.get('body','')
     adapted=call.draft['body']

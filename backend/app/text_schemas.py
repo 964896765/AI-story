@@ -75,6 +75,40 @@ class AdaptInput(Strict):
     max_output_tokens: int=Field(default=1024,ge=128,le=32768)
     idempotency_key: str=Field(min_length=1,max_length=100)
 
+
+class DirectorAdviceInput(Strict):
+    provider_id: str = Field(min_length=1,max_length=36)
+    goal: str = Field(min_length=1,max_length=1000,pattern=r'\S')
+    plan_ids: list[str] = Field(min_length=1,max_length=4)
+    max_output_tokens: int = Field(default=512,ge=128,le=1024)
+    idempotency_key: str = Field(min_length=1,max_length=100)
+
+    @field_validator('plan_ids')
+    @classmethod
+    def fixed_plans(cls,value):
+        if len(set(value))!=len(value) or any(not item or len(item)>36 for item in value):
+            raise ValueError('请选择互不重复的固定计划')
+        return value
+
+
+class DirectorAdviceDraft(Strict):
+    choice: int = Field(strict=True,ge=1,le=4)
+    rationale: str = Field(min_length=1,max_length=1200,pattern=r'\S')
+    checks: list[str] = Field(min_length=1,max_length=5)
+
+    @field_validator('checks')
+    @classmethod
+    def valid_checks(cls,value):
+        if any(not item.strip() or len(item)>240 for item in value):
+            raise ValueError('复核事项须为 1 至 240 个字符')
+        return value
+
+
+class DirectorAdviceReview(Strict):
+    action: Literal['accept','reject']
+    draft_revision: int = Field(ge=1)
+    note: str = Field(min_length=1,max_length=1000,pattern=r'\S')
+
 class OutlineEpisode(Strict):
     number: int=Field(ge=1,le=1000)
     title: str=Field(min_length=1,max_length=200)

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowRight, Check, ClipboardCheck } from 'lucide-vue-next'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 import DirectorBatchFields, { type BatchOperation, type RunOption } from '../components/production/DirectorBatchFields.vue'
+import DirectorAdvice from '../components/production/DirectorAdvice.vue'
 import { useWorkspace } from '../router/workspace'
 import type { Destination } from '../router/navigation'
 import { api, post } from '../services/api'
@@ -60,6 +61,10 @@ const connectionError=ref('')
 const saved=ref<SavedPlan[]>([])
 const selectedId=ref('')
 const active=computed(()=>saved.value.find(item=>item.id===selectedId.value))
+const adviceOptions=computed(()=>saved.value.filter(item=>!item.approved_at).map(item=>({
+  id:item.id,title:workflows[item.action].label,instruction:item.instruction,
+})))
+const planHeading=ref<HTMLElement|null>(null)
 const timelines=ref<TimelineEntity[]>([])
 const versions=ref<VersionRef[]>([])
 const runs=ref<RunOption[]>([])
@@ -97,6 +102,18 @@ function record(value: SavedPlan) {
   const index = saved.value.findIndex(item=>item.id===value.id)
   if (index < 0) saved.value.unshift(value)
   else saved.value[index] = value
+}
+
+async function inspectAdvicePlan(id:string) {
+  error.value=''
+  try {
+    const item=await api<SavedPlan>(`${root.value}/${id}`,{signal:abort.signal})
+    if (abort.signal.aborted) return
+    record(item)
+    selectedId.value=id
+    await nextTick()
+    planHeading.value?.focus()
+  } catch (failure) { if (!abort.signal.aborted) error.value=String(failure) }
 }
 
 watch(() => workbench.projectId, async (project, _, onCleanup) => {
@@ -235,7 +252,7 @@ onBeforeUnmount(()=>abort.abort())
     </WorkspacePanel>
     <WorkspacePanel title="执行计划">
       <template v-if="active">
-        <div class="director-note"><ClipboardCheck :size="17" aria-hidden="true" /><strong>{{workflows[active.action].label}}</strong><span data-testid="director-plan-status">{{active.run ? batchStates[active.run.status] : active.task ? states[active.task.status] : active.approved_at ? '正在读取批次' : '待批准'}}</span></div>
+        <div ref="planHeading" tabindex="-1" class="director-note"><ClipboardCheck :size="17" aria-hidden="true" /><strong>{{workflows[active.action].label}}</strong><span data-testid="director-plan-status">{{active.run ? batchStates[active.run.status] : active.task ? states[active.task.status] : active.approved_at ? '正在读取批次' : '待批准'}}</span></div>
         <p class="director-instruction">{{active.instruction}}</p>
         <dl class="director-facts">
           <div v-if="active.action==='render'"><dt>时间轴版本</dt><dd><RouterLink :to="link('timeline',{timeline:active.parameters.version_id})">{{active.parameters.version_id}}</RouterLink></dd></div>
@@ -310,13 +327,19 @@ onBeforeUnmount(()=>abort.abort())
         <div><dt>付费调用授权</dt><dd>{{workbench.overview ? (workbench.overview.live_authorized?'已授权':'关闭'):'待读取'}}</dd></div>
       </dl>
       <RouterLink :to="link('models')">查看模型与预算</RouterLink>
+      <a class="advice-anchor" href="#director-model-planning">打开模型规划</a>
       <p class="director-note director-mode">渲染和交付由本机 Worker 执行。剧情改编与镜头返工在对应工作区审核。</p>
+    </WorkspacePanel>
+    <WorkspacePanel id="director-model-planning" class="director-advice" title="模型规划（离线模拟）">
+      <DirectorAdvice :key="workbench.projectId" :project-id="workbench.projectId" :options="adviceOptions" @inspect="inspectAdvicePlan" />
     </WorkspacePanel>
   </div>
 </template>
 
 <style scoped>
 .director-grid { display:grid;grid-template-columns:minmax(210px,.95fr) minmax(260px,1.28fr) minmax(185px,.85fr);gap:14px;align-items:start }
+.director-advice { grid-column:1/-1;scroll-margin-top:75px }
+.advice-anchor { display:block;margin-top:7px }
 .dialogue,.director-form { display:grid;gap:10px }
 .director-form fieldset { border:0;padding:0;margin:0;min-width:0 }
 .director-history,.director-output { display:grid;gap:8px;margin-top:14px }

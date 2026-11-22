@@ -34,7 +34,7 @@ def validated_usage(value):
         if isinstance(count,int) and not isinstance(count,bool) and 0<=count<=maximum:result[key]=count
     return result
 
-def validated_draft(receipt):
+def validated_draft(receipt, schema=AdaptedDraft):
     if receipt.get('finish_reason')!='stop':raise CallFailure('MODEL_OUTPUT_INCOMPLETE_OR_REFUSED')
-    try:return AdaptedDraft.model_validate_json(receipt['content']).model_dump()
+    try:return schema.model_validate_json(receipt['content']).model_dump()
     except (ValidationError,ValueError,KeyError,TypeError):raise CallFailure('MODEL_OUTPUT_SCHEMA_INVALID') from None

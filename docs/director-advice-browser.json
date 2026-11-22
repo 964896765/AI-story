@@ -1,0 +1,330 @@
+{
+  "project": "a108b84b-0a4a-4f44-8379-56ce636e71ce",
+  "fixed_timeline": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+  "advice": {
+    "id": "9badda9a-fbda-4cb8-914d-3e8c25d27b98",
+    "project_id": "a108b84b-0a4a-4f44-8379-56ce636e71ce",
+    "task_id": "033131b7-2362-43e5-8357-c4827be4b8d5",
+    "provider_id": "6e15fda0-6d12-487e-9110-7d33ebe394f9",
+    "source_version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+    "accepted_version_id": null,
+    "provider_snapshot": {
+      "kind": "mock",
+      "label": "总导演离线验收",
+      "base_url": "",
+      "model": "offline-director-fixture",
+      "secret_env": "",
+      "currency": "CNY",
+      "input_per_million": "1",
+      "output_per_million": "2",
+      "input_token_limit": 8192,
+      "output_token_limit": 2048,
+      "billing_verified": false,
+      "price_source": "",
+      "token_parameter": "max_completion_tokens",
+      "response_format": "json_schema",
+      "timeout_seconds": 60,
+      "rejection_is_nonbillable": false,
+      "mock_scenario": "success"
+    },
+    "prompt_version": "director-plan-advice-v1",
+    "simulated": true,
+    "status": "accepted",
+    "budget_status": "settled",
+    "reserved_micros": 9216,
+    "calculated_cost_micros": 260,
+    "actual_cost_micros": null,
+    "usage": {
+      "prompt_tokens": 100,
+      "completion_tokens": 80,
+      "total_tokens": 180
+    },
+    "draft": {
+      "choice": 1,
+      "rationale": "离线模拟按提交顺序选择第一个方案，供验证审核流程。",
+      "checks": [
+        "核对固定输入版本",
+        "查看执行计划与授权条件",
+        "由制作人员单独批准执行"
+      ]
+    },
+    "draft_revision": 1,
+    "review": {
+      "request": {
+        "action": "accept",
+        "draft_revision": 1,
+        "note": "核对生成建议，继续查看固定时间轴计划"
+      },
+      "plan_id": "0cc296b8-8118-4fdd-8697-4938bb5866c2",
+      "recorded_at": "2026-11-22T15:35:58.456675+00:00"
+    },
+    "provider_call_id": "mock-9badda9a-fbda-4cb8-914d-3e8c25d27b98",
+    "error_code": null,
+    "created_at": "2026-11-22T15:35:57.205606+00:00",
+    "request": {
+      "provider_id": "6e15fda0-6d12-487e-9110-7d33ebe394f9",
+      "goal": "挑一个港湾短片先走本机合成",
+      "plan_ids": [
+        "0cc296b8-8118-4fdd-8697-4938bb5866c2",
+        "d975f477-d2d2-4150-80f8-f7fb0247a7dd"
+      ],
+      "max_output_tokens": 512
+    }
+  },
+  "render": {
+    "id": "0cc296b8-8118-4fdd-8697-4938bb5866c2",
+    "instruction": "按固定时间轴在本机合成",
+    "action": "render",
+    "parameters": {
+      "version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2"
+    },
+    "input_hash": "d0f821613dcc60ee3a63e1946d9332915fbed8b6e47eec906fea79dc02ce39ae",
+    "created_at": "2026-11-22T15:35:56.690250+00:00",
+    "approved_at": "2026-11-22T15:35:58.639200+00:00",
+    "external_cost_cents": 0,
+    "run_id": null,
+    "run": null,
+    "preview": null,
+    "task": {
+      "id": "725f53f6-7b77-40ee-b813-6323d1d3a60e",
+      "status": "succeeded",
+      "stage": "succeeded",
+      "progress": 100,
+      "elapsed_seconds": 0.6560000000026776,
+      "error": null
+    }
+  },
+  "batch": {
+    "id": "ff3fafd7-df55-4ba4-b890-1cc849051e6c",
+    "instruction": "生产港湾两集并执行技术质检",
+    "action": "batch",
+    "parameters": {
+      "plan_version_id": "fded1bed-c311-48ea-8cc4-03694865f118",
+      "previous_run_id": null,
+      "timelines": [
+        {
+          "number": 1,
+          "timeline_version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2"
+        },
+        {
+          "number": 2,
+          "timeline_version_id": "ee6c4647-bd3f-4381-b0f5-3a8367dcb680"
+        }
+      ],
+      "policy": {
+        "require_audio": false,
+        "require_subtitles": false,
+        "black_ms": 500,
+        "freeze_ms": 750,
+        "silence_ms": 1000,
+        "silence_db": -45,
+        "min_integrated_lufs": null,
+        "max_true_peak_dbtp": null
+      },
+      "recheck_quality": false
+    },
+    "input_hash": "815004a4bf9b0815a7a8e3d7b888ae9579d5d45ee50cd9ca7706d84f67713846",
+    "created_at": "2026-11-22T15:36:00.899820+00:00",
+    "approved_at": "2026-11-22T15:36:01.180303+00:00",
+    "external_cost_cents": 0,
+    "run_id": "a8228968-c4ba-484b-889a-7dc3e0171535",
+    "run": {
+      "id": "a8228968-c4ba-484b-889a-7dc3e0171535",
+      "workflow": "series-render-qc-v1",
+      "plan_version_id": "fded1bed-c311-48ea-8cc4-03694865f118",
+      "previous_run_id": null,
+      "status": "passed",
+      "created_at": "2026-11-22T15:36:01.151030+00:00",
+      "episode_count": 2,
+      "episodes": [
+        {
+          "number": 1,
+          "timeline_version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+          "reused": false,
+          "status": "passed",
+          "render_reused": false,
+          "render_task_id": "bdd16de9-7f19-401d-9f53-d74ea6da6ead",
+          "render_status": "succeeded",
+          "render_error": null,
+          "qc_task_id": "037107d1-50bd-428b-bde0-5206591144ff",
+          "qc_status": "succeeded",
+          "qc_stage": "succeeded",
+          "qc_error": null,
+          "issue_count": 0
+        },
+        {
+          "number": 2,
+          "timeline_version_id": "ee6c4647-bd3f-4381-b0f5-3a8367dcb680",
+          "reused": false,
+          "status": "passed",
+          "render_reused": false,
+          "render_task_id": "c03829e3-66ba-472d-8801-8a234bf68b41",
+          "render_status": "succeeded",
+          "render_error": null,
+          "qc_task_id": "b353c5ef-9053-4961-87d3-b3df898b12ec",
+          "qc_status": "succeeded",
+          "qc_stage": "succeeded",
+          "qc_error": null,
+          "issue_count": 0
+        }
+      ],
+      "policy": {
+        "require_audio": false,
+        "require_subtitles": false,
+        "black_ms": 500,
+        "freeze_ms": 750,
+        "silence_ms": 1000,
+        "silence_db": -45
+      },
+      "passed": 2,
+      "reused": 0,
+      "rechecked": 0
+    },
+    "preview": [
+      {
+        "number": 1,
+        "version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+        "title": "港湾首集剪辑",
+        "version": 1,
+        "mode": "render"
+      },
+      {
+        "number": 2,
+        "version_id": "ee6c4647-bd3f-4381-b0f5-3a8367dcb680",
+        "title": "港湾第二集剪辑",
+        "version": 1,
+        "mode": "render"
+      }
+    ],
+    "task": null
+  },
+  "rework": {
+    "id": "49248b27-cf3a-46c9-ad9a-2fb1ddc5215a",
+    "instruction": "只更换第二集时间轴",
+    "action": "batch",
+    "parameters": {
+      "plan_version_id": "fded1bed-c311-48ea-8cc4-03694865f118",
+      "previous_run_id": "a8228968-c4ba-484b-889a-7dc3e0171535",
+      "timelines": [
+        {
+          "number": 2,
+          "timeline_version_id": "da2058fd-d0dc-4e56-8211-dad7ca10c1ef"
+        }
+      ],
+      "policy": {
+        "require_audio": false,
+        "require_subtitles": false,
+        "black_ms": 500,
+        "freeze_ms": 750,
+        "silence_ms": 1000,
+        "silence_db": -45,
+        "min_integrated_lufs": null,
+        "max_true_peak_dbtp": null
+      },
+      "recheck_quality": false
+    },
+    "input_hash": "2ac759e2fd014a863bc9a0d20bcf3ab50a52fcd05b9f6a3a0189b29ad9bb199c",
+    "created_at": "2026-11-22T15:36:04.970649+00:00",
+    "approved_at": "2026-11-22T15:36:05.182249+00:00",
+    "external_cost_cents": 0,
+    "run_id": "b02d435e-c66e-4ac8-bb49-855965d81058",
+    "run": {
+      "id": "b02d435e-c66e-4ac8-bb49-855965d81058",
+      "workflow": "series-render-qc-v1",
+      "plan_version_id": "fded1bed-c311-48ea-8cc4-03694865f118",
+      "previous_run_id": "a8228968-c4ba-484b-889a-7dc3e0171535",
+      "status": "passed",
+      "created_at": "2026-11-22T15:36:05.168893+00:00",
+      "episode_count": 2,
+      "episodes": [
+        {
+          "number": 1,
+          "timeline_version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+          "reused": true,
+          "status": "passed",
+          "render_reused": true,
+          "render_task_id": "bdd16de9-7f19-401d-9f53-d74ea6da6ead",
+          "render_status": "succeeded",
+          "render_error": null,
+          "qc_task_id": "037107d1-50bd-428b-bde0-5206591144ff",
+          "qc_status": "succeeded",
+          "qc_stage": "succeeded",
+          "qc_error": null,
+          "issue_count": 0
+        },
+        {
+          "number": 2,
+          "timeline_version_id": "da2058fd-d0dc-4e56-8211-dad7ca10c1ef",
+          "reused": false,
+          "status": "passed",
+          "render_reused": false,
+          "render_task_id": "32c0a1b4-380b-4b14-934a-d44ed7673a43",
+          "render_status": "succeeded",
+          "render_error": null,
+          "qc_task_id": "b5a1b11a-f344-4622-a174-3c0d6e9f93c3",
+          "qc_status": "succeeded",
+          "qc_stage": "succeeded",
+          "qc_error": null,
+          "issue_count": 0
+        }
+      ],
+      "policy": {
+        "require_audio": false,
+        "require_subtitles": false,
+        "black_ms": 500,
+        "freeze_ms": 750,
+        "silence_ms": 1000,
+        "silence_db": -45
+      },
+      "passed": 2,
+      "reused": 1,
+      "rechecked": 0
+    },
+    "preview": [
+      {
+        "number": 1,
+        "version_id": "b00868a0-f269-41ec-85b7-96d23325ddf2",
+        "title": "港湾首集剪辑",
+        "version": 1,
+        "mode": "reuse"
+      },
+      {
+        "number": 2,
+        "version_id": "da2058fd-d0dc-4e56-8211-dad7ca10c1ef",
+        "title": "港湾第二集返工剪辑",
+        "version": 1,
+        "mode": "render"
+      }
+    ],
+    "task": null
+  },
+  "delivery": {
+    "id": "ac8def97-6851-4569-a2ff-db7c9d43ad38",
+    "instruction": "制作合规交付包",
+    "action": "release",
+    "parameters": {
+      "run_id": "b02d435e-c66e-4ac8-bb49-855965d81058",
+      "title": "港湾验收交付",
+      "platform": "local-test",
+      "region": "CN"
+    },
+    "input_hash": "c5e4005334ae05bce6319e64e6c18070fb2a5f4eb5baf79abebd66506657c986",
+    "created_at": "2026-11-22T15:36:07.336770+00:00",
+    "approved_at": "2026-11-22T15:36:07.503691+00:00",
+    "external_cost_cents": 0,
+    "run_id": null,
+    "run": null,
+    "preview": null,
+    "task": {
+      "id": "41b32e07-c89a-4565-9a18-e6d121d28dbe",
+      "status": "succeeded",
+      "stage": "succeeded",
+      "progress": 100,
+      "elapsed_seconds": 0.3440000000045984,
+      "error": null
+    }
+  },
+  "reload_preserved_draft": true,
+  "unauthorized_delivery_blocked": true,
+  "real_api_budget_micros": 0
+}

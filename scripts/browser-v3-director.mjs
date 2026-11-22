@@ -38,10 +38,17 @@ const edit = await makeEdit('港湾首集剪辑')
 const second = await makeEdit('港湾第二集剪辑')
 const newSecond = await makeEdit('港湾第二集返工剪辑',6)
 const runsRoot = '/production'+scope+'/runs'
+const simulatedProvider=await post('/text/providers',{
+  label:'总导演离线验收',kind:'mock',enabled:true,
+  settings:{model:'offline-director-fixture',input_per_million:'1',output_per_million:'2'},
+})
+await post('/text'+scope+'/budgets',{mode:'mock',currency:'CNY',limit_micros:1_000_000,idempotency_key:'director-mock-budget'})
 
 const { command, evaluate, contains, click, setField, screenshot, errors, close } = await openChrome(19248)
 const root = '/director'+scope+'/plans'
+const adviceRoot = '/director'+scope+'/advice'
 const state = () => evaluate("document.querySelector('[data-testid=director-plan-status]')?.textContent.trim()")
+const adviceState = () => evaluate("document.querySelector('[data-testid=director-advice-status]')?.textContent.trim()")
 const selected = () => evaluate("document.querySelector('.director-history select')?.value")
 const hasOption = id => evaluate(`Array.from(document.querySelectorAll('select option')).some(item=>item.value===${JSON.stringify(id)})`)
 try {
@@ -58,8 +65,39 @@ try {
   await wait(async()=>await state()==='待批准','draft persisted')
   const renderPlan = await selected()
   assert.equal((await api(root+'/'+renderPlan)).task,null)
+  const alternative=await post(root,{instruction:'备用方案渲染第二集',operation:{action:'render',version_id:second.version_id},
+    idempotency_key:'alternate-advice-render'})
   await command('Page.reload')
   await wait(async()=>await state()==='待批准','draft persists across reload')
+  await wait(()=>hasOption(simulatedProvider.id),'offline provider configured')
+  await setField('模拟供应商',simulatedProvider.id)
+  await setField('规划目标','挑一个港湾短片先走本机合成')
+  for (const id of [renderPlan,alternative.id]) {
+    await wait(()=>evaluate(`(() => {
+      const box=document.querySelector('#director-model-planning input[value="'+${JSON.stringify(id)}+'"]')
+      if (!box) return false
+      box.click()
+      return true
+    })()`),'include fixed plan '+id)
+  }
+  await click('生成模拟规划建议')
+  await wait(async()=>await adviceState()==='待审核 · 离线模拟','persisted suggestion awaits review')
+  const [advice]=await api(adviceRoot)
+  assert.equal(advice.simulated,true)
+  assert.deepEqual(advice.request.plan_ids,[renderPlan,alternative.id])
+  assert.equal(advice.actual_cost_micros,null)
+  assert.equal(advice.budget_status,'settled')
+  await command('Page.reload')
+  await wait(async()=>await adviceState()==='待审核 · 离线模拟','planner recommendation persists after reload')
+  await evaluate("document.getElementById('director-model-planning').scrollIntoView({block:'start'})")
+  await screenshot('director-model-advice.png')
+  await setField('建议审核说明','核对生成建议，继续查看固定时间轴计划')
+  await click('采纳建议并查看计划')
+  await wait(async()=>await selected()===renderPlan,'recommendation reveals fixed plan')
+  const adopted=await api(adviceRoot+'/'+advice.id)
+  assert.equal(adopted.review.plan_id,renderPlan)
+  assert.equal((await api(root+'/'+renderPlan)).task,null)
+  assert.equal((await api(root+'/'+alternative.id)).task,null)
   await click('批准并执行')
   await wait(async()=>await state()==='处理成功','Worker render completed',40000)
   await wait(()=>evaluate("document.querySelector('video[aria-label=总导演成片预览]')?.readyState >= 1"),'render preview decodes')
@@ -117,7 +155,7 @@ try {
   await setField('目标平台标识','local-test')
   await click('生成执行计划')
   await wait(()=>contains('交付授权尚未通过'),'unapproved rights blocked')
-  assert.equal((await api(root)).length,3)
+  assert.equal((await api(root)).length,4)
   await post(`/library/assets/${asset.id}/rights`,{status:'approved',source_type:'owned',holder:'原创验收项目',
     evidence:'本机 FFmpeg 自制',commercial:true,regions:['CN'],platforms:['local-test'],idempotency_key:'rights'})
   await click('生成执行计划')
@@ -132,7 +170,7 @@ try {
   assert.deepEqual(errors,[])
   await screenshot('director-delivery.png')
   await writeFile(join(evidenceDir,'director-browser.json'), JSON.stringify({
-    project:project.id, fixed_timeline:edit.version_id, render:rendered, batch:initial, rework, delivery:pack,
+    project:project.id, fixed_timeline:edit.version_id, advice:adopted, render:rendered, batch:initial, rework, delivery:pack,
     reload_preserved_draft:true, unauthorized_delivery_blocked:true, real_api_budget_micros:0,
   },null,2)+'\n')
   console.log('PRISM director approved a local render, a two-episode batch, scoped rework, and rights-gated delivery')
