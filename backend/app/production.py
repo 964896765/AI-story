@@ -13,6 +13,7 @@ from .creative import require, version_ref
 from .db import session
 from .guardian import require_active_plan, require_reviewed_timeline
 from .guardian_audio import fixed_dialogue
+from .guardian_balance import RULE_VERSION as DIALOGUE_BALANCE_RULE
 from .models import ProductionEpisode, ProductionRun, Project, QualityReview, StoryVersion, Task, TaskEvent, now
 from .render import file_hash
 from .series import series_report
@@ -240,6 +241,10 @@ def prepare_episodes(db,project_id,body,policy):
         reuse = bool(render and keep_quality and prior_qc.status=='succeeded' and
                      prior_qc.input_snapshot.get('dialogue')==dialogue and
                      prior_qc.output.get('output_sha256')==render.output.get('sha256'))
+        if reuse and dialogue and any(track['enabled'] and track['volume'] and track['clips']
+                                      and track['role'] in {'music','sfx'} for track in timeline.content['tracks']):
+            balance = ((prior_qc.output.get('dialogue') or {}).get('balance') or {})
+            reuse = balance.get('rule_version') == DIALOGUE_BALANCE_RULE and balance['status'] != 'unavailable'
         episodes.append(PreparedEpisode(number,timeline,snapshot,render,prior_qc if reuse else None,dialogue))
     return plan, episodes
 

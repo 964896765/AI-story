@@ -5,6 +5,9 @@ import DialogueRecognitionField from './components/production/DialogueRecognitio
 
 interface Version { version_id:string; title:string; version:number; provenance?:{series_approved?:boolean} }
 interface Issue { code:string; severity:'warning'|'error'; detail:string; start_ms:number|null; end_ms:number|null; clips?:string[] }
+type DialogueBalance = {status:'clear'|'no_speech_signal'} | {
+  status:'review';start_ms:number;end_ms:number;dialogue_dbfs:number;background_dbfs:number;margin_db:number
+}
 interface Policy {
   require_audio:boolean; require_subtitles:boolean; black_ms:number; freeze_ms:number; silence_ms:number; silence_db:number
   min_integrated_lufs?:number|null; max_true_peak_dbtp?:number|null
@@ -21,7 +24,7 @@ interface Episode {
     dialogue?:{storyboard_version_id:string;voice_task_id:string;recognition:{status:string};
       lines:{shot_id:string;shot_number:number;text:string;speaker:string;voice:string;start_ms:number;end_ms:number;
         caption_status:string;caption:string|null;audio_status:string;max_window_rms_dbfs:number|null;
-        recognition?:{status:string;observed:string}}[]}
+        recognition?:{status:string;observed:string};balance?:DialogueBalance}[]}
   }|null
   review:{note:string}|null
 }
@@ -291,6 +294,13 @@ onUnmounted(()=>clearInterval(timer))
             <p class="hint">{{dialogueCaption[line.caption_status]}} · {{dialogueAudio[line.audio_status]}}<template v-if="line.max_window_rms_dbfs!==null"> · {{line.max_window_rms_dbfs}} dBFS</template> · 固定音色 {{line.voice}}</p>
             <p v-if="line.caption_status==='different'">成片字幕 · {{line.caption}}</p>
             <p v-if="line.recognition">听写{{line.recognition.status==='matched'?'一致':'待复核'}} · {{line.recognition.observed || '未识别到文字'}}</p>
+            <div v-if="line.balance?.status==='review'" class="balance-finding">
+              <strong>背景声可能盖住对白</strong>
+              <p>限幅前分轨 · 对白 {{metric(line.balance.dialogue_dbfs,'dBFS')}} · 背景 {{metric(line.balance.background_dbfs,'dBFS')}} · 电平差 {{metric(line.balance.margin_db,'dB')}}</p>
+              <button type="button" @click="previewEpisode(episode,line.balance.start_ms)">回听混音 {{(line.balance.start_ms/1000).toFixed(3)}} 秒</button>
+            </div>
+            <p v-else-if="line.balance?.status==='clear'" class="hint">分轨电平未触发遮盖告警</p>
+            <p v-else-if="line.balance?.status==='no_speech_signal'">对白轨信号过低，请回听成片。</p>
             <button v-if="episode.render_status==='succeeded'" type="button" @click="previewEpisode(episode,line.start_ms)">回听 {{(line.start_ms/1000).toFixed(3)}} 秒</button>
           </article>
         </details>
@@ -346,4 +356,5 @@ onUnmounted(()=>clearInterval(timer))
 .dialogue-report { margin:10px 0 }
 .dialogue-report article { border-top:1px solid var(--line-soft);padding:9px 0 }
 .dialogue-report p { margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere }
+.balance-finding { margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-inline-start:3px solid var(--accent);border-radius:6px }
 </style>

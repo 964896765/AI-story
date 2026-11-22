@@ -22,6 +22,7 @@ ENGINE = 'timeline-24fps-v1'
 VISUAL = {'main','overlay'}
 AUDIO = {'dialogue','music','sfx'}
 TIMESTAMP = re.compile(r'(\d+):(\d{2}):(\d{2}),(\d{3})')
+MEDIA_FORMATS = 'mov,matroska,webm,avi,wav,mp3'
 
 
 def sec(frames):
@@ -115,6 +116,13 @@ def audio_filter(index,clip,info,volume):
     return f"[{index}:{stream['index']}]{filters}[clipa{index}]"
 
 
+def audio_mix(labels,frames,*,limit=False):
+    mix = ''.join(labels)+f'amix=inputs={len(labels)}:duration=longest:normalize=0,'
+    if limit:
+        mix += 'alimiter=limit=0.94:level=false:latency=true,'
+    return mix+f'apad,atrim=end_sample={frames*SAMPLES_PER_FRAME}'
+
+
 def subtitle_ms(token):
     match = TIMESTAMP.fullmatch(token)
     h,m,s,ms = map(int,match.groups())
@@ -164,7 +172,7 @@ def render_graph(timeline, paths, work, update):
                 args += ['-protocol_whitelist','file,pipe','-f',DEMUXERS[suffix],'-i',str(source)]
                 info = None
             else:
-                args += ['-protocol_whitelist','file,pipe','-format_whitelist','mov,matroska,webm,avi,wav,mp3','-i',str(source)]
+                args += ['-protocol_whitelist','file,pipe','-format_whitelist',MEDIA_FORMATS,'-i',str(source)]
                 if source not in cache:
                     cache[source]=probe(source)
                 info = cache[source]
@@ -190,9 +198,7 @@ def render_graph(timeline, paths, work, update):
     else:
         graph.append(f'[{composite}]format=yuv420p[outv]')
     if audios:
-        graph.append(''.join(audios)+f'amix=inputs={len(audios)}:duration=longest:normalize=0,'
-                     'alimiter=limit=0.94:level=false:latency=true,'
-                     f'apad,atrim=end_sample={timeline.frames*SAMPLES_PER_FRAME}[outa]')
+        graph.append(audio_mix(audios,timeline.frames,limit=True)+'[outa]')
     return args,graph,bool(audios)
 
 

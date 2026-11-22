@@ -8,6 +8,7 @@ from . import storage
 from .analysis_engine import Commands, parse_cues
 from .generation import SIZES
 from .guardian_audio import check_dialogue
+from .guardian_balance import check_balance
 from .media import probe
 from .render import file_hash, validate_srt_text
 
@@ -92,7 +93,7 @@ def qa_output(render,policy,update,task_id,attempt,*,dialogue=None):
         values = {'code':code,'severity':level,'detail':detail,'start_ms':start,'end_ms':end}
         if start is not None:
             roles = {'main','overlay'}
-            if code=='silence':
+            if code in ('silence','dialogue_background_masking'):
                 roles = {'dialogue','music','sfx'}
             elif code.startswith('dialogue_'):
                 roles = {'dialogue'}
@@ -190,5 +191,7 @@ def qa_output(render,policy,update,task_id,attempt,*,dialogue=None):
                     for track in timeline['tracks'])
         result['dialogue'] = check_dialogue(commands,path,duration_ms,dialogue,cues,has_audio,
                                             policy.get('dialogue_asr_language'),add,muted=muted)
+        if has_audio and active_roles & {'music','sfx'} and not muted:
+            result['dialogue']['balance'] = check_balance(commands,render,result['dialogue']['lines'],add)
     update('qc_report',97)
     return result

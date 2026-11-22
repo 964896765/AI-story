@@ -384,11 +384,81 @@ try {
   await blocked(`/production/runs/${muted.id}/episodes/1/review`,{
     expected_sha256:mutedResult.episodes[0].qc.output_sha256,note:'不能通过静音',idempotency_key:'mute-review'},409)
 
+  const bedFile=join(qaRoot,'guardian-music.wav')
+  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','sine=frequency=630:sample_rate=48000:duration=9',
+    '-af','volume=3',bedFile],{timeout:15000})
+  const bedUpload=new FormData()
+  bedUpload.set('file',new Blob([await readFile(bedFile)]),'原创验收背景音.wav')
+  bedUpload.set('authorization','本机生成的测试音')
+  const bed=await api(path+'/assets',{method:'POST',body:bedUpload})
+  const withBed=await create('timeline','疑似盖住对白的混音',{...edit.content,tracks:[...edit.content.tracks,
+    {id:'music',role:'music',clips:[{id:'loud-bed',asset_id:bed.id,at:0,frames}]}]},'overpowering-music')
+  const masking=await post('/production'+path+'/runs',{...runBody,previous_run_id:run.id,
+    timelines:[{number:1,timeline_version_id:withBed.version_id}],idempotency_key:'check-dialogue-balance'})
+  let maskingResult
+  await wait(async()=>{
+    maskingResult=await api('/production/runs/'+masking.id)
+    return maskingResult.status!=='processing'
+  },'actual mix quality report',55000)
+  const affected=maskingResult.episodes[0]
+  assert.equal(maskingResult.status,'needs_review',JSON.stringify(affected))
+  const maskingIssue=affected.qc.issues.find(issue=>issue.code==='dialogue_background_masking')
+  assert(maskingIssue,'deliberately strong background should require review: '+JSON.stringify(affected.qc))
+  assert.deepEqual(maskingIssue.clips,['dialogue','loud-bed'])
+  const flaggedBalance=affected.qc.dialogue.lines[0].balance
+  assert.equal(flaggedBalance.status,'review')
+  assert(flaggedBalance.margin_db<6 && maskingIssue.end_ms-maskingIssue.start_ms>=300)
+  await command('Page.navigate',{url:appLink('/production',{run:masking.id,episode:1})})
+  await wait(()=>contains('第 5 镜的背景声可能盖住对白'),'auditable masking finding in production')
+  await evaluate("document.querySelector('.dialogue-report').open=true")
+  await click(`回听混音 ${(maskingIssue.start_ms/1000).toFixed(3)} 秒`)
+  await wait(()=>evaluate(`Math.abs(document.querySelector('.review-preview video')?.currentTime-${maskingIssue.start_ms/1000})<0.1`),
+    'actual final mix seeks to measured range')
+  await evaluate("document.querySelector('.dialogue-report').scrollIntoView({block:'center'})")
+  await screenshot('guardian-dialogue-balance.png')
+  await click('定位关联片段 2')
+  await wait(()=>evaluate("document.activeElement?.dataset.clipId==='loud-bed'"),'background clip focused in timeline')
+  await evaluate(`(() => {
+    const number=document.querySelector('.lane[data-role="music"] input[type="number"]')
+    number.value='0.01'
+    number.dispatchEvent(new Event('input',{bubbles:true}))
+  })()`)
+  await click('保存时间轴版本')
+  await wait(()=>contains('时间轴 v2 已保存'),'balance correction saved as new timeline')
+  const fixedMix=(await api(path+'/story/entities?kind=timeline')).items.find(item=>item.id===withBed.id)
+  assert.equal(fixedMix.version,2)
+  await click('返回原质检批次')
+  await wait(()=>contains('第 5 镜的背景声可能盖住对白'),'original quality evidence preserved')
+  await click('按此批次局部返工')
+  await wait(()=>evaluate(`!!document.querySelector('.production select option[value="${fixedMix.version_id}"]')`),'fixed timeline available for rework')
+  await setField('第 1 集 · 第 1 集',fixedMix.version_id)
+  await click('提交渲染和质检')
+  let balanced
+  await wait(async()=>{
+    const batches=await api('/production'+path+'/runs')
+    const repair=batches.find(item=>item.previous_run_id===masking.id)
+    if(!repair || repair.status==='processing') return false
+    balanced=await api('/production/runs/'+repair.id)
+    return true
+  },'actual adjusted mix and targeted QC',55000)
+  const adjusted=balanced.episodes[0]
+  const clearedBalance=adjusted.qc?.dialogue?.lines[0]?.balance
+  assert.equal(clearedBalance?.status,'clear',JSON.stringify(adjusted))
+  assert.equal(balanced.episodes[1].qc_task_id,maskingResult.episodes[1].qc_task_id)
+  assert.equal((await api('/production/runs/'+masking.id)).status,'needs_review')
+  if(balanced.status==='needs_review') {
+    balanced=await post(`/production/runs/${balanced.id}/episodes/1/review`,{
+      expected_sha256:adjusted.qc.output_sha256,note:'已核对调低背景声后的成片和其他非阻断告警',idempotency_key:'balanced-episode-review',
+    })
+  }
+  assert.equal(balanced.status,'passed')
+
   const packagePath='/delivery'+path+'/packages'
-  const packageBody={run_id:run.id,title:'Guardian 原创剧验收',platform:'local-test',region:'CN',idempotency_key:'package'}
+  const packageBody={run_id:balanced.id,title:'Guardian 原创剧验收',platform:'local-test',region:'CN',idempotency_key:'package'}
   await blocked(packagePath,{...packageBody,run_id:muted.id,idempotency_key:'mute-delivery'},409)
+  await blocked(packagePath,{...packageBody,run_id:masking.id,idempotency_key:'unreviewed-mix-delivery'},409)
   await blocked(packagePath,packageBody,409)
-  const readiness=await api(`/delivery${path}/runs/${run.id}/readiness?platform=local-test&region=CN`)
+  const readiness=await api(`/delivery${path}/runs/${balanced.id}/readiness?platform=local-test&region=CN`)
   assert(!readiness.blockers.some(item=>item.asset_id===before[4].asset_id),'replaced clip is outside delivery rights scope')
   for(const item of readiness.blockers){
     await post('/library/assets/'+item.asset_id+'/rights',{status:'approved',source_type:'owned',holder:'原创验收样片制作者',
@@ -409,6 +479,7 @@ try {
   assert(bytes.includes(Buffer.from('guardian-visual-luma-v1')))
   assert(bytes.includes(Buffer.from('guardian-screen-text-v1')))
   assert(bytes.includes(Buffer.from('guardian-dialogue-v1')))
+  assert(bytes.includes(Buffer.from('guardian-dialogue-balance-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -431,10 +502,14 @@ try {
       issue:visual.findings[0],human_approval_blocked:true,rejection_preserved:true},
     detected_scripted_continuity_blockers:blockingCodes,accepted_clean_plan_has_no_blockers:true,
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
-    reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:run.id,
+    reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:balanced.id,
     screen_text:{matched,mismatch,explicit_review_gate:true,contract_saved_in_browser:true,export_included:true},
     dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
       muted_delivery_blocked:true,unchanged_episode_reused:true},
+    dialogue_balance:{flagged:flaggedBalance,finding:maskingIssue,corrected:clearedBalance,
+      historical_timeline_version:withBed.version_id,corrected_timeline_version:fixedMix.version_id,
+      focused_music_clip_in_browser:true,exact_preview_seek:true,unreviewed_delivery_blocked:true,
+      unaffected_episode_qc_reused:true,verified_zip_contains_balance_report:true},
     shot_rework:{task_id:regen.id,old_timeline:originalTimeline.version_id,new_timeline:replacement.version_id,
       unchanged_clips_in_affected_episode:4,original_timeline_preserved:true},
     verified_delivery_bytes:bytes.length,verified_delivery_sha256:receipt.sha256,guardian_delivery_manifest:true,

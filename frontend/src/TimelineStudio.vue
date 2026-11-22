@@ -325,7 +325,7 @@ onUnmounted(()=>clearInterval(timer))
                 <strong>{{ labels[lane.role] }}</strong>
                 <label class="check"><input v-model="lane.enabled" type="checkbox">启用</label>
                 <label class="check"><input v-model="lane.locked" type="checkbox">锁定</label>
-                <label v-if="['dialogue','music','sfx'].includes(lane.role)">音量<input v-model.number="lane.volume" :disabled="lane.locked" type="number" min="0" max="4" step="0.05"></label>
+                <label v-if="['dialogue','music','sfx'].includes(lane.role)">音量<input v-model.number="lane.volume" :disabled="lane.locked" type="number" min="0" max="4" step="any"></label>
                 <button type="button" :disabled="lane.locked || index===0" @click="moveTrack(index,-1)">上移</button>
                 <button type="button" :disabled="lane.locked || index===timeline.tracks.length-1" @click="moveTrack(index,1)">下移</button>
                 <button type="button" :disabled="lane.locked || lane.clips.length>=40" @click="addClip(lane)">添加片段</button>
