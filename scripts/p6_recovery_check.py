@@ -62,7 +62,7 @@ def manifest(connection, storage, revision, complete=False):
             files[output['caption_storage_key']] = output.get('caption_sha256')
         for item in output.get('files', {}).values() if isinstance(output.get('files'), dict) else ():
             files[item['storage_key']] = item['sha256']
-    if revision in ('0007','0008','0009','0010','0011','0012','0013','0014'):
+    if revision in ('0007','0008','0009','0010','0011','0012','0013','0014','0015'):
         for (payload,) in connection.execute('SELECT payload FROM media_analyses'):
             for artifact in payload['artifacts']:
                 files[artifact['storage_key']] = artifact['sha256']
@@ -84,7 +84,7 @@ import json, os
 with TestClient(app) as client:
     health = client.get('/api/health').json()['checks']
     assert health['database'] and health['ffmpeg'] and health['ffprobe']
-    if os.environ['AI_STORY_RESTORE_REVISION'] == '0014':
+    if os.environ['AI_STORY_RESTORE_REVISION'] == '0015':
         assert health['schema']
     projects = client.get('/api/projects').json()
     assets = [asset for project in projects for asset in client.get('/api/projects/'+project['id']+'/assets').json()]
@@ -153,7 +153,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
-    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14','director'], default='p6')
+    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14','director','director-batches'], default='p6')
     args = parser.parse_args()
     if args.upgrade:
         for port in (18000, 15173):
@@ -178,10 +178,12 @@ def main():
         'p6':('0006','0007'),'p7':('0007','0008'),'p10':('0008','0009'),'p11':('0009','0010'),
         'p12':('0010','0011'),'p13':('0011','0012'),'p14':('0012','0013'),
         'director':('0013','0014'),
+        'director-batches':('0014','0015'),
     }[args.stage]
     directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
-    report = snapshot_and_verify(source, storage, container, directory, before, target, complete=args.stage in ('p14','director'))
+    report = snapshot_and_verify(source, storage, container, directory, before, target,
+                                 complete=args.stage in ('p14','director','director-batches'))
     report['backup_directory'] = directory.relative_to(ROOT).as_posix()
     if args.upgrade:
         run_alembic(source,'upgrade',target)

@@ -1,4 +1,6 @@
 """Build persistent per-episode render → QC graphs with scoped rework."""
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -10,7 +12,7 @@ from .analysis_service import fingerprint
 from .creative import require, version_ref
 from .db import session
 from .guardian import require_active_plan, require_reviewed_timeline
-from .models import ProductionEpisode, ProductionRun, Project, QualityReview, Task, TaskEvent, now
+from .models import ProductionEpisode, ProductionRun, Project, QualityReview, StoryVersion, Task, TaskEvent, now
 from .render import file_hash
 from .series import series_report
 from .story_schemas import Strict
@@ -36,19 +38,37 @@ class Policy(Strict):
     max_true_peak_dbtp: float|None=Field(default=None,ge=-20,le=0)
 
 
-class RunRequest(Strict):
+class RunOptions(Strict):
     plan_version_id: str=Field(min_length=1,max_length=36)
     previous_run_id: str | None=Field(default=None,min_length=1,max_length=36)
     timelines: list[Ref]=Field(max_length=60)
     policy: Policy=Field(default_factory=Policy)
     recheck_quality: bool=False
-    idempotency_key: str=Field(min_length=1,max_length=64)
 
     @model_validator(mode='after')
     def check_initial_run(self):
         if not self.previous_run_id and (not self.timelines or self.recheck_quality):
             raise ValueError('新批次需固定各集时间轴，复检需指定上一批次')
         return self
+
+
+class RunRequest(RunOptions):
+    idempotency_key: str=Field(min_length=1,max_length=64)
+
+
+@dataclass(frozen=True)
+class PreparedEpisode:
+    number: int
+    version: StoryVersion
+    snapshot: dict
+    render: Task | None
+    qc: Task | None
+
+    @property
+    def mode(self):
+        if self.qc:
+            return 'reuse'
+        return 'recheck' if self.render else 'render'
 
 
 class ReviewRequest(Strict):
@@ -86,7 +106,7 @@ def render_intact(render,qc=None):
         return False
 
 
-def public(db,run,*,details=True):
+def public(db,run,*,details=True,include_episodes=False):
     rows = episode_rows(db,run.id)
     task_ids = {task_id for row in rows for task_id in (row.render_task_id,row.qc_task_id)}
     tasks = {task.id:task for task in db.scalars(select(Task).where(Task.id.in_(task_ids))).all()}
@@ -123,18 +143,18 @@ def public(db,run,*,details=True):
     state = next((item for item in ('processing','needs_rework','needs_review','cancelled') if item in statuses),'passed')
     return {'id':run.id,'workflow':WORKFLOW,'plan_version_id':run.plan_version_id,
             'previous_run_id':run.previous_run_id,'status':state,'created_at':run.created_at,
-            'episode_count':len(episodes),'episodes':episodes if details else None,
+            'episode_count':len(episodes),'episodes':episodes if details or include_episodes else None,
             'policy':run.policy,'passed':sum(unit['status']=='passed' for unit in episodes),
             'reused':sum(unit['reused'] for unit in episodes),
             'rechecked':sum(unit['render_reused'] and not unit['reused'] for unit in episodes)}
 
 
-def add_tasks(db,run,version,number,render=None):
-    reuse = render is not None
-    if not reuse:
+def add_tasks(db,run,episode):
+    version,number,render = episode.version,episode.number,episode.render
+    if render is None:
         render = Task(project_id=run.project_id,kind='timeline_render',story_version_id=version.id,
             idempotency_key=f'production:{run.id}:{number}:render',parameters={'timeline':version.content},
-            input_snapshot={'version_hash':version.content_hash,'assets':all_source_versions(db,run.project_id,version.content)})
+            input_snapshot=episode.snapshot)
         db.add(render)
         db.flush()
         db.add(TaskEvent(task_id=render.id,attempt=0,message='整剧渲染步骤已排队'))
@@ -143,7 +163,7 @@ def add_tasks(db,run,version,number,render=None):
         parameters=run.policy,input_snapshot={'render_task_id':render.id})
     db.add(qc)
     db.flush()
-    db.add(TaskEvent(task_id=qc.id,attempt=0,message='使用已核对的成片重新执行技术质检' if reuse else '技术质检等待固定渲染产物'))
+    db.add(TaskEvent(task_id=qc.id,attempt=0,message='使用已核对的成片重新执行技术质检' if episode.render else '技术质检等待固定渲染产物'))
     return render.id,qc.id
 
 
@@ -162,6 +182,13 @@ def submit(project_id:str,body:RunRequest,db=Depends(session)):
         if prior.request_hash!=request_hash:
             raise HTTPException(409,'请求键已用于其他生产批次')
         return public(db,prior)
+    plan, episodes = prepare_episodes(db,project_id,body,policy)
+    run = enqueue_run(db,project_id,body,policy,episodes,body.idempotency_key,request_hash)
+    db.commit()
+    return public(db,run)
+
+
+def prepare_episodes(db,project_id,body,policy):
     entity,plan = version_ref(db,project_id,body.plan_version_id,{'story_bible'})
     plan_report = series_report(db,entity,plan)
     if not plan_report['approved']:
@@ -183,11 +210,7 @@ def submit(project_id:str,body:RunRequest,db=Depends(session)):
     versions = {number:row.timeline_version_id for number,row in old_rows.items()} | items
     if set(versions)!={entry['number'] for entry in plan_report['episodes']}:
         raise HTTPException(422,'整剧生产必须覆盖批准计划中的全部分集')
-    run = ProductionRun(project_id=project_id,plan_version_id=plan.id,
-                        previous_run_id=body.previous_run_id,request_key=body.idempotency_key,
-                        request_hash=request_hash,policy=policy)
-    db.add(run)
-    db.flush()
+    episodes = []
     for entry in plan_report['episodes']:
         number = entry['number']
         _,timeline = version_ref(db,project_id,versions[number],{'timeline'})
@@ -197,20 +220,32 @@ def submit(project_id:str,body:RunRequest,db=Depends(session)):
         if assembly and assembly['episode']!=number:
             raise HTTPException(422,f'第 {number} 集和自动装配记录不匹配')
         require_reviewed_timeline(db,plan,entry,timeline.content)
+        snapshot = {'version_hash':timeline.content_hash,'assets':all_source_versions(db,project_id,timeline.content)}
         old = old_rows.get(number)
         render = prior_qc = None
         if old and old.timeline_version_id==timeline.id:
             previous_render = db.get(Task,old.render_task_id)
             prior_qc = db.get(Task,old.qc_task_id)
-            if previous_render.status=='succeeded' and render_intact(previous_render,prior_qc):
+            if (previous_render.status=='succeeded' and previous_render.input_snapshot==snapshot
+                and render_intact(previous_render,prior_qc)):
                 render = previous_render
         reuse = bool(render and keep_quality and prior_qc.status=='succeeded' and
                      prior_qc.output.get('output_sha256')==render.output.get('sha256'))
-        render_id,qc_id = (render.id,prior_qc.id) if reuse else add_tasks(db,run,timeline,number,render=render)
-        db.add(ProductionEpisode(run_id=run.id,number=number,timeline_version_id=timeline.id,
-                                 render_task_id=render_id,qc_task_id=qc_id,reused=reuse))
-    db.commit()
-    return public(db,run)
+        episodes.append(PreparedEpisode(number,timeline,snapshot,render,prior_qc if reuse else None))
+    return plan, episodes
+
+
+def enqueue_run(db,project_id,body,policy,episodes,key,request_hash):
+    run = ProductionRun(project_id=project_id,plan_version_id=body.plan_version_id,
+                        previous_run_id=body.previous_run_id,request_key=key,
+                        request_hash=request_hash,policy=policy)
+    db.add(run)
+    db.flush()
+    for episode in episodes:
+        render_id,qc_id = (episode.render.id,episode.qc.id) if episode.qc else add_tasks(db,run,episode)
+        db.add(ProductionEpisode(run_id=run.id,number=episode.number,timeline_version_id=episode.version.id,
+                                 render_task_id=render_id,qc_task_id=qc_id,reused=episode.qc is not None))
+    return run
 
 
 @router.get('/projects/{project_id}/runs')

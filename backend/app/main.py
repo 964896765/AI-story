@@ -130,7 +130,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0014'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0015'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})

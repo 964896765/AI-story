@@ -114,9 +114,11 @@ class DirectorPlan(Base):
     parameters: Mapped[dict] = mapped_column(JSON)
     input_hash: Mapped[str] = mapped_column(String(64))
     task_id: Mapped[str | None] = mapped_column(ForeignKey('tasks.id'), unique=True)
+    run_id: Mapped[str | None] = mapped_column(ForeignKey('production_runs.id', name='fk_director_plans_run'))
+    preview: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    __table_args__ = (UniqueConstraint('project_id','request_key'),)
+    __table_args__ = (UniqueConstraint('project_id','request_key'), UniqueConstraint('run_id',name='uq_director_plans_run'))
 
 class ProductionRun(Base):
     __tablename__ = 'production_runs'

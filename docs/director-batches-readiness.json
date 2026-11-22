@@ -1,0 +1,10 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "projects_checked": 7,
+  "batch_options_checked": 0,
+  "director_route_http": 200,
+  "live_api_authorized": false,
+  "live_budget_micros": 0
+}
