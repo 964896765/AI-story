@@ -50,6 +50,7 @@ export const statusLabels: Record<string,string> = {
   analysis_asr:'Windows 本机语音转写',
   analysis_asr_chunk:'校验转写分段',
   analysis_cache:'检查缓存', retry_wait:'等待重试', recovered:'中断恢复', inspecting:'检查输入',
+  guardian_visual_check:'逐帧视觉技术检查', guardian_frames:'提取视觉证据帧',
 }
 export const clock = (us: number) => {
   const ms = Math.max(0, Math.round(us / 1000))

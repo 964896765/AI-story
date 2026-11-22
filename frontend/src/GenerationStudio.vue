@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { request, statusLabels } from './analysisApi'
+import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from './components/production/VisualCandidateCheck.vue'
 
 type Preset = 'push_in'|'pull_out'|'pan_right'
 interface Candidate {
@@ -10,6 +11,7 @@ interface Candidate {
   guardian?:{contract_sha256:string}|null
   output:{duration?:number; width?:number; height?:number; reused_from_task_id?:string;
     guardian_frames?:{index:number;time_ms:number}[];
+    guardian_visual?:VisualReport;
     guardian_review?:{request:{decision:'approved'|'rejected';note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
 const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialPlan?:string;initialShot?:string;initialAsset?:string;initialCandidate?:string}>()
@@ -23,11 +25,14 @@ const verdict=ref<'approved'|'rejected'>('approved'), category=ref(''), evidence
 const categories={identity:'角色身份',wardrobe:'服装',prop:'道具',scene:'场景',continuity:'连续性',shot_mismatch:'画面与分镜不符',technical:'技术缺陷',other:'其他'}
 const modeList=ref<{id:string; available:boolean; label:string}[]>([])
 const compareId=ref('')
+const player=ref<HTMLVideoElement|null>(null), markedEvidence=ref<number|null>(null)
 const keys=new Map<string,string>()
 let timer:ReturnType<typeof setInterval>|undefined
 let refreshing=false
 const base=`/generation/projects/${props.projectId}`
 const selected=computed(()=>candidates.value.find(item=>item.id===preview.value))
+const evidenceFrames=computed(()=>(selected.value?.output.guardian_frames || []).slice().sort((a,b)=>a.time_ms-b.time_ms))
+const visualBlocked=computed(()=>selected.value?.output.guardian_visual?.status==='blocked')
 
 async function run(action:()=>Promise<void>){
   busy.value=true
@@ -60,6 +65,25 @@ function open(candidate:Candidate){
   verdict.value='approved'
   category.value=''
   evidenceIndex.value=null
+  markedEvidence.value=null
+  if (candidate.output.guardian_visual?.status==='blocked') markBlocked(candidate.output.guardian_visual)
+}
+function markBlocked(report:VisualReport) {
+  verdict.value='rejected'
+  category.value='technical'
+  evidenceIndex.value=report.findings[0]?.evidence.index ?? null
+}
+watch(visualBlocked, blocked=>{
+  const report=selected.value?.output.guardian_visual
+  if (blocked && report) markBlocked(report)
+})
+function seekEvidence(frame:VisualEvidence) {
+  markedEvidence.value=frame.index
+  const media=player.value
+  if (!media) return
+  const seek=()=>{media.currentTime=frame.time_ms/1000}
+  if (media.readyState) seek()
+  else media.addEventListener('loadedmetadata',seek,{once:true})
 }
 async function reviewContent(){
   const item=selected.value
@@ -141,7 +165,7 @@ onUnmounted(()=>clearInterval(timer))
       <section>
         <h2>候选对比与采纳</h2>
         <div v-if="selected?.status==='succeeded'" class="candidate-monitors" :class="{comparing:compareId && compareId!==selected.id}">
-          <video :key="selected.id" controls preload="metadata" :src="`/api/generation/candidates/${selected.id}/video`" aria-label="当前候选"></video>
+          <video ref="player" :key="selected.id" controls preload="metadata" :src="`/api/generation/candidates/${selected.id}/video`" aria-label="当前候选"></video>
           <video v-if="compareId && compareId!==selected.id" :key="compareId" controls preload="metadata" :src="`/api/generation/candidates/${compareId}/video`" aria-label="对比候选"></video>
         </div>
         <figure v-else-if="assetId" class="generation-reference"><img :src="`/api/assets/${assetId}/media`" alt="运镜参考图"><figcaption>输入参考图</figcaption></figure>
@@ -153,24 +177,25 @@ onUnmounted(()=>clearInterval(timer))
         <template v-if="selected?.status==='succeeded' && selected.guardian">
           <div class="candidate-evidence">
             <figure><img :src="`/api/assets/${selected.asset_id}/media`" alt="批准源图"><figcaption>批准源图</figcaption></figure>
-            <figure v-for="frame in selected.output.guardian_frames" :key="frame.index">
+            <figure v-for="frame in evidenceFrames" :key="frame.index" :class="{'marked-evidence':markedEvidence===frame.index}">
               <img :src="`/api/generation/candidates/${selected.id}/guardian-frames/${frame.index}`" :alt="`证据帧 ${frame.time_ms} 毫秒`">
               <figcaption>{{(frame.time_ms/1000).toFixed(3)}} 秒</figcaption>
             </figure>
           </div>
+          <VisualCandidateCheck :report="selected.output.guardian_visual" @evidence="seekEvidence" />
           <p v-if="selected.output.guardian_review">{{selected.output.guardian_review.request.decision==='approved'?'人工内容审核通过':'候选已退回'}} · {{selected.output.guardian_review.request.note}}</p>
           <form v-else class="create content-review" @submit.prevent="reviewContent">
-            <label>内容审核决定<select v-model="verdict"><option value="approved">通过</option><option value="rejected">退回</option></select></label>
+            <label>内容审核决定<select v-model="verdict"><option value="approved" :disabled="visualBlocked">通过</option><option value="rejected">退回</option></select></label>
             <template v-if="verdict==='rejected'">
               <label>问题类别<select v-model="category" required><option value="">选择问题类别</option>
                 <option v-for="(label,key) in categories" :key="key" :value="key">{{label}}</option>
               </select></label>
               <label>问题证据帧<select v-model="evidenceIndex" required><option :value="null" disabled>选择时间点</option>
-                <option v-for="frame in selected.output.guardian_frames" :key="frame.index" :value="frame.index">{{(frame.time_ms/1000).toFixed(3)}} 秒</option>
+                <option v-for="frame in evidenceFrames" :key="frame.index" :value="frame.index">{{(frame.time_ms/1000).toFixed(3)}} 秒</option>
               </select></label>
             </template>
             <label>内容审核说明<textarea v-model="reviewNote" required maxlength="2000"></textarea></label>
-            <button :disabled="busy || !reviewNote.trim() || (verdict==='rejected' && (!category || evidenceIndex===null))">保存内容审核</button>
+            <button :disabled="busy || !reviewNote.trim() || (visualBlocked && verdict==='approved') || (verdict==='rejected' && (!category || evidenceIndex===null))">保存内容审核</button>
           </form>
         </template>
         <form v-if="!selected?.selected_asset_id && selected?.status==='succeeded' && (!selected.guardian || selected.output.guardian_review?.request.decision==='approved')" class="create" @submit.prevent="accept">
@@ -199,6 +224,7 @@ onUnmounted(()=>clearInterval(timer))
           <strong>{{ labels[item.parameters.preset] }} · {{ assets.find(asset=>asset.id===item.asset_id)?.name }}</strong>
           <p v-if="item.parameters.shot_id" class="mono">{{ item.parameters.shot_id }}</p>
           <p>{{ statusLabels[item.status] || item.status }} · {{ statusLabels[item.stage] || item.stage }}</p>
+          <p v-if="item.output.guardian_visual?.status==='blocked'" class="error">技术检查阻断</p>
           <p v-if="item.status==='succeeded'">{{ item.output.width }} × {{ item.output.height }} · {{ item.output.duration?.toFixed(2) }} 秒<span v-if="item.output.reused_from_task_id"> · 已核验复用</span></p>
           <p v-if="item.error" class="error">{{ item.error }}</p>
         </div>
@@ -224,6 +250,7 @@ onUnmounted(()=>clearInterval(timer))
 .candidate-evidence figure { margin:0; min-width:0 }
 .candidate-evidence img { width:100%; aspect-ratio:1.25; object-fit:contain; background:var(--surface-base); border-radius:6px }
 .candidate-evidence figcaption { color:var(--ink-muted); font-size:12px }
+.candidate-evidence .marked-evidence img { outline:2px solid var(--accent);outline-offset:-2px }
 @media(max-width:1050px) { .generation-desk { grid-template-columns:minmax(200px,.95fr) minmax(250px,2fr) } .generation-checks { grid-column:1/-1 } }
 @media(max-width:700px) { .generation-desk,.candidate-monitors.comparing { grid-template-columns:minmax(0,1fr) } }
 </style>

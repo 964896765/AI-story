@@ -23,13 +23,14 @@ async function blocked(route,body,status){
   const response=await fetch(base+'/api'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
   assert.equal(response.status,status,await response.text())
 }
-async function artwork(name,{background='0x20445c',face='0xffc79a',coat='0x2ddd9a',subject=true}={}) {
+async function artwork(name,{background='0x20445c',face='0xffc79a',coat='0x2ddd9a',subject=true,black=false}={}) {
   const filename=join(qaRoot,name+'.png')
   const shapes=[`drawbox=x=0:y=130:w=320:h=110:color=${background}:t=fill`,
     'drawbox=x=197:y=58:w=45:h=52:color=0xdfa582:t=fill','drawbox=x=179:y=110:w=80:h=100:color=0x5b4296:t=fill']
   if(subject)shapes.push(`drawbox=x=78:y=60:w=49:h=52:color=${face}:t=fill`,
     `drawbox=x=62:y=111:w=82:h=95:color=${coat}:t=fill`,'drawbox=x=44:y=138:w=26:h=18:color=white:t=fill')
-  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','testsrc2=size=320x240','-vf',shapes.join(','),
+  const filter = black ? ['color=black:s=320x240'] : ['testsrc2=size=320x240','-vf',shapes.join(',')]
+  execFileSync('ffmpeg',['-v','error','-f','lavfi','-i',...filter,
     '-frames:v','1','-threads','1',filename],{timeout:15000})
   const upload=new FormData()
   upload.set('file',new Blob([await readFile(filename)]),name+'.png')
@@ -40,6 +41,7 @@ const [coast,room,wrongIdentity,wrongWardrobe,wrongScene,wrongShot]=await Promis
   artwork('coast'),artwork('room',{background:'0x543747'}),artwork('wrong-identity',{face:'0xba6847'}),
   artwork('wrong-wardrobe',{coat:'0xf54d58'}),artwork('wrong-scene',{background:'0xf7b942'}),artwork('wrong-shot',{subject:false}),
 ])
+const blackArtwork=await artwork('technical-black',{black:true})
 const installed=(await api('/voice/capabilities')).voices
 const voice=installed.find(item=>item.locale==='zh-CN')
 assert(voice,'Chinese Windows offline voice is required for this acceptance')
@@ -62,7 +64,7 @@ for (const [offset,[scene,art]] of [[exterior,coast],[interior,room]].entries())
   const shots=Array.from({length:5},(_,index)=>({number:index+1,shot_id:`ep${number}-shot${index+1}`,description:`灯塔镜头 ${index+1}`,
     planned_duration:number===1 && index===4 ? 2 : 1,scene_version_id:scene.version_id,character_version_ids:ids,strategy:'still_motion',
     contract:{visual:'左侧阿青持白信，右侧是守塔人',facts:{deadline:'日落前交信'},opening:structuredClone(states),closing:structuredClone(states),
-      source_image_asset_ids:[art.id,...(number===1 && index===0 ? defects.map(([,image])=>image.id):[])]},
+      source_image_asset_ids:[art.id,...(number===1 && index===0 ? [...defects.map(([,image])=>image.id),blackArtwork.id]:[])]},
   }))
   if(number===1)Object.assign(shots[4],{dialogue:'好。',dialogue_ms:600,speaker_version_id:actor.version_id})
   const invalid=structuredClone(shots)
@@ -99,12 +101,13 @@ for(const [index,episode] of report.episodes.entries()){
 }
 const rejected=[]
 for(const [category,image] of defects)rejected.push([category,await enqueue(approved,report.episodes[0].shots[0],image,'injected-'+category)])
+const technical=await enqueue(approved,report.episodes[0].shots[0],blackArtwork,'injected-technical-black')
 const ready=async ids=>{
   const tasks=await api('/generation'+path+'/candidates')
   if(tasks.some(task=>ids.includes(task.id) && task.status==='failed'))throw new Error(JSON.stringify(tasks.filter(task=>task.status==='failed')))
   return ids.every(id=>tasks.some(task=>task.id===id && task.status==='succeeded'))
 }
-await wait(()=>ready([...staged,...rejected.map(([,job])=>job)].map(job=>job.id)),'all original and injected local FFmpeg candidates',75000)
+await wait(()=>ready([...staged,...rejected.map(([,job])=>job),technical].map(job=>job.id)),'all original and injected local FFmpeg candidates',75000)
 
 const {command,evaluate,contains,click,setField,screenshot,errors,close}=await openChrome(19241)
 const appLink=(route,query={})=>base+route+'?'+new URLSearchParams({project:project.id,...query})
@@ -144,6 +147,25 @@ try {
     assert.equal(verdict.evidence.time_ms,500)
     await blocked(taskRoot(job.id)+'/select',selection,409)
   }
+  await command('Page.navigate',{url:appLink('/ai/candidates',{plan:approved.version_id,shot:'ep1-shot1',asset:blackArtwork.id,candidate:technical.id})})
+  await wait(()=>evaluate("document.querySelector('[data-testid=visual-check-status]')?.textContent.trim()==='技术检查阻断'"),'black candidate blocked in Chrome')
+  const result=(await api('/generation'+path+'/candidates')).find(item=>item.id===technical.id)
+  const visual=result.output.guardian_visual
+  const point=visual.findings[0].evidence
+  assert.equal(visual.output_sha256,result.output.sha256)
+  assert.equal(visual.black_frames,24)
+  assert.equal(visual.findings[0].code,'black_output')
+  await click('定位证据')
+  await wait(()=>evaluate(`Math.abs(document.querySelector('video[aria-label="当前候选"]').currentTime-${point.time_ms/1000})<0.05`),'locates the actual evidence frame')
+  assert(await evaluate("Array.from(document.querySelectorAll('.content-review option')).some(item=>item.value==='approved' && item.disabled)"))
+  await blocked(taskRoot(technical.id)+'/guardian-review',{decision:'approved',note:'尝试通过黑场'},409)
+  await blocked(taskRoot(technical.id)+'/select',selection,409)
+  await screenshot('guardian-visual-blocked.png')
+  await setField('内容审核说明','候选逐帧检测为全黑，退回重做')
+  await click('保存内容审核')
+  await wait(()=>contains('候选已退回，证据已保存'),'blocked candidate rejection persisted')
+  const rejectedBlack=(await api('/generation'+path+'/candidates')).find(item=>item.id===technical.id)
+  assert.equal(rejectedBlack.output.guardian_review.evidence.sha256,point.sha256)
   for(const job of staged) {
     await post(taskRoot(job.id)+'/guardian-review',{decision:'approved',note:'脚本按预设正确画面登记人工审核决定'})
     await post(taskRoot(job.id)+'/select',{...selection,title:job.parameters.shot_id})
@@ -266,6 +288,7 @@ try {
   const bytes=Buffer.from(await file.arrayBuffer())
   assert.equal(createHash('sha256').update(bytes).digest('hex'),receipt.sha256)
   assert(bytes.includes(Buffer.from('guardian.json')) && bytes.includes(Buffer.from('guardian-contract-v1')))
+  assert(bytes.includes(Buffer.from('guardian-visual-luma-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -284,6 +307,8 @@ try {
   await writeFile(join(evidenceDir,'guardian-browser.json'),JSON.stringify({checked_at:new Date().toISOString(),
     episodes:2,characters:2,scenes:2,shot_count:report.guardian.shot_count,accepted_original_candidates:staged.length,
     visual_fixtures_rejected_by_recorded_review:defects.map(([category])=>category),visual_model_precision:null,visual_model_recall:null,
+    technical_black_fixture:{task_id:technical.id,checked_frames:visual.checked_frames,black_frames:visual.black_frames,
+      issue:visual.findings[0],human_approval_blocked:true,rejection_preserved:true},
     detected_scripted_continuity_blockers:blockingCodes,accepted_clean_plan_has_no_blockers:true,
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
     reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:run.id,

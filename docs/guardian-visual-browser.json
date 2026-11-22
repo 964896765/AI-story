@@ -1,0 +1,73 @@
+{
+  "checked_at": "2026-11-22T13:07:31.113Z",
+  "episodes": 2,
+  "characters": 2,
+  "scenes": 2,
+  "shot_count": 10,
+  "accepted_original_candidates": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "visual_model_precision": null,
+  "visual_model_recall": null,
+  "technical_black_fixture": {
+    "task_id": "11a36b78-5e31-40fb-ac47-952361514bf5",
+    "checked_frames": 24,
+    "black_frames": 24,
+    "issue": {
+      "code": "black_output",
+      "severity": "error",
+      "start_ms": 0,
+      "end_ms": 1000,
+      "frame_number": 11,
+      "evidence": {
+        "time_ms": 458,
+        "index": 3,
+        "sha256": "230bb37097816ef301ba5b251beafadb1c104eb083fa29e191fa054a880fe7b3"
+      }
+    },
+    "human_approval_blocked": true,
+    "rejection_preserved": true
+  },
+  "detected_scripted_continuity_blockers": [
+    [
+      "ep1-shot2",
+      "shot_state_change"
+    ],
+    [
+      "ep1-shot3",
+      "canon_fact_conflict"
+    ]
+  ],
+  "accepted_clean_plan_has_no_blockers": true,
+  "rule_sample_counts": {
+    "true_positive": 2,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "tested_viewport_widths": [
+    390,
+    1280,
+    1440,
+    1920
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "voice": "Microsoft Huihui Desktop",
+  "checked_final_batch": "95f9caa8-8b54-4e65-98d8-569a86cea0a4",
+  "shot_rework": {
+    "task_id": "eb82cbcb-d385-46e8-8360-a1391a7a452f",
+    "old_timeline": "dfefe0b9-cdd3-42a2-9c75-f652a3d07508",
+    "new_timeline": "9f9d1c41-0095-4bcb-ac04-7ebc0d4fbcec",
+    "unchanged_clips_in_affected_episode": 4,
+    "original_timeline_preserved": true
+  },
+  "verified_delivery_bytes": 736080,
+  "verified_delivery_sha256": "6bbf5a382b921526b2319368fdad3a6ae3e2f6f2b16c7ffadb019caae5f652cd",
+  "guardian_delivery_manifest": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

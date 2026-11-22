@@ -1,0 +1,10 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "guardian_route_http": 200,
+  "candidates_route_http": 200,
+  "review_evidence_max_index": 10.0,
+  "live_api_authorized": false,
+  "live_budget_micros": 0
+}

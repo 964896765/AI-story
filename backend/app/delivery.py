@@ -230,7 +230,8 @@ def guardian_evidence(db, plan, batches):
                 raise ValueError('交付镜头缺少与成片哈希匹配的人工审核证据')
             shots.append({'shot_id':meta['shot_id'],'at_frame':clip['at'],'contract_sha256':contract,
                           'candidate_task_id':task.id,'asset_id':asset.id,'asset_sha256':asset.sha256,
-                          'content_review':review,'evidence_frames':task.output.get('guardian_frames',[])})
+                          'content_review':review,'evidence_frames':task.output.get('guardian_frames',[]),
+                          **({'visual_check':task.output['guardian_visual']} if 'guardian_visual' in task.output else {})})
         episodes.append({'number':unit['number'],'timeline_version_id':unit['timeline_version_id'],'shots':shots})
     return {'rule_version':plan.provenance.get('review_rule_version',RULE_VERSION),
             'approved_plan_version_id':plan.id,'plan_content_hash':plan.content_hash,'episodes':episodes}

@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request, statusLabels } from '../analysisApi'
 import GuardianShotRework from '../components/production/GuardianShotRework.vue'
+import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from '../components/production/VisualCandidateCheck.vue'
 import { useWorkspace } from '../router/workspace'
 import { appearance } from '../stores/appearance'
 
@@ -22,6 +23,7 @@ interface Candidate {
   id:string;asset_id:string;story_version_id:string;status:string;guardian?:{contract_sha256:string;series_id:string}
   selected_asset_id:string|null;progress:number;error:string|null;rework?:{reason:string}
   parameters:{shot_id:string;preset:string;aspect:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
+    guardian_visual?:VisualReport;
     guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
 interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
@@ -41,6 +43,7 @@ const editionOptions=computed(()=>Array.from(new Map([...choices.value,...(versi
 const activeCandidates=computed(()=>candidates.value.filter(item=>item.guardian?.series_id===version.value?.id
   && item.guardian?.contract_sha256===shot.value?.guardian?.contract_sha256 && item.parameters.shot_id===shot.value?.shot_id))
 const candidate=computed(()=>activeCandidates.value.find(item=>item.id===candidateId.value) || activeCandidates.value[0])
+const evidenceFrames=computed(()=>(candidate.value?.output.guardian_frames || []).slice().sort((a,b)=>a.time_ms-b.time_ms))
 const applicableCandidate=computed(()=>candidate.value?.story_version_id===version.value?.version_id &&
   candidate.value?.selected_asset_id && candidate.value.output.guardian_review?.request.decision==='approved' ? candidate.value.id : undefined)
 const activeApproval=computed(()=>history.value.find(item=>item.provenance.guardian_manifest)?.version_id===version.value?.version_id)
@@ -48,6 +51,9 @@ const shotFrames=computed(()=>shot.value ? Math.round((shot.value.start_ms+shot.
 const shotSelect=ref<HTMLSelectElement|null>(null)
 const candidateFailure=ref('')
 const refreshCandidates=ref(0)
+function focusEvidence(frame:VisualEvidence) {
+  document.getElementById(`guardian-evidence-${candidate.value?.id}-${frame.index}`)?.focus()
+}
 const issueCount=(number:number)=>report.value?.issues.filter(item=>item.episode===number).length || 0
 const time=(ms:number)=>(ms/1000).toFixed(3)+' 秒'
 const kinds:Record<string,string>={added:'新增',removed:'移除',contract_changed:'合同变化',moved:'位置变化',unchanged:'可按原合同复用'}
@@ -206,13 +212,14 @@ async function compare() {
               <label v-if="activeCandidates.length">生成候选<select :value="candidate?.id" @change="candidateId=($event.target as HTMLSelectElement).value">
                 <option v-for="item in activeCandidates" :key="item.id" :value="item.id">{{item.parameters.preset}} · {{item.id.slice(0,8)}}</option>
               </select></label>
-              <div v-if="candidate?.output.guardian_frames?.length" class="evidence-grid">
+              <div v-if="candidate && evidenceFrames.length" class="evidence-grid">
                 <figure><img :src="`/api/assets/${candidate.asset_id}/media`" alt="锁定运镜源图"><figcaption>锁定源图</figcaption></figure>
-                <figure v-for="frame in candidate.output.guardian_frames" :key="frame.index">
+                <figure v-for="frame in evidenceFrames" :id="`guardian-evidence-${candidate.id}-${frame.index}`" :key="frame.index" tabindex="-1">
                   <img :src="`/api/generation/candidates/${candidate.id}/guardian-frames/${frame.index}`" :alt="`候选 ${time(frame.time_ms)}`">
                   <figcaption>{{time(frame.time_ms)}}</figcaption>
                 </figure>
               </div>
+              <VisualCandidateCheck v-if="candidate?.status==='succeeded'" :report="candidate.output.guardian_visual" @evidence="focusEvidence" />
               <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
               <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
               <p v-else-if="candidate" role="status">{{statusLabels[candidate.status] || candidate.status}} · {{Math.round(candidate.progress)}}%</p>
@@ -288,6 +295,7 @@ async function compare() {
 .guardian-issues svg { flex:none }
 .guardian-issues small { display:block }
 .evidence-panel select { margin-bottom:8px }
+.evidence-grid figure:focus { outline:2px solid var(--accent);outline-offset:2px }
 .guardian-error { color:var(--ge) }
 .finding-detail { background:var(--gb); border:1px solid var(--gl); border-radius:10px; padding:10px; margin-bottom:10px; overflow-wrap:anywhere }
 .evidence-values { display:grid; gap:5px; margin:8px 0; overflow-wrap:anywhere }

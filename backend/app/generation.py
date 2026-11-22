@@ -24,6 +24,7 @@ from .models import Asset, Project, StoryVersion, Task, TaskEvent, now
 from .render import execute_ffmpeg, file_hash, validate_output, write_manifest
 from .series import approved_guardian_shot, series_report
 from .story_schemas import Strict
+from .visual_quality import MAX_FINDINGS, inspect_video
 
 router = APIRouter(prefix='/api/generation', tags=['generation'])
 PIPELINE = 'local-still-motion-v1'
@@ -53,7 +54,7 @@ class Selection(Strict):
 class CandidateReview(Strict):
     decision: Literal['approved','rejected']
     category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','other'] | None=None
-    frame: int | None=Field(default=None,ge=0,le=2)
+    frame: int | None=Field(default=None,ge=0,le=2+MAX_FINDINGS)
     note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
 
 
@@ -231,6 +232,12 @@ def guardian_frame(task_id: str,index: int,db=Depends(session)):
     return FileResponse(path,media_type='image/jpeg',headers={'X-Content-Type-Options':'nosniff'})
 
 
+def require_visual_clearance(task):
+    visual = task.output.get('guardian_visual')
+    if visual and (visual['output_sha256']!=task.output['sha256'] or visual['status']=='blocked'):
+        raise HTTPException(409,'候选未通过本机视觉技术检查，可记录退回并制作新候选')
+
+
 @router.post('/candidates/{task_id}/guardian-review')
 def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     task,path = finished_candidate(db,task_id)
@@ -249,10 +256,14 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
         raise HTTPException(422,'退回候选需要选择问题类别与证据帧')
     if body.decision=='approved' and (body.category is not None or body.frame is not None):
         raise HTTPException(422,'通过候选时只需填写审核说明')
-    frames = [checked_frame(task,index)[0] for index in range(3)]
+    if body.decision=='approved':
+        require_visual_clearance(task)
+    checked = {item['index']:checked_frame(task,item['index'])[0] for item in task.output['guardian_frames']}
     if file_hash(path)!=task.output['sha256']:
         raise HTTPException(409,'候选文件校验失败，请重新制作')
-    evidence = frames[body.frame] if body.frame is not None else None
+    evidence = checked.get(body.frame)
+    if body.frame is not None and evidence is None:
+        raise HTTPException(422,'所选时间点没有候选证据帧')
     review = {'request':request,'source':'local_operator','created_at':now().isoformat(),
               'output_sha256':task.output['sha256'],
               'evidence':{'time_ms':evidence['time_ms'],'sha256':evidence['sha256']} if evidence else None}
@@ -280,6 +291,8 @@ def select_candidate(task_id: str,body: Selection,db=Depends(session)):
     review = task.output.get('guardian_review')
     if guardian and (not review or review['request']['decision']!='approved' or review['output_sha256']!=task.output['sha256']):
         raise HTTPException(409,'候选须通过 Guardian 人工内容审核后采纳')
+    if guardian:
+        require_visual_clearance(task)
     source = require(db,Asset,task.asset_id)
     asset = Asset(project_id=task.project_id,name=name,storage_key=task.output['storage_key'],
                   sha256=task.output['sha256'],size_bytes=task.output['size_bytes'],
@@ -309,9 +322,9 @@ def image_dimensions(source, demuxer):
         raise ValueError('图片尺寸超过静图运镜限制')
 
 
-def sample_candidate(path, work, frames, update):
-    commands = Commands(work,update)
-    indices = (0,frames//2,frames-1)
+def sample_candidate(path, commands, frames, visual):
+    indices = list(dict.fromkeys([0,frames//2,frames-1]+[item['frame_number'] for item in visual['findings']]))
+    decoded_positions = {number:index for index,number in enumerate(sorted(indices),1)}
     selection = '+'.join(f'eq(n\\,{index})' for index in indices)
     commands.run(['ffmpeg','-v','error','-nostdin','-n','-xerror','-filter_threads','2',
                   '-protocol_whitelist','file,pipe','-i',str(path),'-map','0:v:0',
@@ -320,12 +333,14 @@ def sample_candidate(path, work, frames, update):
                  'guardian_frames',98,timeout=45)
     evidence, files = [], {}
     for index, frame_number in enumerate(indices):
-        image = commands.output/f'review-{index+1:02d}.jpg'
+        image = commands.output/f'review-{decoded_positions[frame_number]:02d}.jpg'
         if not image.is_file() or not image.stat().st_size:
             raise ValueError('候选缺少完整的 Guardian 证据帧')
         descriptor = {'time_ms':round(frame_number*1000/24),'index':index,'sha256':file_hash(image)}
         evidence.append(descriptor)
         files[f'guardian-{index}'] = {**descriptor,'storage_key':image.relative_to(storage.resolve_key('tmp').parent).as_posix()}
+    for item in visual['findings']:
+        item['evidence'] = evidence[indices.index(item['frame_number'])]
     return {'guardian_frames':evidence,'files':files}
 
 
@@ -403,7 +418,10 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     output = {**metadata,'storage_key':storage_key,'sha256':digest,'signature':signature,
               'pipeline':PIPELINE,'actual_external_cost_micros':0,'reused_from_task_id':cached.id if cached else None}
     if guardian:
-        output.update(sample_candidate(temporary,work,options.frames,update))
+        commands = Commands(work,update)
+        visual = inspect_video(commands,temporary,options.frames,digest)
+        output['guardian_visual'] = visual
+        output.update(sample_candidate(temporary,commands,options.frames,visual))
     update('publishing',99)
     target.parent.mkdir(parents=True,exist_ok=True)
     write_manifest(manifest,output)
