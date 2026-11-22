@@ -217,6 +217,7 @@ class Timeline(Strict):
     profile: Literal['portrait','landscape','square']='portrait'
     frames: int=Field(ge=12,le=14400)
     tracks: list[TimelineTrack]=Field(min_length=1,max_length=10)
+    music_ducking: bool=Field(default=False,strict=True,exclude_if=lambda enabled:not enabled)
 
     @model_validator(mode='after')
     def structure(self):

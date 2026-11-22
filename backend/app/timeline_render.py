@@ -23,6 +23,7 @@ VISUAL = {'main','overlay'}
 AUDIO = {'dialogue','music','sfx'}
 TIMESTAMP = re.compile(r'(\d+):(\d{2}):(\d{2}),(\d{3})')
 MEDIA_FORMATS = 'mov,matroska,webm,avi,wav,mp3'
+MUSIC_DUCKING_PRESET = 'ffmpeg-sidechain-dialogue-v1'
 
 
 def sec(frames):
@@ -123,6 +124,20 @@ def audio_mix(labels,frames,*,limit=False):
     return mix+f'apad,atrim=end_sample={frames*SAMPLES_PER_FRAME}'
 
 
+def music_ducking_applies(timeline):
+    roles = {track.role for track in timeline.tracks if track.enabled and track.volume and track.clips}
+    return timeline.music_ducking and {'dialogue', 'music'} <= roles
+
+
+def duck_music(graph, dialogue, music, frames):
+    graph.append(audio_mix(dialogue,frames)+'[dialogueBus]')
+    graph.append('[dialogueBus]asplit=2[heardDialogue][dialogueKey]')
+    graph.append(audio_mix(music,frames)+'[musicBus]')
+    graph.append('[musicBus][dialogueKey]sidechaincompress=threshold=0.003:ratio=16:attack=15:release=320:'
+                 'knee=2:link=maximum:detection=rms,aformat=sample_fmts=fltp[duckedMusic]')
+    return '[heardDialogue]', '[duckedMusic]'
+
+
 def subtitle_ms(token):
     match = TIMESTAMP.fullmatch(token)
     h,m,s,ms = map(int,match.groups())
@@ -185,7 +200,7 @@ def render_graph(timeline, paths, work, update):
                 composite=merged
             elif role in AUDIO:
                 graph.append(audio_filter(index,clip,info,track.volume))
-                audios.append(f'[clipa{index}]')
+                audios.append((role,f'[clipa{index}]'))
             index+=1
     if captions:
         captions.sort(key=lambda entry:entry[0])
@@ -198,7 +213,12 @@ def render_graph(timeline, paths, work, update):
     else:
         graph.append(f'[{composite}]format=yuv420p[outv]')
     if audios:
-        graph.append(audio_mix(audios,timeline.frames,limit=True)+'[outa]')
+        labels = [label for _,label in audios]
+        if music_ducking_applies(timeline):
+            dialogue,music = duck_music(graph,[label for role,label in audios if role=='dialogue'],
+                                       [label for role,label in audios if role=='music'],timeline.frames)
+            labels = [dialogue,music,*[label for role,label in audios if role=='sfx']]
+        graph.append(audio_mix(labels,timeline.frames,limit=True)+'[outa]')
     return args,graph,bool(audios)
 
 
@@ -246,6 +266,9 @@ def timeline_render(task_id,attempt,parameters,snapshot,update):
         '-i',str(temporary),'-map','0:v:0','-map','0:a:0?','-f','null','-'],'timeline_decode',98,timeout=1800)
     payload = {**output,'storage_key':key,'signature':signature,'sha256':file_hash(temporary,lambda *_:update('validating',98)),
                'frame_rate':FPS,'frames':timeline.frames,'engine':ENGINE}
+    if timeline.music_ducking:
+        payload['music_ducking'] = {'status':'applied' if music_ducking_applies(timeline) else 'skipped',
+                                    'preset':MUSIC_DUCKING_PRESET}
     update('publishing',99)
     target.parent.mkdir(parents=True,exist_ok=True)
     captions=work/'timeline.srt'

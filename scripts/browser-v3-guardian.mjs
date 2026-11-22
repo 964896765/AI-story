@@ -392,7 +392,7 @@ try {
   bedUpload.set('authorization','本机生成的测试音')
   const bed=await api(path+'/assets',{method:'POST',body:bedUpload})
   const withBed=await create('timeline','疑似盖住对白的混音',{...edit.content,tracks:[...edit.content.tracks,
-    {id:'music',role:'music',clips:[{id:'loud-bed',asset_id:bed.id,at:0,frames}]}]},'overpowering-music')
+    {id:'music',role:'music',volume:0.25,clips:[{id:'loud-bed',asset_id:bed.id,at:0,frames}]}]},'overpowering-music')
   const masking=await post('/production'+path+'/runs',{...runBody,previous_run_id:run.id,
     timelines:[{number:1,timeline_version_id:withBed.version_id}],idempotency_key:'check-dialogue-balance'})
   let maskingResult
@@ -418,15 +418,17 @@ try {
   await screenshot('guardian-dialogue-balance.png')
   await click('定位关联片段 2')
   await wait(()=>evaluate("document.activeElement?.dataset.clipId==='loud-bed'"),'background clip focused in timeline')
-  await evaluate(`(() => {
-    const number=document.querySelector('.lane[data-role="music"] input[type="number"]')
-    number.value='0.01'
-    number.dispatchEvent(new Event('input',{bubbles:true}))
-  })()`)
+  await evaluate(`Array.from(document.querySelectorAll('.timeline-settings label')).find(label=>
+    label.textContent.trim()==='对白时压低配乐').querySelector('input').click()`)
   await click('保存时间轴版本')
   await wait(()=>contains('时间轴 v2 已保存'),'balance correction saved as new timeline')
   const fixedMix=(await api(path+'/story/entities?kind=timeline')).items.find(item=>item.id===withBed.id)
   assert.equal(fixedMix.version,2)
+  const fixedTimeline=await api('/story/versions/'+fixedMix.version_id)
+  assert.equal(fixedTimeline.content.music_ducking,true)
+  assert.equal(fixedTimeline.content.tracks.find(track=>track.role==='music').volume,0.25)
+  await evaluate("document.querySelector('.timeline-settings').scrollIntoView({block:'center'})")
+  await screenshot('guardian-ducking-settings.png')
   await click('返回原质检批次')
   await wait(()=>contains('第 5 镜的背景声可能盖住对白'),'original quality evidence preserved')
   await click('按此批次局部返工')
@@ -443,12 +445,14 @@ try {
   },'actual adjusted mix and targeted QC',55000)
   const adjusted=balanced.episodes[0]
   const clearedBalance=adjusted.qc?.dialogue?.lines[0]?.balance
+  assert.equal(adjusted.qc?.music_ducking?.preset,'ffmpeg-sidechain-dialogue-v1')
+  assert.equal(adjusted.qc?.music_ducking?.status,'applied')
   assert.equal(clearedBalance?.status,'clear',JSON.stringify(adjusted))
   assert.equal(balanced.episodes[1].qc_task_id,maskingResult.episodes[1].qc_task_id)
   assert.equal((await api('/production/runs/'+masking.id)).status,'needs_review')
   if(balanced.status==='needs_review') {
     balanced=await post(`/production/runs/${balanced.id}/episodes/1/review`,{
-      expected_sha256:adjusted.qc.output_sha256,note:'已核对调低背景声后的成片和其他非阻断告警',idempotency_key:'balanced-episode-review',
+      expected_sha256:adjusted.qc.output_sha256,note:'已核对白期间自动压低配乐后的成片和其他非阻断告警',idempotency_key:'balanced-episode-review',
     })
   }
   assert.equal(balanced.status,'passed')
@@ -480,6 +484,7 @@ try {
   assert(bytes.includes(Buffer.from('guardian-screen-text-v1')))
   assert(bytes.includes(Buffer.from('guardian-dialogue-v1')))
   assert(bytes.includes(Buffer.from('guardian-dialogue-balance-v1')))
+  assert(bytes.includes(Buffer.from('ffmpeg-sidechain-dialogue-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -510,6 +515,8 @@ try {
       historical_timeline_version:withBed.version_id,corrected_timeline_version:fixedMix.version_id,
       focused_music_clip_in_browser:true,exact_preview_seek:true,unreviewed_delivery_blocked:true,
       unaffected_episode_qc_reused:true,verified_zip_contains_balance_report:true},
+    music_ducking:{...adjusted.qc.music_ducking,checked_in_browser:true,unchanged_music_track_gain:0.25,
+      balance_clear:clearedBalance.status==='clear',verified_zip_contains_preset:true},
     shot_rework:{task_id:regen.id,old_timeline:originalTimeline.version_id,new_timeline:replacement.version_id,
       unchanged_clips_in_affected_episode:4,original_timeline_preserved:true},
     verified_delivery_bytes:bytes.length,verified_delivery_sha256:receipt.sha256,guardian_delivery_manifest:true,

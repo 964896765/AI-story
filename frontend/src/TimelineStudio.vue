@@ -12,12 +12,12 @@ interface Clip {
 }
 interface Track { id:string;role:Role;enabled:boolean;locked:boolean;volume:number;clips:Clip[] }
 interface Timeline {
-  source_version_id:string|null;frame_rate:24;profile:Profile;frames:number;tracks:Track[]
+  source_version_id:string|null;frame_rate:24;profile:Profile;frames:number;tracks:Track[];music_ducking?:boolean
 }
 interface Version {id:string;version_id:string;title:string;version:number;current_version:number;content:Timeline|null}
 interface Job {
   id:string;status:string;stage:string;progress:number;error:string|null;story_version_id:string;cancel_requested:boolean
-  output:{frames?:number;duration?:number;has_audio?:boolean;sha256?:string}
+  output:{frames?:number;duration?:number;has_audio?:boolean;sha256?:string;music_ducking?:{status:'applied'|'skipped'}}
 }
 const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialVersion?:string;initialClip?:string;canReturn?:boolean}>()
 const emit=defineEmits<{returnToProduction:[]}>()
@@ -37,8 +37,10 @@ const entityPath=`/projects/${props.projectId}/story/entities`
 const base=`/timeline/projects/${props.projectId}`
 let timer:ReturnType<typeof setInterval>|undefined
 function track(role:Role):Track {return {id:crypto.randomUUID(),role,enabled:true,locked:false,volume:1,clips:[]}}
-const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,tracks:[track('main')]})
+const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,tracks:[track('main')],music_ducking:false})
 const timeline=reactive(freshContent())
+const canDuckMusic=computed(()=>['dialogue','music'].every(role=>timeline.tracks.some(lane=>
+  lane.role===role && lane.enabled && lane.volume>0 && lane.clips.length>0)))
 let gesture: { pointer: number; x: number; width: number; lane: Track; clip: Clip; before: Clip; edge: EditEdge } | null = null
 const dirty=computed(()=>JSON.stringify([title.value,timeline])!==saved.value)
 const selection=computed(()=>{
@@ -158,7 +160,7 @@ async function open(item:Version){
   const version= item.content?item:await request<Version>('/story/versions/'+item.version_id)
   active.value=version
   title.value=version.title
-  Object.assign(timeline,version.content)
+  Object.assign(timeline,{music_ducking:false},version.content)
   saved.value=JSON.stringify([title.value,timeline])
   editions.value=await request<Version[]>('/story/entities/'+version.id+'/versions')
   currentClip.value=''
@@ -316,6 +318,8 @@ onUnmounted(()=>clearInterval(timer))
           <label>固定制作来源版本 ID（可选）<input :value="timeline.source_version_id||''" maxlength="36"
             @input="timeline.source_version_id=($event.target as HTMLInputElement).value.trim()||null"></label>
           <label class="check"><input v-model="snap" type="checkbox">吸附片段边界</label>
+          <label class="check"><input v-model="timeline.music_ducking" type="checkbox">对白时压低配乐</label>
+          <p v-if="timeline.music_ducking && !canDuckMusic" class="hint">启用对白轨和音乐轨并加入有音量的片段后，渲染时会压低配乐。</p>
           </div>
           <div class="tracks" aria-label="多轨片段">
             <div class="track-header"><strong>剪辑轨道</strong><span>{{ timeline.frames }} 帧 · 24 fps</span></div>
@@ -391,6 +395,7 @@ onUnmounted(()=>clearInterval(timer))
       <article v-for="job in jobs" :key="job.id" class="task">
         <div><p>{{ statusLabels[job.status] || job.status }} · {{ statusLabels[job.stage] || job.stage }}</p>
           <p class="mono">时间轴版本 {{ job.story_version_id }}</p><p v-if="job.error" class="error">{{ job.error }}</p>
+          <p v-if="job.output.music_ducking" class="hint">{{job.output.music_ducking.status==='applied' ? '已启用对白压低配乐' : '未检测到同时可用的对白轨和音乐轨'}}</p>
           <progress v-if="job.status==='running'" :value="job.progress" max="100" aria-label="已处理成片进度"></progress>
         </div>
         <button v-if="job.status==='succeeded'" @click="preview=job.id">预览多轨成片</button>

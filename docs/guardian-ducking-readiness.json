@@ -1,0 +1,9 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "timeline_route_http": 200,
+  "ducking_ui_served": true,
+  "live_api_authorized": false,
+  "live_budget_micros": 0
+}

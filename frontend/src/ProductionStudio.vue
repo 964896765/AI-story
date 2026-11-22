@@ -20,6 +20,7 @@ interface Episode {
     output_sha256:string;issues:Issue[];rule_version:string
     video?:{width:number;height:number;frames:number|null;frame_rate:string|null}|null
     audio?:{status:string;integrated_lufs:number|null;true_peak_dbtp:number|null}|null
+    music_ducking?:{status:'applied'|'skipped'}
     captions?:{status:string;cue_count?:number;first_ms?:number;last_ms?:number}|null
     dialogue?:{storyboard_version_id:string;voice_task_id:string;recognition:{status:string};
       lines:{shot_id:string;shot_number:number;text:string;speaker:string;voice:string;start_ms:number;end_ms:number;
@@ -284,6 +285,7 @@ onUnmounted(()=>clearInterval(timer))
           <div v-if="episode.qc.video"><dt>画面规格</dt><dd>{{episode.qc.video.width}} × {{episode.qc.video.height}} · {{episode.qc.video.frames ?? '—'}} 帧</dd></div>
           <div v-if="episode.qc.audio"><dt>整段响度</dt><dd>{{metric(episode.qc.audio.integrated_lufs,'LUFS')}}</dd></div>
           <div v-if="episode.qc.audio"><dt>真峰值</dt><dd>{{metric(episode.qc.audio.true_peak_dbtp,'dBTP')}}</dd></div>
+          <div v-if="episode.qc.music_ducking"><dt>对白时压低配乐</dt><dd>{{episode.qc.music_ducking.status==='applied' ? '已启用' : '轨道条件不足'}}</dd></div>
           <div v-if="episode.qc.captions"><dt>成片字幕</dt><dd>{{captionLabels[episode.qc.captions.status]}}<span v-if="episode.qc.captions.cue_count!=null"> · {{episode.qc.captions.cue_count}} 条</span></dd></div>
         </dl>
         <details v-if="episode.qc?.dialogue" class="dialogue-report">

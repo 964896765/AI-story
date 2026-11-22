@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "95672a81199a8f4f1b4c38f1e65cf28e0a63351a59f7f9c53c7751980929824b",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/guardian-ducking-c6175d26545d",
+  "schema_changed": false
+}

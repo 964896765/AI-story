@@ -108,6 +108,8 @@ def qa_output(render,policy,update,task_id,attempt,*,dialogue=None):
     result = {'rule_version':RULE,'render_task_id':render.id,'output_sha256':digest,
               'duration_ms':duration_ms,'timeline_version_id':render.story_version_id,'issues':issues,
               'video':None,'audio':None,'captions':None}
+    if 'music_ducking' in output:
+        result['music_ducking'] = output['music_ducking']
     try:
         path = storage.resolve_key(output['storage_key'])
         update('qc_hash',3)

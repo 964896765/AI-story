@@ -8,7 +8,7 @@ from . import storage
 from .media import probe
 from .render import file_hash
 from .story_schemas import Timeline
-from .timeline_render import FPS, MEDIA_FORMATS, audio_filter, audio_mix
+from .timeline_render import AUDIO, FPS, MEDIA_FORMATS, audio_filter, audio_mix, duck_music, music_ducking_applies
 
 RULE_VERSION = 'guardian-dialogue-balance-v1'
 STAGE = 'qc_dialogue_balance'
@@ -29,10 +29,10 @@ def overlaps(clip, line):
             and (clip.at + clip.frames) * 1000 > line['start_ms'] * FPS)
 
 
-def pre_limiter_mix(commands, audio, snapshots, frames, targets):
+def pre_limiter_mix(commands, audio, snapshots, frames, targets, *, ducking):
     graph, arguments, records = [], [], {}
-    labels = {'speech': [], 'background': []}
-    for index, (group, clip, volume) in enumerate(audio):
+    labels = {role: [] for role in AUDIO}
+    for index, (role, clip, volume) in enumerate(audio):
         if clip.asset_id not in records:
             source = snapshots[clip.asset_id]
             path = storage.resolve_key(source['storage_key'])
@@ -43,15 +43,21 @@ def pre_limiter_mix(commands, audio, snapshots, frames, targets):
         path, metadata = records[clip.asset_id]
         arguments.extend(['-protocol_whitelist', 'file,pipe', '-format_whitelist', MEDIA_FORMATS, '-i', str(path)])
         graph.append(audio_filter(index, clip, metadata, volume))
-        labels[group].append(f'[clipa{index}]')
+        labels[role].append(f'[clipa{index}]')
 
     argv = ['ffmpeg', '-nostdin', '-v', 'error', '-n', '-xerror', '-filter_complex_threads', '2', *arguments]
-    for group in labels:
-        graph.append(audio_mix(labels[group], frames) + f'[{group}]')
+    if ducking:
+        dialogue, music = duck_music(graph, labels['dialogue'], labels['music'], frames)
+        graph.append(dialogue + 'anull[speech]')
+        background = [music, *labels['sfx']]
+    else:
+        graph.append(audio_mix(labels['dialogue'], frames) + '[speech]')
+        background = [*labels['music'], *labels['sfx']]
+    graph.append(audio_mix(background, frames) + '[background]')
     script = commands.work / 'dialogue-balance-graph.txt'
     script.write_text(';\n'.join(graph), encoding='utf-8')
     argv.extend(['-filter_complex_script', script.name])
-    for group, target in zip(labels, targets):
+    for group, target in zip(('speech', 'background'), targets):
         argv.extend(['-map', f'[{group}]', '-ar', str(RATE), '-c:a', 'pcm_f32le', '-f', 'f32le', str(target)])
     commands.run(argv, STAGE, 95, timeout=240)
     length = round(frames * RATE / FPS) * BYTES_PER_FRAME
@@ -108,21 +114,22 @@ def measure_window(speech, background, start_ms, end_ms):
 def check_balance(commands, render, lines, add):
     timeline = Timeline.model_validate(render.parameters['timeline'])
     candidates = [line for line in lines if line['audio_status'] == 'signal']
-    groups = {'speech': [], 'background': []}
-    for track in timeline.tracks:
-        if track.enabled and track.volume and track.role in {'dialogue', *BACKGROUND}:
-            group = 'speech' if track.role == 'dialogue' else 'background'
-            groups[group].extend((group, clip, track.volume) for clip in track.clips
-                                 if any(overlaps(clip, line) for line in candidates))
+    all_audio = [(track.role, clip, track.volume) for track in timeline.tracks if track.enabled and track.role in AUDIO
+                 for clip in sorted(track.clips,key=lambda item:item.at)]
+    relevant = [(role, clip, gain) for role, clip, gain in all_audio
+                if gain and any(overlaps(clip, line) for line in candidates)]
+    roles = {role for role, _, _ in relevant}
     result = {'rule_version': RULE_VERSION, 'status': 'not_needed', 'minimum_margin_db': MIN_MARGIN_DB,
               'minimum_duration_ms': MIN_OVERLAP_MS}
-    if not all(groups.values()):
+    if 'dialogue' not in roles or not roles & BACKGROUND:
         return result
 
     targets = [commands.output / name for name in ('dialogue-f32.pcm', 'background-f32.pcm')]
     try:
         snapshots = render.input_snapshot['assets']
-        pre_limiter_mix(commands, groups['speech'] + groups['background'], snapshots, timeline.frames, targets)
+        ducking = music_ducking_applies(timeline)
+        # Earlier clips can affect the compressor's release time inside a dialogue window.
+        pre_limiter_mix(commands, all_audio if ducking else relevant, snapshots, timeline.frames, targets, ducking=ducking)
         available_ms = min(target.stat().st_size for target in targets) // (BYTES_PER_FRAME * FRAMES_PER_MS)
         measured = []
         with targets[0].open('rb') as speech, targets[1].open('rb') as background:
