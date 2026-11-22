@@ -2,9 +2,9 @@ import type { GlobalThemeOverrides } from 'naive-ui'
 
 function theme(dark: boolean): GlobalThemeOverrides {
   return { common: {
-    primaryColor: dark ? '#98A8FF' : '#485FC6',
-    primaryColorHover: dark ? '#B0BDFE' : '#4055B5',
-    primaryColorPressed: dark ? '#8294F0' : '#35499F',
+    primaryColor: dark ? '#92C6FF' : '#135FB3',
+    primaryColorHover: dark ? '#B9DCFF' : '#104E95',
+    primaryColorPressed: dark ? '#76ADFA' : '#0E407A',
     bodyColor: dark ? '#101725' : '#F5F7FB',
     cardColor: dark ? '#1B2535' : '#FFFFFF',
     modalColor: dark ? '#1B2535' : '#FFFFFF',

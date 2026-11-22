@@ -53,9 +53,25 @@ const {command, evaluate, contains, click, setField, screenshot, errors, close} 
 const text = id => evaluate(`document.querySelector('[data-testid="${id}"]')?.textContent.trim()`)
 const address = () => evaluate('location.pathname+location.search')
 const size = (width,height,mobile=false) => command('Emulation.setDeviceMetricsOverride',{width,height,mobile,deviceScaleFactor:1})
+async function captureBrand(filename) {
+  const {data}=await command('Page.captureScreenshot', {format:'png',clip:{x:0,y:0,width:236,height:154,scale:2}})
+  await writeFile(join(evidenceDir,filename),Buffer.from(data,'base64'))
+}
 try {
   await size(1440,900)
   await wait(()=>contains('服务就绪'),'workbench connected')
+  await wait(()=>evaluate(`document.title==='项目总览 · 刀码漫剧' &&
+    [...document.querySelectorAll('.app-brand img')].filter(img=>img.complete && img.naturalWidth>0).length===2`),
+    'Chinese product name and original logo assets loaded')
+  assert.equal(await evaluate("document.querySelector('.app-brand').getAttribute('aria-label')"),'刀码漫剧 · 项目总览')
+  const icon=await evaluate("document.querySelector('link[rel=icon]').href")
+  assert.equal(new URL(icon).pathname,'/brand/daoma-ghost.png')
+  assert.equal((await fetch(icon)).headers.get('content-type'),'image/png')
+  await captureBrand('daoma-brand-light.png')
+  await evaluate("document.querySelector('button[aria-label=\"收起侧栏\"]').click()")
+  await wait(()=>evaluate("getComputedStyle(document.querySelector('.brand-text')).display==='none' && document.querySelector('.brand-mark img').getBoundingClientRect().width>0"),
+    'compact navigation retains the ghost icon')
+  await evaluate("document.querySelector('button[aria-label=\"展开侧栏\"]').click()")
   assert.equal(await evaluate("document.querySelectorAll('nav a[data-workspace]').length"),12)
   assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('nav a[data-workspace]'),link=>link.dataset.workspace)"),
     ['项目总览','AI 总导演','创作向导','小说与剧本','角色与场景','分镜工作台','AI 图片与视频','配音与声音','剪辑与时间轴','生产调度','质检与交付','模型与设置'])
@@ -91,6 +107,8 @@ try {
   }
   await evaluate("document.querySelector('button[aria-label=\"打开导航\"]').click()")
   await wait(()=>evaluate("document.querySelector('.app-sidebar').classList.contains('is-open')"),'mobile navigation open')
+  assert.equal(await evaluate("getComputedStyle(document.querySelector('.app-brand')).justifyContent==='start' && document.querySelector('.brand-text').getBoundingClientRect().width>0"),true)
+  await screenshot('daoma-mobile.png')
   await click('批量生产')
   await wait(()=>contains('持久化任务队列'),'mobile task queue visible')
   assert(!await evaluate("document.querySelector('.app-sidebar').classList.contains('is-open')"))
@@ -120,6 +138,8 @@ try {
   await wait(()=>evaluate("document.documentElement.dataset.theme==='dark'"),'global dark theme')
   await command('Page.reload')
   await wait(()=>evaluate("document.documentElement.dataset.theme==='dark' && getComputedStyle(document.body).backgroundColor==='rgb(16, 23, 37)' && document.querySelector('.wizard-grid')"),'global theme persists after reload')
+  assert.notEqual(await evaluate("getComputedStyle(document.querySelector('.brand-wordmark img')).filter"),'none')
+  await captureBrand('daoma-brand-dark.png')
   await screenshot('prism-dark.png')
   await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await command('Page.navigate',{url:`${base}/project/analysis?project=${project.id}&asset=${media.id}`})

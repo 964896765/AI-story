@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowUpRight, Bell, ChevronDown, Diamond, Menu, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Sun, X } from 'lucide-vue-next'
+import { ArrowUpRight, Bell, ChevronDown, Menu, Moon, PanelLeftClose, PanelLeftOpen, RefreshCw, Search, Sun, X } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { destinations, navigation, workspaces, type Destination } from '../router/navigation'
 import { useWorkspace } from '../router/workspace'
@@ -64,7 +64,7 @@ watch([() => route.query.project, () => workbench.initialized], ([requested, ini
 }, { immediate: true, flush: 'sync' })
 
 watch(() => route.fullPath, () => { closeMenu() })
-watch(title, value => { document.title = `${value} · AI Story` }, { immediate: true })
+watch(title, value => { document.title = `${value} · 刀码漫剧` }, { immediate: true })
 
 function switchProject(event: Event) {
   const project = (event.target as HTMLSelectElement).value
@@ -123,9 +123,12 @@ onUnmounted(() => { window.removeEventListener('keydown',keyboard); clearInterva
     <a class="skip-link" href="#workspace-main">跳到工作区</a>
     <button v-if="menuOpen" type="button" class="mobile-scrim" aria-label="关闭导航" @click="closeMenu"></button>
     <aside ref="sidebar" class="app-sidebar" :class="{ 'is-open': menuOpen }" id="workbench-nav">
-      <RouterLink class="app-brand" :to="link('overview')">
-        <span class="brand-mark"><Diamond :size="21" :stroke-width="1.7" aria-hidden="true" /></span>
-        <span class="brand-text"><strong>AI STORY</strong><small>PRISM STUDIO · V3.0</small></span>
+      <RouterLink class="app-brand" :to="link('overview')" aria-label="刀码漫剧 · 项目总览" title="刀码漫剧 · 项目总览">
+        <span class="brand-mark"><img src="/brand/daoma-ghost.png" width="802" height="698" alt=""></span>
+        <span class="brand-text" aria-hidden="true">
+          <span class="brand-wordmark"><img src="/brand/daoma-wordmark.png" width="793" height="334" alt=""></span>
+          <strong>漫剧</strong>
+        </span>
       </RouterLink>
       <button class="icon-button mobile-close" type="button" aria-label="关闭导航" @click="closeMenu"><X :size="18" /></button>
       <nav aria-label="工作区">
