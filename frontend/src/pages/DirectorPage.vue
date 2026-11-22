@@ -265,6 +265,7 @@ onBeforeUnmount(()=>abort.abort())
             <div><dt>批准的制作计划</dt><dd><RouterLink :to="link('bible',{version:active.parameters.plan_version_id})">{{active.parameters.plan_version_id}}</RouterLink></dd></div>
             <div v-if="active.parameters.previous_run_id"><dt>原批次</dt><dd><RouterLink :to="link('production',{run:active.parameters.previous_run_id})">{{active.parameters.previous_run_id}}</RouterLink></dd></div>
             <div><dt>质检要求</dt><dd>{{active.parameters.policy.require_audio?'必须有音轨':'检查已有音轨'}} · {{active.parameters.policy.require_subtitles?'必须有字幕':'检查已有字幕'}}</dd></div>
+            <div v-if="active.parameters.policy.dialogue_asr_language"><dt>对白听写</dt><dd>{{active.parameters.policy.dialogue_asr_language}}</dd></div>
           </template>
           <div><dt>外部模型费用</dt><dd>¥{{(active.external_cost_cents/100).toFixed(2)}}</dd></div>
           <div v-if="active.approved_at"><dt>批准时间</dt><dd>{{new Date(active.approved_at).toLocaleString()}}</dd></div>

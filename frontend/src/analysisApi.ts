@@ -52,6 +52,7 @@ export const statusLabels: Record<string,string> = {
   analysis_cache:'检查缓存', retry_wait:'等待重试', recovered:'中断恢复', inspecting:'检查输入',
   guardian_visual_check:'逐帧视觉技术检查', guardian_frames:'提取视觉证据帧',
   guardian_screen_ocr:'Windows 本机画面文字核验',
+  qc_dialogue_audio:'检查对白窗口', qc_dialogue_asr:'Windows 本机对白听写',
 }
 export const clock = (us: number) => {
   const ms = Math.max(0, Math.round(us / 1000))

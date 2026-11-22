@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { request, statusLabels } from './analysisApi'
+import DialogueRecognitionField from './components/production/DialogueRecognitionField.vue'
 
 interface Version { version_id:string; title:string; version:number; provenance?:{series_approved?:boolean} }
 interface Issue { code:string; severity:'warning'|'error'; detail:string; start_ms:number|null; end_ms:number|null; clips?:string[] }
 interface Policy {
   require_audio:boolean; require_subtitles:boolean; black_ms:number; freeze_ms:number; silence_ms:number; silence_db:number
   min_integrated_lufs?:number|null; max_true_peak_dbtp?:number|null
+  dialogue_asr_language?:string|null
 }
 interface Episode {
   number:number; timeline_version_id:string; status:string; reused:boolean; render_reused?:boolean
@@ -16,6 +18,10 @@ interface Episode {
     video?:{width:number;height:number;frames:number|null;frame_rate:string|null}|null
     audio?:{status:string;integrated_lufs:number|null;true_peak_dbtp:number|null}|null
     captions?:{status:string;cue_count?:number;first_ms?:number;last_ms?:number}|null
+    dialogue?:{storyboard_version_id:string;voice_task_id:string;recognition:{status:string};
+      lines:{shot_id:string;shot_number:number;text:string;speaker:string;voice:string;start_ms:number;end_ms:number;
+        caption_status:string;caption:string|null;audio_status:string;max_window_rms_dbfs:number|null;
+        recognition?:{status:string;observed:string}}[]}
   }|null
   review:{note:string}|null
 }
@@ -31,6 +37,7 @@ const emit=defineEmits<{
 const plans=ref<Version[]>([]), timelines=ref<Version[]>([]), runs=ref<Run[]>([]), active=ref<Run|null>(null)
 const plan=ref(''), prior=ref(''), links=ref<{number:number;title:string;timeline_version_id:string}[]>([])
 const requireAudio=ref(false), requireSubtitles=ref(false)
+const asrLanguage=ref('')
 const defaultTiming={black_ms:500,freeze_ms:750,silence_ms:1000,silence_db:-45}
 const rules=reactive({...defaultTiming,min_integrated_lufs:'' as number|'',max_true_peak_dbtp:'' as number|''})
 const recheckQuality=ref(false), originalPolicy=ref('')
@@ -40,6 +47,7 @@ const policy=computed<Policy>(()=>({
   black_ms:rules.black_ms,freeze_ms:rules.freeze_ms,silence_ms:rules.silence_ms,silence_db:rules.silence_db,
   min_integrated_lufs:rules.min_integrated_lufs==='' ? null : rules.min_integrated_lufs,
   max_true_peak_dbtp:rules.max_true_peak_dbtp==='' ? null : rules.max_true_peak_dbtp,
+  dialogue_asr_language:asrLanguage.value || null,
 }))
 const error=ref(''), notice=ref(''), busy=ref(false), reviewed=ref<Record<number,string>>({})
 const selectedId=ref(props.initialRun||''), preview=ref('')
@@ -61,6 +69,9 @@ const ready=computed(()=>!!plan.value && (prior.value ? recheckQuality.value || 
   links.value.some(item=>item.timeline_version_id) :
   links.value.length>0 && links.value.every(item=>item.timeline_version_id)))
 const captionLabels:Record<string,string>={verified:'已核对哈希',observed:'已检查时序',absent:'无字幕输出',invalid:'字幕检查未通过'}
+const dialogueCaption:Record<string,string>={matched:'字幕符合',different:'字幕不符',missing:'缺少字幕'}
+const dialogueAudio:Record<string,string>={signal:'窗口有信号',silent:'窗口近静音',unavailable:'窗口未测得',missing:'缺少音轨',muted:'时间轴对白轨已静音'}
+const dialogueRecognition:Record<string,string>={checked:'已本机听写',disabled:'未启用听写',unavailable:'听写不可用'}
 const metric=(value:number|null,unit:string)=>value===null ? '未测得' : `${value.toFixed(1)} ${unit}`
 function stableKey(body:object){
   const fingerprint=JSON.stringify(body)
@@ -123,6 +134,7 @@ function startRework(batch:Run,recheck=false){
   for(const link of links.value)link.timeline_version_id=''
   requireAudio.value=batch.policy.require_audio
   requireSubtitles.value=batch.policy.require_subtitles
+  asrLanguage.value=batch.policy.dialogue_asr_language || ''
   Object.assign(rules,{
     black_ms:batch.policy.black_ms ?? defaultTiming.black_ms,
     freeze_ms:batch.policy.freeze_ms ?? defaultTiming.freeze_ms,
@@ -142,6 +154,7 @@ function startRework(batch:Run,recheck=false){
 }
 function leaveRework(){
   prior.value='';plan.value='';recheckQuality.value=false;retryPrevious.value=false;notice.value=''
+  asrLanguage.value=''
   originalPolicy.value=''
 }
 async function approve(episode:Episode){
@@ -218,6 +231,7 @@ onUnmounted(()=>clearInterval(timer))
             <label>静音电平（dB）<input v-model.number="rules.silence_db" type="number" min="-99" max="-10" required></label>
             <label>响度下限（LUFS）<input v-model.number="rules.min_integrated_lufs" type="number" min="-60" max="0" step="0.1" placeholder="仅测量"></label>
             <label>真峰值上限（dBTP）<input v-model.number="rules.max_true_peak_dbtp" type="number" min="-20" max="0" step="0.1" placeholder="仅测量"></label>
+            <DialogueRecognitionField v-model="asrLanguage" />
           </div>
           <p class="hint">低于响度下限或高于真峰值上限时，需要人工复核。</p>
         </details>
@@ -261,7 +275,7 @@ onUnmounted(()=>clearInterval(timer))
           <button v-if="episode.render_status==='succeeded'" :aria-pressed="preview===episode.render_task_id" @click="previewEpisode(episode)">预览本集</button>
           <button @click="inspect(episode)">打开固定时间轴</button>
         </div>
-        <p class="hint">渲染 {{ statusLabels[episode.render_status] || episode.render_status }} · 质检 {{ episode.qc_stage==='dependency_failed'?'上游失败未执行':statusLabels[episode.qc_status] || episode.qc_status }}</p>
+        <p class="hint">渲染 {{ statusLabels[episode.render_status] || episode.render_status }} · 质检 {{ episode.qc_stage==='dependency_failed'?'上游失败未执行':statusLabels[episode.qc_stage] || statusLabels[episode.qc_status] || episode.qc_status }}</p>
         <p v-if="episode.render_error || episode.qc_error" class="error">{{ episode.render_error || episode.qc_error }}</p>
         <dl v-if="episode.qc?.rule_version==='ffmpeg-technical-v2'" class="quality-measurements">
           <div v-if="episode.qc.video"><dt>画面规格</dt><dd>{{episode.qc.video.width}} × {{episode.qc.video.height}} · {{episode.qc.video.frames ?? '—'}} 帧</dd></div>
@@ -269,6 +283,17 @@ onUnmounted(()=>clearInterval(timer))
           <div v-if="episode.qc.audio"><dt>真峰值</dt><dd>{{metric(episode.qc.audio.true_peak_dbtp,'dBTP')}}</dd></div>
           <div v-if="episode.qc.captions"><dt>成片字幕</dt><dd>{{captionLabels[episode.qc.captions.status]}}<span v-if="episode.qc.captions.cue_count!=null"> · {{episode.qc.captions.cue_count}} 条</span></dd></div>
         </dl>
+        <details v-if="episode.qc?.dialogue" class="dialogue-report">
+          <summary>固定对白核验 · {{episode.qc.dialogue.lines.length}} 条 · {{dialogueRecognition[episode.qc.dialogue.recognition.status]}}</summary>
+          <article v-for="line in episode.qc.dialogue.lines" :key="line.shot_id">
+            <strong>第 {{line.shot_number}} 镜 · {{line.speaker}}</strong>
+            <p>{{line.text}}</p>
+            <p class="hint">{{dialogueCaption[line.caption_status]}} · {{dialogueAudio[line.audio_status]}}<template v-if="line.max_window_rms_dbfs!==null"> · {{line.max_window_rms_dbfs}} dBFS</template> · 固定音色 {{line.voice}}</p>
+            <p v-if="line.caption_status==='different'">成片字幕 · {{line.caption}}</p>
+            <p v-if="line.recognition">听写{{line.recognition.status==='matched'?'一致':'待复核'}} · {{line.recognition.observed || '未识别到文字'}}</p>
+            <button v-if="episode.render_status==='succeeded'" type="button" @click="previewEpisode(episode,line.start_ms)">回听 {{(line.start_ms/1000).toFixed(3)}} 秒</button>
+          </article>
+        </details>
         <ul v-if="episode.qc?.issues.length">
           <li v-for="(issue,i) in episode.qc.issues" :key="i" :class="{failed:issue.severity==='error'}">
             {{ issue.detail }} <template v-if="issue.start_ms!==null">· {{ issue.start_ms/1000 }}–{{ (issue.end_ms||0)/1000 }} 秒</template>
@@ -318,4 +343,7 @@ onUnmounted(()=>clearInterval(timer))
 .episode-filter button[aria-pressed=true] { color:var(--accent); background:var(--accent-surface) }
 .linked-episode { box-shadow:inset 3px 0 var(--accent); padding-left:11px; background:var(--accent-surface) }
 .finding-preview { margin:5px 0 5px 8px; font-size:12px }
+.dialogue-report { margin:10px 0 }
+.dialogue-report article { border-top:1px solid var(--line-soft);padding:9px 0 }
+.dialogue-report p { margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere }
 </style>

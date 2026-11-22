@@ -12,6 +12,7 @@ interface Readiness {
   passed_episodes:number;episode_count:number;authorization_revision:string|null
   blockers:{asset_id:string;name:string;reason:string}[]
   pending_episodes:{number:number;status:string;issue_count:number}[]
+  dialogue_rechecks:number[]
 }
 const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialRun?:string}>()
 const emit=defineEmits<{openRun:[id:string,episode?:number];openOperations:[id:string]}>()
@@ -233,7 +234,7 @@ onUnmounted(()=>clearInterval(timer))
       <div v-if="lastCheck" class="delivery-readiness" :class="{ blocked:!lastCheck.ready }" aria-live="polite">
         <div class="actions">
           <component :is="lastCheck.ready ? ClipboardCheck : ShieldAlert" :size="18" aria-hidden="true" />
-          <strong>{{lastCheck.ready ? '质检与当前授权通过' : lastCheck.rights_checked ? '交付授权尚未通过' : '整剧质检尚未通过'}}</strong>
+          <strong>{{lastCheck.ready ? '质检与当前授权通过' : lastCheck.rights_checked ? '交付授权尚未通过' : lastCheck.dialogue_rechecks.length ? '分集需要对白复检' : '整剧质检尚未通过'}}</strong>
         </div>
         <p>{{lastCheck.passed_episodes}} / {{lastCheck.episode_count}} 集通过
           <template v-if="lastCheck.rights_checked"> · {{lastCheck.authorized_sources}} / {{lastCheck.source_count}} 项素材授权覆盖目标范围</template></p>
@@ -247,6 +248,12 @@ onUnmounted(()=>clearInterval(timer))
           <li v-for="episode in lastCheck.pending_episodes" :key="episode.number">
             <span>第 {{episode.number}} 集 · {{episodeLabels[episode.status] || episode.status}} · {{episode.issue_count}} 项发现</span>
             <button type="button" @click="emit('openRun',lastCheck.run_id,episode.number)">查看分集质检</button>
+          </li>
+        </ul>
+        <ul v-if="lastCheck.dialogue_rechecks.length">
+          <li v-for="episode in lastCheck.dialogue_rechecks" :key="episode">
+            <span>第 {{episode}} 集 · 请使用当前规则复检</span>
+            <button type="button" @click="emit('openRun',lastCheck.run_id,episode)">打开批次</button>
           </li>
         </ul>
         <p v-if="lastCheck.ready" class="hint">提交、打包、下载均会再次校验对应授权与输出。</p>

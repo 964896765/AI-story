@@ -110,7 +110,7 @@ def checked_package(db,package_id):
     task=require(db,Task,package_id)
     if task.kind!='delivery' or task.status!='succeeded':
         raise HTTPException(409,'请先生成已验证的授权交付包')
-    _,batch,rights=eligible(db,task.parameters,task.input_snapshot['rights'])
+    _,batch,rights=eligible(db,task.parameters,task.input_snapshot['rights'],check_current_dialogue=False)
     path=storage.resolve_key(task.output['storage_key'])
     if not path.is_file() or path.stat().st_size!=task.output['size_bytes'] or file_hash(path)!=task.output['sha256']:
         raise HTTPException(409,'交付包已经缺失或未通过原文件哈希')

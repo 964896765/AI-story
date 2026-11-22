@@ -146,7 +146,7 @@ def _run_once(heartbeat):
                 origin = db.get(Task,inputs['render_task_id'])
                 if origin is None or origin.status!='succeeded':
                     raise ValueError('上游产物尚未通过渲染')
-                output = qa_output(origin,parameters,update,task_id,attempt)
+                output = qa_output(origin,parameters,update,task_id,attempt,dialogue=inputs.get('dialogue'))
         elif kind == 'delivery':
             from .delivery import deliver
             output = deliver(task_id,attempt,parameters,inputs,update,Session)

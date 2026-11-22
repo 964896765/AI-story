@@ -66,6 +66,7 @@ def prepare_batch(db, project_id, params):
             'render_id': item.render.id if item.render else None,
             'render_hash': item.render.output['sha256'] if item.render else None,
             'qc_id': item.qc.id if item.qc else None,
+            **({'dialogue':item.dialogue} if item.dialogue else {}),
         } for item in episodes],
     }
     return body, policy, episodes, fingerprint(snapshot)
@@ -230,6 +231,8 @@ def prepare(project_id: str, body: Draft, db=Depends(session)):
     lock_project(db, project_id)
     action = body.operation.action
     params = body.operation.model_dump(exclude={'action'})
+    if action=='batch' and params['policy']['dialogue_asr_language'] is None:
+        params['policy'].pop('dialogue_asr_language')
     previous = db.scalar(select(DirectorPlan).where(
         DirectorPlan.project_id == project_id, DirectorPlan.request_key == body.idempotency_key))
     if previous:

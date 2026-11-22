@@ -17,6 +17,7 @@ from .creative import require
 from .db import session
 from .library import Region, Slug, latest_rights, restriction
 from .guardian import RULE_VERSION
+from .guardian_audio import RULE_VERSION as DIALOGUE_RULE
 from .models import Asset, ProductionRun, Project, StoryReference, StoryVersion, Task, TaskEvent, now
 from .production import project_run, public as run_public
 from .render import file_hash, write_manifest
@@ -95,7 +96,20 @@ def authorization_snapshot(db,run,units,platform,region):
     return result, blockers
 
 
-def readiness_report(db, run, report, platform, region):
+def dialogue_rechecks(db, plan_id, episodes):
+    plan = require(db, StoryVersion, plan_id)
+    if not plan.content.get('guardian'):
+        return []
+    boards = {unit['number']:plan.content['episodes'][unit['number']-1]['storyboard_version_id']
+              for unit in episodes if (unit['qc'].get('dialogue') or {}).get('rule_version') != DIALOGUE_RULE}
+    if not boards:
+        return []
+    with_dialogue = {board.id for board in db.scalars(select(StoryVersion).where(StoryVersion.id.in_(boards.values())))
+                     if any(shot.get('dialogue','').strip() for shot in board.content['shots'])}
+    return [number for number,board_id in boards.items() if board_id in with_dialogue]
+
+
+def readiness_report(db, run, report, platform, region, *, check_current_dialogue=True):
     episodes = report['episodes']
     pending = [{'number': unit['number'], 'status': unit['status'], 'issue_count': unit['issue_count']}
                for unit in episodes if unit['status'] != 'passed']
@@ -103,10 +117,14 @@ def readiness_report(db, run, report, platform, region):
         'run_id': run.id, 'status': report['status'], 'passed_episodes': report['passed'],
         'episode_count': report['episode_count'], 'pending_episodes': pending, 'ready': False,
         'rights_checked': False, 'source_count': None, 'authorized_sources': None,
-        'authorization_revision': None, 'blockers': [],
+        'authorization_revision': None, 'blockers': [], 'dialogue_rechecks': [],
     }
     if pending or not episodes:
         return result, []
+    if check_current_dialogue:
+        result['dialogue_rechecks'] = dialogue_rechecks(db, run.plan_version_id, episodes)
+        if result['dialogue_rechecks']:
+            return result, []
     rights, blockers = authorization_snapshot(db, run, episodes, platform, region)
     result.update(ready=not blockers, rights_checked=True, source_count=len(rights)+len(blockers),
                   authorized_sources=len(rights), blockers=blockers,
@@ -114,10 +132,13 @@ def readiness_report(db, run, report, platform, region):
     return result, rights
 
 
-def eligible(db,params,expected=None):
+def eligible(db,params,expected=None,*,check_current_dialogue=True):
     run=require(db,ProductionRun,params['run_id'])
     report=run_public(db,run)
-    readiness, rights = readiness_report(db, run, report, params['platform'], params['region'])
+    readiness, rights = readiness_report(db, run, report, params['platform'], params['region'],
+                                        check_current_dialogue=check_current_dialogue)
+    if readiness['dialogue_rechecks']:
+        raise HTTPException(409,'部分分集缺少固定对白核验，请使用当前规则复检后再交付')
     if not readiness['rights_checked']:
         raise HTTPException(409,'整剧须通过全部技术质检和要求的人工复核')
     if not readiness['ready']:
@@ -193,7 +214,7 @@ def download(task_id:str,db=Depends(session)):
     task=require(db,Task,task_id)
     if task.kind!='delivery' or task.status!='succeeded':
         raise HTTPException(409,'交付包没有完成验证')
-    eligible(db,task.parameters,task.input_snapshot['rights'])
+    eligible(db,task.parameters,task.input_snapshot['rights'],check_current_dialogue=False)
     path=storage.resolve_key(task.output['storage_key'])
     if not path.is_file() or path.stat().st_size!=task.output['size_bytes'] or file_hash(path)!=task.output['sha256']:
         raise HTTPException(404,'交付包不存在或不完整')

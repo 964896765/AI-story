@@ -7,6 +7,7 @@ import subprocess
 from . import storage
 from .analysis_engine import Commands, parse_cues
 from .generation import SIZES
+from .guardian_audio import check_dialogue
 from .media import probe
 from .render import file_hash, validate_srt_text
 
@@ -34,7 +35,7 @@ def audio_measurements(log):
             'integrated_lufs':loudness,'true_peak_dbtp':peak}
 
 
-def check_captions(render, active, required, duration_ms, add):
+def check_captions(render, active, required, duration_ms, add, *, observed=None):
     output = render.output
     key = output.get('caption_storage_key')
     if not key and not active:
@@ -74,11 +75,13 @@ def check_captions(render, active, required, duration_ms, add):
             add('subtitle_overlap','error',f'第 {index-1} 与第 {index} 条成片字幕时段重叠或顺序异常',
                 current['start_us']//1000,min(previous['end_us'],current['end_us'])//1000)
             return {'status':'invalid'}
+    if observed is not None:
+        observed.extend(cues)
     return {'status':'verified' if expected else 'observed','sha256':digest,'cue_count':len(cues),
             'first_ms':cues[0]['start_us']//1000,'last_ms':cues[-1]['end_us']//1000}
 
 
-def qa_output(render,policy,update,task_id,attempt):
+def qa_output(render,policy,update,task_id,attempt,*,dialogue=None):
     output = render.output
     timeline = render.parameters['timeline']
     duration_ms = round(timeline['frames']*1000/timeline['frame_rate'])
@@ -91,6 +94,8 @@ def qa_output(render,policy,update,task_id,attempt):
             roles = {'main','overlay'}
             if code=='silence':
                 roles = {'dialogue','music','sfx'}
+            elif code.startswith('dialogue_'):
+                roles = {'dialogue'}
             elif code.startswith('subtitle_'):
                 roles = {'caption'}
             rate = timeline['frame_rate']
@@ -129,7 +134,9 @@ def qa_output(render,policy,update,task_id,attempt):
         add('missing_audio','error','本批次要求音轨，当前输出没有音轨')
     if has_audio and (len(audio_streams)!=1 or audio_streams[0].get('codec_name')!='aac'):
         add('audio_contract','error','成片应包含单条 AAC 混音轨')
-    result['captions'] = check_captions(render,'caption' in active_roles,policy['require_subtitles'],duration_ms,add)
+    cues = [] if dialogue else None
+    result['captions'] = check_captions(render,'caption' in active_roles,policy['require_subtitles'],duration_ms,add,
+                                        observed=cues)
     if not video:
         return result
     work = storage.resolve_key(f'tmp/{task_id}/{attempt}')
@@ -178,5 +185,10 @@ def qa_output(render,policy,update,task_id,attempt):
             add(name,'warning',label,pending.pop(name),point)
     for name,start in pending.items():
         add(name,'warning','异常持续到解码结尾',start,duration_ms)
+    if dialogue:
+        muted = any(track['enabled'] and track['role']=='dialogue' and track['clips'] and track['volume']==0
+                    for track in timeline['tracks'])
+        result['dialogue'] = check_dialogue(commands,path,duration_ms,dialogue,cues,has_audio,
+                                            policy.get('dialogue_asr_language'),add,muted=muted)
     update('qc_report',97)
     return result

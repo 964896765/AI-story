@@ -1,0 +1,313 @@
+{
+  "checked_at": "2026-11-22T17:01:51.717Z",
+  "episodes": 2,
+  "characters": 2,
+  "scenes": 2,
+  "shot_count": 10,
+  "accepted_original_candidates": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "visual_model_precision": null,
+  "visual_model_recall": null,
+  "technical_black_fixture": {
+    "task_id": "549dad6b-dd8c-4911-ad95-b9023815596f",
+    "checked_frames": 24,
+    "black_frames": 24,
+    "issue": {
+      "code": "black_output",
+      "severity": "error",
+      "start_ms": 0,
+      "end_ms": 1000,
+      "frame_number": 11,
+      "evidence": {
+        "time_ms": 458,
+        "index": 3,
+        "sha256": "230bb37097816ef301ba5b251beafadb1c104eb083fa29e191fa054a880fe7b3"
+      }
+    },
+    "human_approval_blocked": true,
+    "rejection_preserved": true
+  },
+  "detected_scripted_continuity_blockers": [
+    [
+      "ep1-shot2",
+      "shot_state_change"
+    ],
+    [
+      "ep1-shot3",
+      "canon_fact_conflict"
+    ]
+  ],
+  "accepted_clean_plan_has_no_blockers": true,
+  "rule_sample_counts": {
+    "true_positive": 2,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "tested_viewport_widths": [
+    390,
+    1280,
+    1440,
+    1920
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "voice": "Microsoft Huihui Desktop",
+  "checked_final_batch": "e55bbf88-d57f-466c-b229-951c42e3bc4d",
+  "screen_text": {
+    "matched": {
+      "rule_version": "guardian-screen-text-v1",
+      "output_sha256": "b1c88f8795a5da93293642f180da0d6595e86e12b2f4982f43ee6ee2b7227edb",
+      "contract": {
+        "language": "zh-Hans-CN",
+        "required": [
+          "灯塔坐标"
+        ],
+        "forbidden": [
+          "旧版标识"
+        ]
+      },
+      "status": "matched",
+      "adapter": {
+        "engine": "windows-ocr-v1",
+        "language": "zh-Hans-CN",
+        "system_version": "10.0.26300"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "b79abe029b2550368a2c01920b68c329fd202d73672ad02e01b906af3c54c909",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "5a3a65eaae0e0c3af2c96057ab8815c936998b301fa7fba660ff64d8125d2d77",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "03161ed3c8118988b14fe8b944b047d9d08e8292125c0d717fafcf479d620d92",
+          "lines": [
+            "灯 塔 坐 标"
+          ]
+        }
+      ],
+      "findings": [],
+      "evidence": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "b79abe029b2550368a2c01920b68c329fd202d73672ad02e01b906af3c54c909"
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "5a3a65eaae0e0c3af2c96057ab8815c936998b301fa7fba660ff64d8125d2d77"
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "03161ed3c8118988b14fe8b944b047d9d08e8292125c0d717fafcf479d620d92"
+        }
+      ]
+    },
+    "mismatch": {
+      "rule_version": "guardian-screen-text-v1",
+      "output_sha256": "a429bbeba5277d796545fba1a053624cb8b4501698714d83473ab0eb7c3d2fb6",
+      "contract": {
+        "language": "zh-Hans-CN",
+        "required": [
+          "灯塔坐标"
+        ],
+        "forbidden": [
+          "旧版标识"
+        ]
+      },
+      "status": "review",
+      "adapter": {
+        "engine": "windows-ocr-v1",
+        "language": "zh-Hans-CN",
+        "system_version": "10.0.26300"
+      },
+      "samples": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "23543ef63f4753b31d77b556182ec0860331d354f83aa3d965982c640d47f568",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "d0ff1891aa231f9b8f639420136f2605754ff03274423312a2e107261c1a02c9",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "708f222900476b9f86dd64ff3e82b986b8426536131c31c01b3510bc26f7ae72",
+          "lines": [
+            "旧 版 标 识"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "code": "required_not_seen",
+          "term": "灯塔坐标",
+          "evidence_indices": [
+            0,
+            1,
+            2
+          ]
+        },
+        {
+          "code": "forbidden_seen",
+          "term": "旧版标识",
+          "evidence_indices": [
+            0,
+            1,
+            2
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "index": 0,
+          "time_ms": 0,
+          "sha256": "23543ef63f4753b31d77b556182ec0860331d354f83aa3d965982c640d47f568"
+        },
+        {
+          "index": 1,
+          "time_ms": 500,
+          "sha256": "d0ff1891aa231f9b8f639420136f2605754ff03274423312a2e107261c1a02c9"
+        },
+        {
+          "index": 2,
+          "time_ms": 958,
+          "sha256": "708f222900476b9f86dd64ff3e82b986b8426536131c31c01b3510bc26f7ae72"
+        }
+      ]
+    },
+    "explicit_review_gate": true,
+    "contract_saved_in_browser": true,
+    "export_included": true
+  },
+  "dialogue": {
+    "report": {
+      "rule_version": "guardian-dialogue-v1",
+      "storyboard_version_id": "38b64bea-e0c8-41eb-82bf-7331582f1487",
+      "storyboard_hash": "4818f2760965b0f87af540e301c535f218675336b237c3f0835281f6b1928b0e",
+      "voice_task_id": "896a016f-5093-4290-9361-d9e5bcc40d7a",
+      "voice_sha256": "ebe9bc1031beefea71aefc5a16a56728d4b80d509e0fefe67595e7e02a18110f",
+      "caption_source_sha256": "fb8530b7ea0d89b0cd9a659287724df4991b2a9c718877af89770691667d9023",
+      "lines": [
+        {
+          "shot_id": "ep1-shot5",
+          "shot_number": 5,
+          "text": "大家好，欢迎来到灯塔。",
+          "start_ms": 4000,
+          "end_ms": 7330,
+          "voice": "Microsoft Huihui Desktop",
+          "character_version_id": "c9490344-e15b-4d30-9197-499b14848798",
+          "speaker": "阿青",
+          "caption_status": "matched",
+          "caption": "大家好，欢迎来到灯塔。",
+          "max_window_rms_dbfs": -16.01,
+          "audio_status": "signal",
+          "recognition": {
+            "status": "review",
+            "observed": "大家好欢迎来稿等他",
+            "segments": [
+              {
+                "start_us": 4090000,
+                "end_us": 6660000,
+                "text": "大家好欢迎来稿等他",
+                "confidence": 0.50973
+              }
+            ]
+          }
+        }
+      ],
+      "silence_floor_dbfs": -55,
+      "recognition": {
+        "status": "checked",
+        "adapter": {
+          "engine": "windows-sapi-dictation-v1",
+          "language": "zh-CN",
+          "recognizer_id": "MS-2052-80-DESK",
+          "system_version": "10.0.26300"
+        }
+      }
+    },
+    "mixed_pair_blocked": true,
+    "muted_qc": {
+      "rule_version": "guardian-dialogue-v1",
+      "storyboard_version_id": "38b64bea-e0c8-41eb-82bf-7331582f1487",
+      "storyboard_hash": "4818f2760965b0f87af540e301c535f218675336b237c3f0835281f6b1928b0e",
+      "voice_task_id": "896a016f-5093-4290-9361-d9e5bcc40d7a",
+      "voice_sha256": "ebe9bc1031beefea71aefc5a16a56728d4b80d509e0fefe67595e7e02a18110f",
+      "caption_source_sha256": "fb8530b7ea0d89b0cd9a659287724df4991b2a9c718877af89770691667d9023",
+      "lines": [
+        {
+          "shot_id": "ep1-shot5",
+          "shot_number": 5,
+          "text": "大家好，欢迎来到灯塔。",
+          "start_ms": 4000,
+          "end_ms": 7330,
+          "voice": "Microsoft Huihui Desktop",
+          "character_version_id": "c9490344-e15b-4d30-9197-499b14848798",
+          "speaker": "阿青",
+          "caption_status": "matched",
+          "caption": "大家好，欢迎来到灯塔。",
+          "max_window_rms_dbfs": null,
+          "audio_status": "muted",
+          "recognition": {
+            "status": "review",
+            "observed": "",
+            "segments": []
+          }
+        }
+      ],
+      "silence_floor_dbfs": -55,
+      "recognition": {
+        "status": "checked",
+        "adapter": {
+          "engine": "windows-sapi-dictation-v1",
+          "language": "zh-CN",
+          "recognizer_id": "MS-2052-80-DESK",
+          "system_version": "10.0.26300"
+        }
+      }
+    },
+    "muted_delivery_blocked": true,
+    "unchanged_episode_reused": true
+  },
+  "shot_rework": {
+    "task_id": "d4ae7f02-3371-4174-9e5a-68ff4f486bc0",
+    "old_timeline": "c06eb381-70df-4bc0-b892-ecf016a6f228",
+    "new_timeline": "5e98609d-be9d-43a0-add9-1c6e36560f27",
+    "unchanged_clips_in_affected_episode": 4,
+    "original_timeline_preserved": true
+  },
+  "verified_delivery_bytes": 885843,
+  "verified_delivery_sha256": "57ca6d1540e09cef65f8da19c6668bfcf66ed1e02a7847ed2d4bc260e5f55e43",
+  "guardian_delivery_manifest": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

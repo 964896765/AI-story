@@ -8,6 +8,8 @@
 
 Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型仍待接入。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
 
+Guardian 成片对白质检已验证固定配音与字幕配对、字幕内容与时序、近静音与轨道静音阻断、本机听写告警和回听定位。 [对白质检、浏览器证据与回滚](V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)
+
 V3 第十批交付整剧审片监看、响度与字幕质检、复用成片复检及报告下载。后端 137 项、Chrome 14 条流程、6 集真实生产负载和独立备份恢复通过。 [验收、截图与回滚](V3_10_QUALITY_ACCEPTANCE.md)
 
 V3 第九批交付长音频分段、接缝定位、Worker 续跑与统一 SRT。后端 133 项、生产构建 Chrome 14 条流程通过，另验证 30 分钟转写上限。 [验收、截图与回滚](V3_09_LONG_ASR_ACCEPTANCE.md)

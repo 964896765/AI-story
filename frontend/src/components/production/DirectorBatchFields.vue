@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { api } from '../../services/api'
 import type { VersionRef } from '../../types/workbench'
+import DialogueRecognitionField from './DialogueRecognitionField.vue'
 
 export interface BatchPolicy {
   require_audio:boolean
@@ -12,6 +13,7 @@ export interface BatchPolicy {
   silence_db?:number
   min_integrated_lufs?:number|null
   max_true_peak_dbtp?:number|null
+  dialogue_asr_language?:string|null
 }
 export interface BatchOperation {
   action:'batch'
@@ -42,6 +44,7 @@ const previous=computed(()=>props.runs.find(item=>item.id===previousId.value))
 const options=ref<Options|null>(null)
 const selected=ref<Record<number,string>>({})
 const requireAudio=ref(false), requireSubtitles=ref(false), recheck=ref(false)
+const language=ref('')
 const error=ref(''), loading=ref(false)
 const endpoint=computed(()=>`/director/projects/${props.projectId}/batch-options`)
 const label=(item:VersionRef)=>`${item.title} · v${item.version}`
@@ -61,6 +64,7 @@ watch(previousId, () => {
   planId.value=item?.plan_version_id || ''
   requireAudio.value=item?.policy.require_audio ?? false
   requireSubtitles.value=item?.policy.require_subtitles ?? false
+  language.value=item?.policy.dialogue_asr_language || ''
   recheck.value=false
 })
 
@@ -89,10 +93,10 @@ watch(computed<BatchOperation|null>(() => {
     return id ? [{number,timeline_version_id:id}] : []
   })
   const base=previous.value?.policy
-  const policy={...base,require_audio:requireAudio.value,require_subtitles:requireSubtitles.value}
+  const policy={...base,require_audio:requireAudio.value,require_subtitles:requireSubtitles.value,dialogue_asr_language:language.value || null}
   if (previous.value) {
     if (!changes.length && !recheck.value && base?.require_audio===policy.require_audio &&
-        base?.require_subtitles===policy.require_subtitles) return null
+        base?.require_subtitles===policy.require_subtitles && (base?.dialogue_asr_language || null)===policy.dialogue_asr_language) return null
   } else if (changes.length!==options.value.episodes.length) return null
   return {action:'batch',plan_version_id:planId.value,previous_run_id:previousId.value || null,
     timelines:changes,policy,recheck_quality:recheck.value}
@@ -123,6 +127,7 @@ watch(computed<BatchOperation|null>(() => {
     <div class="batch-policy">
       <label><input v-model="requireAudio" type="checkbox"> 要求音轨</label>
       <label><input v-model="requireSubtitles" type="checkbox"> 要求字幕</label>
+      <DialogueRecognitionField v-model="language" />
       <label v-if="previousId"><input v-model="recheck" type="checkbox"> 对复用成片重新质检</label>
     </div>
   </template>

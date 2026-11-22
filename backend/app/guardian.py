@@ -182,6 +182,7 @@ def require_reviewed_timeline(db, plan, episode, timeline):
     if timeline['frames']!=main[-1]['at']+main[-1]['frames']:
         raise HTTPException(422,'Guardian 时间轴须完整覆盖固定镜头范围')
     if any((shot.get('guardian') or {}).get('has_dialogue') for shot in shots):
+        assets = []
         for role in ('dialogue','caption'):
             clips = [clip for track in tracks if track['role']==role for clip in track['clips']]
             if len(clips)!=1:
@@ -192,3 +193,8 @@ def require_reviewed_timeline(db, plan, episode, timeline):
                 or asset.media_info.get('story_version_id')!=episode['storyboard_version_id']
                 or clip['at'] or clip['source_in'] or clip['frames']!=timeline['frames']):
                 raise HTTPException(422,'配音或字幕与批准分镜及时间轴范围不符')
+            assets.append(asset)
+        voice_task_id = assets[0].media_info.get('task_id')
+        if not voice_task_id or assets[1].media_info.get('task_id')!=voice_task_id:
+            raise HTTPException(422,'对白音轨与字幕须从同一次已采纳的配音任务生成')
+        return assets

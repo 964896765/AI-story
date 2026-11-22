@@ -12,6 +12,7 @@ from .analysis_service import fingerprint
 from .creative import require, version_ref
 from .db import session
 from .guardian import require_active_plan, require_reviewed_timeline
+from .guardian_audio import fixed_dialogue
 from .models import ProductionEpisode, ProductionRun, Project, QualityReview, StoryVersion, Task, TaskEvent, now
 from .render import file_hash
 from .series import series_report
@@ -36,6 +37,7 @@ class Policy(Strict):
     silence_db: int=Field(default=-45,ge=-99,le=-10)
     min_integrated_lufs: float|None=Field(default=None,ge=-60,le=0)
     max_true_peak_dbtp: float|None=Field(default=None,ge=-20,le=0)
+    dialogue_asr_language: str|None=Field(default=None,min_length=2,max_length=35,pattern=r'^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$')
 
 
 class RunOptions(Strict):
@@ -63,6 +65,7 @@ class PreparedEpisode:
     snapshot: dict
     render: Task | None
     qc: Task | None
+    dialogue: dict | None
 
     @property
     def mode(self):
@@ -158,9 +161,12 @@ def add_tasks(db,run,episode):
         db.add(render)
         db.flush()
         db.add(TaskEvent(task_id=render.id,attempt=0,message='整剧渲染步骤已排队'))
+    inputs = {'render_task_id':render.id}
+    if episode.dialogue:
+        inputs['dialogue'] = episode.dialogue
     qc = Task(project_id=run.project_id,kind='qc_review',story_version_id=version.id,
         dependency_task_id=render.id,idempotency_key=f'production:{run.id}:{number}:qc',
-        parameters=run.policy,input_snapshot={'render_task_id':render.id})
+        parameters=run.policy,input_snapshot=inputs)
     db.add(qc)
     db.flush()
     db.add(TaskEvent(task_id=qc.id,attempt=0,message='使用已核对的成片重新执行技术质检' if episode.render else '技术质检等待固定渲染产物'))
@@ -219,7 +225,9 @@ def prepare_episodes(db,project_id,body,policy):
         assembly = timeline.provenance.get('assembly_request')
         if assembly and assembly['episode']!=number:
             raise HTTPException(422,f'第 {number} 集和自动装配记录不匹配')
-        require_reviewed_timeline(db,plan,entry,timeline.content)
+        voices = require_reviewed_timeline(db,plan,entry,timeline.content)
+        duration_ms = round(timeline.content['frames']*1000/timeline.content['frame_rate'])
+        dialogue = fixed_dialogue(db,project_id,entry,voices,duration_ms) if voices else None
         snapshot = {'version_hash':timeline.content_hash,'assets':all_source_versions(db,project_id,timeline.content)}
         old = old_rows.get(number)
         render = prior_qc = None
@@ -230,8 +238,9 @@ def prepare_episodes(db,project_id,body,policy):
                 and render_intact(previous_render,prior_qc)):
                 render = previous_render
         reuse = bool(render and keep_quality and prior_qc.status=='succeeded' and
+                     prior_qc.input_snapshot.get('dialogue')==dialogue and
                      prior_qc.output.get('output_sha256')==render.output.get('sha256'))
-        episodes.append(PreparedEpisode(number,timeline,snapshot,render,prior_qc if reuse else None))
+        episodes.append(PreparedEpisode(number,timeline,snapshot,render,prior_qc if reuse else None,dialogue))
     return plan, episodes
 
 

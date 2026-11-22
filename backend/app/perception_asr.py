@@ -66,7 +66,7 @@ def normalize_segments(segments, start_us, audio_duration_us):
     return cues
 
 
-def transcribe(commands, path, adapter, start_us, audio_duration_us, progress=70):
+def transcribe(commands, path, adapter, start_us, audio_duration_us, progress=70, *, stage='analysis_asr'):
     stdout, _ = commands.run([*command(), '-InputWave', str(path), '-Recognizer', adapter['recognizer_id']],
-                             'analysis_asr', progress, timeout=600)
+                             stage, progress, timeout=600)
     return normalize_segments(json.loads(stdout.read_bytes()), start_us, audio_duration_us)

@@ -60,8 +60,11 @@ const wrongSign=await sign('wrong-sign','旧版标识')
 const installed=(await api('/voice/capabilities')).voices
 const voice=installed.find(item=>item.locale==='zh-CN')
 assert(voice,'Chinese Windows offline voice is required for this acceptance')
+const speech=(await api('/analysis/capabilities')).capabilities.find(item=>item.id==='asr')
+assert(speech?.available && speech.languages.includes('zh-CN'),'Mandarin desktop dictation is required')
 const novel=await create('novel','灯塔交信',{text:'阿青和守塔人在岸边见面，带着旧信进入灯室。',authorization:'原创验收剧'},'novel')
-const script=await create('script','灯塔交信 · 剧本',{body:'日落前交信。阿青说「好。」',source_version_id:novel.version_id},'script')
+const dialogue='大家好，欢迎来到灯塔。'
+const script=await create('script','灯塔交信 · 剧本',{body:'日落前交信。阿青说「'+dialogue+'」',source_version_id:novel.version_id},'script')
 const actor=await create('character','阿青',{identity:{traits:'浅色面部，左侧人物',wardrobes:{green:'绿色外衣'},local_voice:voice.name},reference_asset_ids:[coast.id]},'actor')
 const keeper=await create('character','守塔人',{identity:{traits:'右侧人物',wardrobes:{violet:'紫色斗篷'}},reference_asset_ids:[room.id]},'keeper')
 const exterior=await create('scene','灯塔外',{location:'海边',reference_asset_ids:[coast.id]},'coast')
@@ -77,11 +80,11 @@ for (const [offset,[scene,art]] of [[exterior,coast],[interior,room]].entries())
   const states=[{character_version_id:ids[0],wardrobe_id:'green',left_hand:'letter',action:'站定',position:'画面左侧'},
     {character_version_id:ids[1],wardrobe_id:'violet',action:'站定',position:'画面右侧'}]
   const shots=Array.from({length:5},(_,index)=>({number:index+1,shot_id:`ep${number}-shot${index+1}`,description:`灯塔镜头 ${index+1}`,
-    planned_duration:number===1 && index===4 ? 2 : 1,scene_version_id:scene.version_id,character_version_ids:ids,strategy:'still_motion',
+    planned_duration:number===1 && index===4 ? 5 : 1,scene_version_id:scene.version_id,character_version_ids:ids,strategy:'still_motion',
     contract:{visual:'左侧阿青持白信，右侧是守塔人',facts:{deadline:'日落前交信'},opening:structuredClone(states),closing:structuredClone(states),
       source_image_asset_ids:[art.id,...(number===1 && index===0 ? [...defects.map(([,image])=>image.id),blackArtwork.id]:[])]},
   }))
-  if(number===1)Object.assign(shots[4],{dialogue:'好。',dialogue_ms:600,speaker_version_id:actor.version_id})
+  if(number===1)Object.assign(shots[4],{dialogue,dialogue_ms:3900,speaker_version_id:actor.version_id})
   const invalid=structuredClone(shots)
   if(number===1){
     invalid[1].contract.opening[0].left_hand=null
@@ -91,7 +94,7 @@ for (const [offset,[scene,art]] of [[exterior,coast],[interior,room]].entries())
   }
   const board=await create('storyboard',`第 ${number} 集分镜`,{source_version_id:episode.version_id,shots:invalid},'board-'+number)
   boards.push(number===1 ? await revise(board,{source_version_id:episode.version_id,shots},'correct-board') : board)
-  plans.push({episode_version_id:episode.version_id,storyboard_version_id:board.version_id,target_duration_ms:number===1?6000:5000,
+  plans.push({episode_version_id:episode.version_id,storyboard_version_id:board.version_id,target_duration_ms:number===1?9000:5000,
     bridge_note:number===2?'从岸边切入灯室':''})
 }
 const invalid=await create('story_bible','灯塔制作计划',{script_version_id:script.version_id,theme:'守约',world:'现代灯塔',episodes:plans,guardian:canon},'bible')
@@ -296,21 +299,47 @@ try {
   const timelines=[await post(assembling,{...assembleBody,episode:1,title:'第 1 集',idempotency_key:'assemble-1'}),replacement]
 
   const voiceRoot='/voice'+path+'/tasks'
-  const voiceJob=await post(voiceRoot,{storyboard_version_id:boards[0].version_id,series_version_id:latest.version_id,
-    bindings:[{character_version_id:actor.version_id,voice:voice.name,authorization:'本机系统语音原创验收'}],idempotency_key:'guardian-voice'})
-  await wait(async()=>{
-    const item=(await api(voiceRoot)).find(row=>row.id===voiceJob.id)
-    if(item.status==='failed')throw new Error(item.error)
-    return item.status==='succeeded'
-  },'real Windows offline speech and subtitles',30000)
+  const voiceBody={storyboard_version_id:boards[0].version_id,series_version_id:latest.version_id,
+    bindings:[{character_version_id:actor.version_id,voice:voice.name,authorization:'本机系统语音原创验收'}],idempotency_key:'guardian-voice'}
+  const voiceJob=await post(voiceRoot,voiceBody)
+  const otherVoice=await post(voiceRoot,{...voiceBody,idempotency_key:'different-voice-timing',
+    bindings:[{...voiceBody.bindings[0],rate:1}]})
+  for(const job of [voiceJob,otherVoice]) {
+    await wait(async()=>{
+      const item=(await api(voiceRoot)).find(row=>row.id===job.id)
+      if(item.status==='failed')throw new Error(item.error)
+      return item.status==='succeeded'
+    },'real Windows offline speech and subtitles',30000)
+  }
   const [line,subtitle]=await post('/voice/tasks/'+voiceJob.id+'/select',{title:'批准配音与字幕',note:'试听验收并固定正文版本'})
+  const [,otherSubtitle]=await post('/voice/tasks/'+otherVoice.id+'/select',{title:'第二种配音时长',note:'验证混用另一配音任务会失败'})
   const frames=timelines[0].content.frames
   const edit=await revise(timelines[0],{...timelines[0].content,tracks:[...timelines[0].content.tracks,
     {id:'dialogue',role:'dialogue',clips:[{id:'dialogue',asset_id:line.id,at:0,frames}]},
     {id:'caption',role:'caption',clips:[{id:'caption',asset_id:subtitle.id,at:0,frames}]}]},'attach-voice')
   const runBody={plan_version_id:latest.version_id,timelines:[{number:1,timeline_version_id:edit.version_id},
-    {number:2,timeline_version_id:timelines[1].version_id}],idempotency_key:'produce'}
-  const run=await post('/production'+path+'/runs',runBody)
+    {number:2,timeline_version_id:timelines[1].version_id}],policy:{dialogue_asr_language:'zh-CN'},idempotency_key:'produce'}
+  const mixed=await create('timeline','混用配音与字幕', {...edit.content,tracks:edit.content.tracks.map(track=>track.role==='caption'?
+    {...track,clips:[{...track.clips[0],asset_id:otherSubtitle.id}]}:track)},'wrong-voice-pair')
+  await blocked('/production'+path+'/runs',{...runBody,timelines:[{number:1,timeline_version_id:mixed.version_id},runBody.timelines[1]],
+    idempotency_key:'mixed-pair-must-fail'},422)
+  await command('Page.navigate',{url:appLink('/production')})
+  await wait(()=>evaluate(`!!document.querySelector('.production select option[value="${latest.version_id}"]')`),'approved plan in production form')
+  await evaluate("document.querySelector('.production > details').open=true; document.querySelector('.quality-rules').open=true")
+  await setField('已批准制作计划',latest.version_id)
+  await wait(()=>evaluate(`document.querySelectorAll('.production select option[value="${edit.version_id}"]').length===2`),'fixed timelines in production form')
+  await setField('第 1 集 · 第 1 集',edit.version_id)
+  await setField('第 2 集 · 第 2 集',timelines[1].version_id)
+  await wait(()=>evaluate("!!document.querySelector('.quality-rules select option[value=\"zh-CN\"]')"),'installed recognition option')
+  await setField('对白听写语言','zh-CN')
+  await click('提交渲染和质检')
+  let run
+  await wait(async()=>{
+    const runs=await api('/production'+path+'/runs')
+    run=runs[0]
+    return !!run
+  },'submitted batch in production queue')
+  assert.equal(run.policy.dialogue_asr_language,'zh-CN')
   let final
   await wait(async()=>{
     final=await api('/production/runs/'+run.id)
@@ -325,9 +354,39 @@ try {
   assert.equal(final.status,'passed')
   assert.equal(final.episodes[0].qc.captions.cue_count,1)
   assert.equal(final.episodes[0].qc.audio.status,'measured')
+  const dialogueReport=final.episodes[0].qc.dialogue
+  assert.equal(dialogueReport.recognition.adapter.language,'zh-CN')
+  assert.equal(dialogueReport.lines[0].caption_status,'matched')
+  assert.equal(dialogueReport.lines[0].audio_status,'signal')
+  assert(dialogueReport.lines[0].recognition.observed.length>0,JSON.stringify(dialogueReport))
+  await command('Page.navigate',{url:appLink('/production',{run:run.id,episode:1})})
+  await wait(()=>contains('固定对白核验'),'dialogue QC appears in production')
+  await evaluate("document.querySelector('.dialogue-report').open=true")
+  await click('回听 4.000 秒')
+  await wait(()=>evaluate("Math.abs(document.querySelector('.review-preview video').currentTime-4)<0.1"),'published dialogue evidence seeks correctly')
+  await evaluate("document.querySelector('.dialogue-report').scrollIntoView({block:'center'})")
+  await screenshot('guardian-dialogue-review.png')
+
+  const mute=await create('timeline','故意静音的对白', {...edit.content,tracks:edit.content.tracks.map(track=>track.role==='dialogue'?
+    {...track,volume:0}:track)},'muted-dialogue-fixture')
+  const muted=await post('/production'+path+'/runs',{...runBody,previous_run_id:run.id,timelines:[{number:1,timeline_version_id:mute.version_id}],
+    idempotency_key:'mute-check'})
+  let mutedResult
+  await wait(async()=>{
+    mutedResult=await api('/production/runs/'+muted.id)
+    return mutedResult.status!=='processing'
+  },'muted dialogue renders and fails QC',50000)
+  assert.equal(mutedResult.status,'needs_rework')
+  assert.equal(mutedResult.episodes[0].render_status,'succeeded')
+  assert(mutedResult.episodes[0].qc.issues.some(item=>item.code==='dialogue_silent'&&item.severity==='error'&&item.start_ms===4000))
+  assert(mutedResult.episodes[0].qc.issues.some(item=>item.code==='dialogue_track_muted'&&item.severity==='error'))
+  assert.equal(mutedResult.episodes[1].render_task_id,final.episodes[1].render_task_id)
+  await blocked(`/production/runs/${muted.id}/episodes/1/review`,{
+    expected_sha256:mutedResult.episodes[0].qc.output_sha256,note:'不能通过静音',idempotency_key:'mute-review'},409)
 
   const packagePath='/delivery'+path+'/packages'
   const packageBody={run_id:run.id,title:'Guardian 原创剧验收',platform:'local-test',region:'CN',idempotency_key:'package'}
+  await blocked(packagePath,{...packageBody,run_id:muted.id,idempotency_key:'mute-delivery'},409)
   await blocked(packagePath,packageBody,409)
   const readiness=await api(`/delivery${path}/runs/${run.id}/readiness?platform=local-test&region=CN`)
   assert(!readiness.blockers.some(item=>item.asset_id===before[4].asset_id),'replaced clip is outside delivery rights scope')
@@ -349,6 +408,7 @@ try {
   assert(bytes.includes(Buffer.from('guardian.json')) && bytes.includes(Buffer.from('guardian-contract-v1')))
   assert(bytes.includes(Buffer.from('guardian-visual-luma-v1')))
   assert(bytes.includes(Buffer.from('guardian-screen-text-v1')))
+  assert(bytes.includes(Buffer.from('guardian-dialogue-v1')))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -373,6 +433,8 @@ try {
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
     reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:run.id,
     screen_text:{matched,mismatch,explicit_review_gate:true,contract_saved_in_browser:true,export_included:true},
+    dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
+      muted_delivery_blocked:true,unchanged_episode_reused:true},
     shot_rework:{task_id:regen.id,old_timeline:originalTimeline.version_id,new_timeline:replacement.version_id,
       unchanged_clips_in_affected_episode:4,original_timeline_preserved:true},
     verified_delivery_bytes:bytes.length,verified_delivery_sha256:receipt.sha256,guardian_delivery_manifest:true,
