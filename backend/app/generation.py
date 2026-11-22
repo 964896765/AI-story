@@ -30,6 +30,7 @@ from .visual_quality import MAX_FINDINGS, inspect_video
 router = APIRouter(prefix='/api/generation', tags=['generation'])
 PIPELINE = 'local-still-motion-v1'
 DEMUXERS = {'.png':'png_pipe','.jpg':'jpeg_pipe','.jpeg':'jpeg_pipe','.webp':'webp_pipe'}
+REFERENCE_TYPES = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'}
 SIZES = {'portrait':(720,1280),'landscape':(1280,720),'square':(720,720)}
 
 
@@ -52,12 +53,18 @@ class Selection(Strict):
     note: str=Field(min_length=1,max_length=2000,pattern=r'.*\S.*')
 
 
+class ReferenceComparison(Strict):
+    reference: int=Field(strict=True,ge=0)
+    frame: int=Field(strict=True,ge=0,le=2+MAX_FINDINGS)
+
+
 class CandidateReview(Strict):
     decision: Literal['approved','rejected']
     category: Literal['identity','wardrobe','prop','scene','continuity','shot_mismatch','technical','screen_text','other'] | None=None
     frame: int | None=Field(default=None,ge=0,le=2+MAX_FINDINGS)
     note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
     screen_text_verified: bool | None = Field(default=None,strict=True)
+    comparison: ReferenceComparison | None=None
 
 
 class ShotRework(Strict):
@@ -239,6 +246,56 @@ def guardian_frame(task_id: str,index: int,db=Depends(session)):
     return FileResponse(path,media_type='image/jpeg',headers={'X-Content-Type-Options':'nosniff'})
 
 
+def reference_manifest(db, task):
+    guardian = task.input_snapshot.get('guardian')
+    if not guardian:
+        raise HTTPException(404,'该候选没有已锁定的 Guardian 镜头合同')
+    entity,version = version_ref(db,task.project_id,task.story_version_id,{'story_bible'})
+    shot_id = task.parameters['shot_id']
+    expected = guardian['contract_sha256']
+    if (entity.id!=guardian['series_id'] or not version.provenance.get('series_approved')
+        or (version.provenance.get('guardian_manifest') or {}).get(shot_id)!=expected):
+        raise HTTPException(409,'固定参考与候选合同不一致')
+    report = series_report(db,entity,version,reference_shot=shot_id)
+    for episode in report['episodes']:
+        for shot in episode['shots']:
+            contract = shot.get('guardian')
+            if shot['shot_id']==shot_id and contract and contract['contract_sha256']==expected:
+                return {'contract_sha256':expected,'visual':contract['visual'],'references':contract['visual_references']}
+    raise HTTPException(409,'固定参考与候选合同不一致')
+
+
+def checked_reference(db, task, index):
+    references = reference_manifest(db,task)['references']
+    if not 0<=index<len(references):
+        raise HTTPException(404,'参考图不在固定镜头合同中')
+    reference = references[index]
+    asset = require(db,Asset,reference['asset_id'])
+    media_type = REFERENCE_TYPES.get(Path(asset.storage_key).suffix.lower())
+    if asset.project_id!=task.project_id or not media_type or asset.sha256!=reference['sha256']:
+        raise HTTPException(409,'参考图与固定版本不一致')
+    try:
+        path = storage.resolve_key(asset.storage_key)
+        if path.stat().st_size!=asset.size_bytes or file_hash(path)!=reference['sha256']:
+            raise ValueError('Reference checksum mismatch')
+    except (OSError,ValueError):
+        raise HTTPException(409,'参考图文件缺失或未通过完整性检查') from None
+    return reference,path,media_type
+
+
+@router.get('/candidates/{task_id}/guardian-references')
+def guardian_references(task_id: str,db=Depends(session)):
+    task,_ = finished_candidate(db,task_id)
+    return reference_manifest(db,task)
+
+
+@router.get('/candidates/{task_id}/guardian-references/{index}')
+def guardian_reference(task_id: str,index: int,db=Depends(session)):
+    task,_ = finished_candidate(db,task_id)
+    _,path,media_type = checked_reference(db,task,index)
+    return FileResponse(path,media_type=media_type,headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
+
+
 def require_visual_clearance(task):
     visual = task.output.get('guardian_visual')
     if visual and (visual['output_sha256']!=task.output['sha256'] or visual['status']=='blocked'):
@@ -267,6 +324,8 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     request = body.model_dump()
     if body.screen_text_verified is None:
         request.pop('screen_text_verified')
+    if body.comparison is None:
+        request.pop('comparison')
     previous = task.output.get('guardian_review')
     if previous:
         if previous['request']!=request:
@@ -275,12 +334,14 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     require_active_plan(db,require(db,StoryVersion,task.story_version_id))
     if body.decision=='rejected' and (not body.category or body.frame is None):
         raise HTTPException(422,'退回候选需要选择问题类别与证据帧')
+    if body.decision=='rejected' and body.comparison and body.comparison.frame!=body.frame:
+        raise HTTPException(422,'对照使用的候选帧必须和退回证据帧一致')
     if body.decision=='rejected' and body.screen_text_verified is not None:
         raise HTTPException(422,'文字核验确认仅用于通过候选')
     if body.screen_text_verified is not None and not task.input_snapshot['guardian'].get('screen_text'):
         raise HTTPException(422,'此候选没有固定画面文字规则')
     if body.decision=='approved' and (body.category is not None or body.frame is not None):
-        raise HTTPException(422,'通过候选时只需填写审核说明')
+        raise HTTPException(422,'通过候选时，证据帧可随参考对照提交')
     if body.decision=='approved':
         require_visual_clearance(task)
         require_screen_text_clearance(task,body.screen_text_verified)
@@ -293,6 +354,15 @@ def review_candidate(task_id: str,body: CandidateReview,db=Depends(session)):
     review = {'request':request,'source':'local_operator','created_at':now().isoformat(),
               'output_sha256':task.output['sha256'],
               'evidence':{'time_ms':evidence['time_ms'],'sha256':evidence['sha256']} if evidence else None}
+    if body.comparison:
+        compared_frame = checked.get(body.comparison.frame)
+        if not compared_frame:
+            raise HTTPException(422,'所选对照帧不存在')
+        reference,_,_ = checked_reference(db,task,body.comparison.reference)
+        review['comparison'] = {'rule_version':'guardian-reference-comparison-v1',
+                                'contract_sha256':task.input_snapshot['guardian']['contract_sha256'],
+                                'reference':reference,'frame':{'index':compared_frame['index'],
+                                    'time_ms':compared_frame['time_ms'],'sha256':compared_frame['sha256']}}
     task.output = {**task.output,'guardian_review':review}
     db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='Guardian 候选人工审核 · '+body.decision))
     db.commit()

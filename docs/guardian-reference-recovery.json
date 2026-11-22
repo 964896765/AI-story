@@ -1,0 +1,18 @@
+{
+  "before_revision": "0015",
+  "tested_revision": "0015",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "3d983538cc6ac0415656162663fd7b6b0de8af300ccd8e08ebdcc9329dd23899",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "backup_directory": "data/backups/guardian-reference-810971d68576",
+  "schema_changed": false
+}

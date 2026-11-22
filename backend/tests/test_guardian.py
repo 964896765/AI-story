@@ -1,4 +1,5 @@
 from copy import deepcopy
+from hashlib import sha256
 import subprocess
 
 from app import worker
@@ -20,7 +21,7 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     identity = {'traits':'灰围巾','wardrobes':{'green':'绿风衣'},'local_voice':'固定音色'}
     actor_a = create('character','阿青',{'identity':identity,'reference_asset_ids':[image['id']]})
     actor_b = create('character','守塔人',{'identity':{**identity,'traits':'宽帽檐'},'reference_asset_ids':[image['id']]})
-    scene_a = create('scene','灯塔外',{'description':'海岸高台'})
+    scene_a = create('scene','灯塔外',{'description':'海岸高台','reference_asset_ids':[image['id']]})
     scene_b = create('scene','灯塔内',{'description':'灯室'})
     actor_ids = [actor_a['version_id'],actor_b['version_id']]
     scene_ids = [scene_a['version_id'],scene_b['version_id']]
@@ -97,10 +98,36 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     job_path = f"/api/generation/candidates/{job['id']}"
     select = {'title':'候选','note':'内容核对完成'}
     assert client.post(job_path+'/select',json=select).status_code==409
-    assert client.get(job_path+'/guardian-frames/1').headers['content-type']=='image/jpeg'
-    bad_review = {'decision':'rejected','category':'wardrobe','frame':1,'note':'预置错误服装验收'}
+    evidence_frame = client.get(job_path+'/guardian-frames/1')
+    assert evidence_frame.headers['content-type']=='image/jpeg'
+    references_url = job_path+'/guardian-references'
+    manifest_response = client.get(references_url)
+    assert manifest_response.status_code==200,manifest_response.text
+    manifest = manifest_response.json()
+    assert manifest['contract_sha256']==approved['provenance']['guardian_manifest']['ep1-shot1']
+    assert [(item['role'],item['version_id']) for item in manifest['references']]==[
+        ('character',actor_a['version_id']),('character',actor_b['version_id']),('scene',scene_a['version_id']),('style',None)]
+    assert all(item['asset_id']==image['id'] for item in manifest['references'])
+    reference = client.get(references_url+'/0')
+    assert reference.headers['content-type']=='image/png' and reference.content==artwork.read_bytes()
+    assert client.get(references_url+'/99').status_code==404
+    bad_review = {'decision':'rejected','category':'wardrobe','frame':1,'note':'预置错误服装验收',
+                  'comparison':{'reference':0,'frame':1}}
+    assert client.post(job_path+'/guardian-review',json={**bad_review,'frame':0}).status_code==422
+    assert client.post(job_path+'/guardian-review',json={**bad_review,'comparison':{'reference':99,'frame':1}}).status_code==404
+    stored_reference = resolve(image['storage_key'])
+    original_reference = stored_reference.read_bytes()
+    try:
+        stored_reference.write_bytes(bytes(len(original_reference)))
+        assert client.get(references_url+'/0').status_code==409
+        assert client.post(job_path+'/guardian-review',json=bad_review).status_code==409
+    finally:
+        stored_reference.write_bytes(original_reference)
     verdict = client.post(job_path+'/guardian-review',json=bad_review)
     assert verdict.status_code==200 and verdict.json()['evidence']['time_ms']==500
+    comparison = verdict.json()['comparison']
+    assert comparison['reference']==manifest['references'][0] and comparison['contract_sha256']==manifest['contract_sha256']
+    assert comparison['frame']['sha256']==sha256(evidence_frame.content).hexdigest()
     assert client.post(job_path+'/guardian-review',json=bad_review).json()==verdict.json()
     assert client.post(job_path+'/select',json=select).status_code==409
 
@@ -150,6 +177,7 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     result = approve(draft,'identity-approved')
     assert result.status_code==201,result.text
     latest = result.json()
+    assert client.get(references_url).json()==manifest
     impact = client.get(f"/api/series/versions/{latest['version_id']}/impact",params={'baseline_version_id':approved['version_id']}).json()
     assert {item['kind'] for item in impact['shots']}=={'contract_changed'}
     assert client.post(queue,json={**body,'idempotency_key':'stale-contract'}).status_code==409

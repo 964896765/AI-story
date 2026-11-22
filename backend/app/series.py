@@ -18,7 +18,7 @@ class Approval(Strict):
     idempotency_key: str = Field(min_length=1, max_length=70)
 
 
-def series_report(db, entity, version):
+def series_report(db, entity, version, *, reference_shot=None):
     content = version.content
     issues, episodes = [], []
     cache = {}
@@ -98,7 +98,8 @@ def series_report(db, entity, version):
                           'character_version_ids':shot['character_version_ids']})
             if guardian:
                 shots[-1]['guardian'] = guardian.check_shot(shot,shot_id,number,planned_ms,
-                                                            block['bridge_note'] if shot_index==0 else '')
+                                                            block['bridge_note'] if shot_index==0 else '',
+                                                            include_references=shot_id==reference_shot)
             planned_ms += length
         target = block['target_duration_ms']
         if abs(planned_ms-target)>max(250,round(target*0.03)):

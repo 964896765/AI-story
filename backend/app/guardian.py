@@ -91,7 +91,21 @@ class Guardian:
                       evidence={'previous_episode': before_episode, 'previous_shot': before_shot,
                                 'character_version_id': key, 'fields': differences, 'transition_note': note})
 
-    def check_shot(self, shot, shot_id, episode, start_ms, bridge_note):
+    def visual_references(self, shot, versions, hashes):
+        groups = [('character', versions[key]) for key in shot['character_version_ids'] if key in versions]
+        if scene := versions.get(shot.get('scene_version_id')):
+            groups.append(('scene', scene))
+        references = []
+        for role, version in groups:
+            for key in dict.fromkeys(version.content.get('reference_asset_ids', [])):
+                references.append({'asset_id':key,'sha256':hashes[key],'role':role,'title':version.title,
+                                   'version_id':version.id,'version_number':version.number})
+        for key in dict.fromkeys(self.canon['style']['reference_asset_ids']):
+            references.append({'asset_id':key,'sha256':hashes[key],'role':'style','title':'风格参考',
+                               'version_id':None,'version_number':None})
+        return [{'index':index,**reference} for index,reference in enumerate(references)]
+
+    def check_shot(self, shot, shot_id, episode, start_ms, bridge_note, *, include_references=False):
         def issue(code, detail, severity='error', evidence=None):
             self.issue(code, episode, detail, severity, shot_id, start_ms, evidence)
 
@@ -136,6 +150,7 @@ class Guardian:
         self.contracts[shot_id] = fingerprint(payload)
         return {'contract_sha256': self.contracts[shot_id], 'visual':contract['visual'], 'has_dialogue':has_dialogue,
                 'source_images': {key: asset_hashes[key] for key in contract['source_image_asset_ids']},
+                **({'visual_references':self.visual_references(shot,versions,asset_hashes)} if include_references else {}),
                 **({'screen_text':contract['screen_text']} if contract.get('screen_text') else {})}
 
 

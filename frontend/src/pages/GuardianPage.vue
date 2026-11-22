@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request, statusLabels } from '../analysisApi'
 import GuardianShotRework from '../components/production/GuardianShotRework.vue'
+import GuardianReferenceCompare, { type SavedComparison } from '../components/production/GuardianReferenceCompare.vue'
 import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from '../components/production/VisualCandidateCheck.vue'
 import ScreenTextCheck, { type ScreenTextReport } from '../components/production/ScreenTextCheck.vue'
 import type { ScreenTextContract } from '../components/production/GuardianShot.vue'
@@ -27,7 +28,7 @@ interface Candidate {
   parameters:{shot_id:string;preset:string;aspect:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
     guardian_visual?:VisualReport;
     guardian_screen_text?:ScreenTextReport;
-    guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null}}
+    guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null;comparison?:SavedComparison}}
 }
 interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
 
@@ -224,6 +225,8 @@ async function compare() {
               </div>
               <VisualCandidateCheck v-if="candidate?.status==='succeeded'" :report="candidate.output.guardian_visual" @evidence="focusEvidence" />
               <ScreenTextCheck v-if="candidate?.output.guardian_screen_text" :report="candidate.output.guardian_screen_text" @evidence="focusEvidence" />
+              <GuardianReferenceCompare v-if="candidate?.status==='succeeded'" :key="candidate.id"
+                :candidate-id="candidate.id" :frames="evidenceFrames" :saved="candidate.output.guardian_review?.comparison" />
               <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
               <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
               <p v-else-if="candidate" role="status">{{statusLabels[candidate.status] || candidate.status}} · {{Math.round(candidate.progress)}}%</p>

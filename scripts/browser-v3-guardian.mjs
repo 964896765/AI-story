@@ -152,13 +152,27 @@ try {
     if (!item) return false; item.querySelector('button').click(); return true;
   })()`))
   await wait(()=>evaluate(`document.querySelector('.candidate-evidence img[ src*="${rejectedId}/guardian-frames/1"]')?.naturalWidth>0`),'identity fixture rendered in Chrome')
+  await wait(()=>evaluate(`document.querySelector('.reference-comparison .reference-image[src*="${rejectedId}/guardian-references/0"]')?.naturalWidth>0
+    && document.querySelector('.reference-comparison .comparison-frame')?.naturalWidth>0`),'approved actor image and actual candidate frame rendered side by side')
   await setField('内容审核决定','rejected')
   await setField('问题类别','identity')
-  await setField('问题证据帧','1')
+  await setField('候选对照帧','1')
+  await click('预览对照时点')
+  await wait(()=>evaluate("Math.abs(document.querySelector('video[aria-label=当前候选]').currentTime-0.5)<0.05"),'comparison seeks to actual rejected frame')
+  await click('附到内容审核')
+  assert(await evaluate("document.querySelector('.attached-comparison')?.textContent.includes('阿青 v1')"))
+  assert.equal(await evaluate(`Array.from(document.querySelectorAll('.content-review label')).find(label=>
+    label.childNodes[0].textContent.trim()==='问题证据帧').querySelector('select').value`),'1')
+  await evaluate("document.querySelector('.reference-comparison').scrollIntoView({block:'center'})")
+  await screenshot('guardian-reference-compare.png')
   await setField('内容审核说明','主角脸部色块改变，与固定参考不符')
   await click('保存内容审核')
   await wait(()=>contains('候选已退回，证据已保存'),'human review decision persisted')
   await blocked(taskRoot(rejectedId)+'/select',selection,409)
+  const rejectedComparison=(await api('/generation'+path+'/candidates')).find(row=>row.id===rejectedId).output.guardian_review.comparison
+  assert.equal(rejectedComparison.reference.version_id,actor.version_id)
+  assert.equal(rejectedComparison.reference.sha256,coast.sha256)
+  assert.equal(rejectedComparison.frame.time_ms,500)
   await screenshot('guardian-candidate-review.png')
   for(const [category,job] of rejected.slice(1)) {
     const verdict=await post(taskRoot(job.id)+'/guardian-review',{decision:'rejected',category,frame:1,note:'原创验收注入 · '+category})
@@ -184,8 +198,22 @@ try {
   await wait(()=>contains('候选已退回，证据已保存'),'blocked candidate rejection persisted')
   const rejectedBlack=(await api('/generation'+path+'/candidates')).find(item=>item.id===technical.id)
   assert.equal(rejectedBlack.output.guardian_review.evidence.sha256,point.sha256)
+  const reviewExample=staged[0]
+  await command('Page.navigate',{url:appLink('/ai/candidates',{plan:approved.version_id,shot:'ep1-shot1',asset:coast.id,candidate:reviewExample.id})})
+  await wait(()=>evaluate("document.querySelector('.reference-comparison select')?.options.length===4"),'fixed reference choices available for approval')
+  await setField('固定参考图','2')
+  await setField('候选对照帧','1')
+  await click('附到内容审核')
+  await setField('内容审核说明','按固定场景参考复核本机候选画面')
+  await click('保存内容审核')
+  await wait(()=>contains('内容审核已保存，可以采纳'),'reference-linked approval persisted')
+  const approvedComparison=(await api('/generation'+path+'/candidates')).find(row=>row.id===reviewExample.id).output.guardian_review.comparison
+  assert.equal(approvedComparison.reference.role,'scene')
+  assert.equal(approvedComparison.reference.version_id,exterior.version_id)
+  await command('Page.navigate',{url:appLink('/delivery/guardian',{version:approved.version_id,shot:'ep1-shot1',candidate:reviewExample.id})})
+  await wait(()=>contains('已记录对照 · 场景 · 灯塔外 v1'),'recorded reference is available in Guardian')
   for(const job of staged) {
-    await post(taskRoot(job.id)+'/guardian-review',{decision:'approved',note:'脚本按预设正确画面登记人工审核决定'})
+    if(job.id!==reviewExample.id)await post(taskRoot(job.id)+'/guardian-review',{decision:'approved',note:'脚本按预设正确画面登记人工审核决定'})
     await post(taskRoot(job.id)+'/select',{...selection,title:job.parameters.shot_id})
   }
 
@@ -485,6 +513,8 @@ try {
   assert(bytes.includes(Buffer.from('guardian-dialogue-v1')))
   assert(bytes.includes(Buffer.from('guardian-dialogue-balance-v1')))
   assert(bytes.includes(Buffer.from('ffmpeg-sidechain-dialogue-v1')))
+  assert(bytes.includes(Buffer.from('guardian-reference-comparison-v1')))
+  assert(bytes.includes(Buffer.from(approvedComparison.frame.sha256)))
 
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
   await wait(()=>contains('版本影响分析'),'current Guardian workspace')
@@ -509,6 +539,8 @@ try {
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
     reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:balanced.id,
     screen_text:{matched,mismatch,explicit_review_gate:true,contract_saved_in_browser:true,export_included:true},
+    reference_comparison:{rejected:rejectedComparison,approved:approvedComparison,shown_on_guardian:true,
+      exact_preview_seek:true,verified_zip_contains_comparison:true},
     dialogue:{report:dialogueReport,mixed_pair_blocked:true,muted_qc:mutedResult.episodes[0].qc.dialogue,
       muted_delivery_blocked:true,unchanged_episode_reused:true},
     dialogue_balance:{flagged:flaggedBalance,finding:maskingIssue,corrected:clearedBalance,

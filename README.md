@@ -32,6 +32,8 @@ Guardian 新制作的本机候选会逐帧检查近黑和持续低变化，记�
 
 分镜的镜头合同可选填必现和禁现文字。候选制作时会用已安装的 Windows OCR 核验证据帧并记录原文。发现不符或 OCR 不可用时，须先人工核验画面再通过候选。 [画面文字核验验收](docs/V3_GUARDIAN_OCR_ACCEPTANCE.md)
 
+候选审核和 Guardian 可把批准版本的角色、场景或风格参考图与实际候选帧并排对照。审核员可把这一组对照附到通过或退回记录，已采纳镜头的记录随交付 ZIP 保存。 [固定参考对照验收](docs/V3_GUARDIAN_REFERENCE_ACCEPTANCE.md)
+
 整剧生产会按 Guardian 固定分镜核验配音来源、成片字幕和对白时段的混音。字幕不符或对白轨静音会阻断交付。可在质检规则中启用 Windows 本机听写，再从分集报告跳到对应时间回听。 [对白质检验收](docs/V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)
 
 有配乐或音效与对白重叠时，Guardian 会按固定时间轴测量分轨电平。疑似盖住对白的区间需要人工复核。可从报告跳到实际成片回听，再打开相关片段调低背景轨并重新制作受影响的分集。 [分轨质检与返工验收](docs/V3_GUARDIAN_BALANCE_ACCEPTANCE.md)
