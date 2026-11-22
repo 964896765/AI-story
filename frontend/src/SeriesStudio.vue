@@ -285,5 +285,5 @@ onMounted(()=>void run(async()=>{
 .series .editor-grid { margin:12px 0 }
 .series label { margin:7px 0 }
 .series li { margin-bottom:8px }
-.series code { overflow-wrap:anywhere; color:#98a8bd }
+.series code { overflow-wrap:anywhere; color:var(--ink-muted) }
 </style>

@@ -38,7 +38,7 @@ onUnmounted(()=>clearInterval(timer))
 .queue-heading { display:flex; justify-content:space-between; align-items:start; flex-wrap:wrap; gap:10px }
 .queue-heading h2 { margin-bottom:4px }
 .queue-metrics { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin:4px 0 12px }
-.queue-metrics div { display:grid; gap:4px; padding:8px 10px; background:#121d25; border:1px solid var(--line-soft); border-radius:7px }
+.queue-metrics div { display:grid; gap:4px; padding:8px 10px; background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:7px }
 .queue-metrics span { color:var(--ink-muted); font-size:12px }
 .queue-metrics strong { font-size:21px; font-variant-numeric:tabular-nums }
 .queue-workers { margin:0; padding:9px 11px }

@@ -91,7 +91,7 @@ async function submit(){
 </template>
 <style scoped>
 .render-desk { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(230px,1fr); align-items:start; gap:16px }
-.render-profile { padding:13px; border:1px solid var(--line-soft); border-radius:8px; background:#131d26; min-width:0 }
+.render-profile { padding:13px; border:1px solid var(--line-soft); border-radius:8px; background:var(--surface-raised); min-width:0 }
 .render-profile dl { display:grid; grid-template-columns:1fr 1fr; gap:8px }
 .render-profile dt { color:var(--ink-muted); font-size:12px }
 .render-profile dd { margin:3px 0 0 }

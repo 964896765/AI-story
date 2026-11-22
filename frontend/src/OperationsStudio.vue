@@ -231,10 +231,10 @@ onUnmounted(()=>clearInterval(timer))
 </template>
 <style scoped>
 .publication-panel { scroll-margin-top:calc(var(--topbar-height) + 12px) }
-.operations-handoff { padding:10px; background:#122730; border:1px solid #36615e; border-radius:8px; overflow-wrap:anywhere }
+.operations-handoff { padding:10px; background:var(--accent-surface); border:1px solid var(--line); border-radius:8px; overflow-wrap:anywhere }
 .operations,.form-grid { display:grid;gap:14px }
 .operations section { min-width:0 }
 .operations details,.form-grid { margin:12px 0 }
-.track { padding:12px 0;border-top:1px solid #334050;overflow-wrap:anywhere }
+.track { padding:12px 0;border-top:1px solid var(--line);overflow-wrap:anywhere }
 .track a { margin-left:12px }
 </style>

@@ -684,7 +684,7 @@ onUnmounted(() => { scope++; clearInterval(timer) })
 .speech-chunks,.speech-seam { margin:8px 0 0 }
 .speech-chunks ul { margin:8px 0; padding-left:20px }
 .cue-list small,.caption-evidence figcaption { color:var(--ink-muted) }
-.caption-evidence { margin:10px 0 0; padding:8px; background:#131d26; border:1px solid var(--line-soft); border-radius:8px }
+.caption-evidence { margin:10px 0 0; padding:8px; background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:8px }
 .caption-evidence img { display:block; width:100%; max-height:190px; object-fit:contain; }
 .caption-evidence figcaption { margin-top:6px; font-size:12px }
 @media (max-width:900px) { .subtitle-workspace { grid-template-columns:1fr } }

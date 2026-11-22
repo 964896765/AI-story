@@ -243,7 +243,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.subtitle-draft { min-width:0; margin:0; border:1px solid var(--line-soft); padding:12px; border-radius:8px; background:#131d26 }
+.subtitle-draft { min-width:0; margin:0; border:1px solid var(--line-soft); padding:12px; border-radius:8px; background:var(--surface-raised) }
 .draft-heading,.subtitle-revisions article { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px }
 .draft-heading h3,.subtitle-revisions h4 { margin:0 }
 .subtitle-draft p { margin:7px 0 }

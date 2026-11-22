@@ -97,9 +97,9 @@ onUnmounted(()=>clearInterval(timer))
   <div v-else class="voice-workbench">
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="message" role="status">{{ message }}</p>
-    <div class="workspace">
+    <div class="voice-desk">
       <section>
-        <h2>本机配音</h2>
+        <h2>角色音色 · 本机配音</h2>
         <p class="hint">使用已安装的 Windows 离线音色，语音和对白保存在本机。音源分离和云端音色待接入。</p>
         <p v-if="!voices.length" class="hint">未检测到可用的离线系统音色。</p>
         <form class="create" @submit.prevent="submit">
@@ -123,7 +123,7 @@ onUnmounted(()=>clearInterval(timer))
         </form>
       </section>
       <section>
-        <h2>试听与采纳</h2>
+        <h2>对白时间线</h2>
         <p v-if="!selected" class="hint">选择已完成的配音任务。</p>
         <p v-else-if="selected.status!=='succeeded'">{{ stages[selected.stage] || statusLabels[selected.status] || selected.status }} {{ selected.error || '' }}</p>
         <template v-else>
@@ -145,6 +145,15 @@ onUnmounted(()=>clearInterval(timer))
           </form>
         </template>
       </section>
+      <section class="voice-properties">
+        <h2>声音属性</h2>
+        <dl class="inspector-facts"><div><dt>合成引擎</dt><dd>Windows 离线语音</dd></div>
+          <div><dt>可用音色</dt><dd>{{voices.length}}</dd></div>
+          <div><dt>固定角色音色</dt><dd>{{bindings.filter(item=>item.locked).length}}</dd></div>
+          <div><dt>成片语音时长</dt><dd>{{selected?.output.duration_ms ? `${(selected.output.duration_ms/1000).toFixed(2)} 秒` : '—'}}</dd></div>
+          <div><dt>外部调用费用</dt><dd>¥0.00</dd></div>
+        </dl>
+      </section>
     </div>
     <section>
       <h2>配音任务</h2>
@@ -159,10 +168,13 @@ onUnmounted(()=>clearInterval(timer))
 
 <style scoped>
 .voice-workbench { display:grid;gap:18px }
+.voice-desk { display:grid;grid-template-columns:minmax(210px,1fr) minmax(260px,1.6fr) minmax(165px,.8fr);gap:14px;align-items:start }
 .voice-workbench fieldset { margin:0 }
 .voice-workbench fieldset label { margin:8px 0 }
 .downloads { margin:16px 0 }
-.voice-player { padding:11px; background:#111c25; border:1px solid var(--line-soft); border-radius:8px }
+.voice-player { padding:11px; background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:8px }
 .voice-player audio { display:block; width:100% }
 .voice-player p { margin:6px 0 0 }
+@media(max-width:1050px) { .voice-desk { grid-template-columns:repeat(2,minmax(0,1fr)) } .voice-properties { grid-column:1/-1 } }
+@media(max-width:700px) { .voice-desk { grid-template-columns:minmax(0,1fr) } }
 </style>

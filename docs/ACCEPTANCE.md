@@ -4,7 +4,9 @@
 
 ## 状态
 
-Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型与全站 PRISM 改版仍待完成。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
+全站 Web UI 已按 PRISM STUDIO HTML 原型更新。12 个主工作区、旧业务链接、全站主题及移动布局已验证。 [工作台验收、截图与回滚](V3_PRISM_WEB_UI_ACCEPTANCE.md)
+
+Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型仍待接入。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
 
 V3 第十批交付整剧审片监看、响度与字幕质检、复用成片复检及报告下载。后端 137 项、Chrome 14 条流程、6 集真实生产负载和独立备份恢复通过。 [验收、截图与回滚](V3_10_QUALITY_ACCEPTANCE.md)
 

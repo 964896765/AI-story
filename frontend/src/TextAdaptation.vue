@@ -259,11 +259,11 @@ onUnmounted(() => clearInterval(timer))
   <div v-else class="text-workspace">
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-if="notice" role="status">{{ notice }}</p>
-    <div :class="{ workspace: !settingsOnly }">
+    <div class="workspace">
       <section v-if="!settingsOnly">
         <h2>剧情改编</h2>
         <p v-if="source">固定原稿 {{ source.title }} · v{{ source.version }}</p>
-        <p v-else class="hint">先从漫剧定制选取已保存的小说、剧本或分集版本。</p>
+        <p v-else class="hint">从小说与剧本选择已保存的小说、剧本或分集版本。</p>
         <button @click="emit('sourcePicker')">选择原稿版本</button>
         <form class="create" @submit.prevent="submit">
           <label>文本模型
@@ -293,10 +293,12 @@ onUnmounted(() => clearInterval(timer))
         </form>
       </section>
       <section>
-        <h2>模型与项目预算</h2>
+        <h2>模型供应商与项目预算</h2>
         <p class="hint">{{ authorization ? '本机已设置真实调用授权开关。' : '真实调用已关闭，默认预算 ¥0。' }} 模拟余额与实际账单独立记录。</p>
         <TextProviderConfig @saved="run(refresh)" />
-        <p v-for="item in providers" :key="item.id" class="hint">{{ item.label }} · {{ item.kind === 'mock' ? '模拟' : '兼容接口' }} · {{ item.enabled ? '配置已启用' : '配置已禁用' }}</p>
+        <table v-if="providers.length" class="providers-table"><thead><tr><th scope="col">供应商配置</th><th scope="col">能力</th><th scope="col">状态</th></tr></thead>
+          <tbody><tr v-for="item in providers" :key="item.id"><td>{{item.label}}</td><td>{{item.kind==='mock'?'离线模拟':'兼容文本接口'}}</td><td>{{item.enabled?'已启用':'已禁用'}}</td></tr></tbody>
+        </table>
         <form class="create" @submit.prevent="createProvider">
           <label>模拟配置名称<input v-model="providerName" required maxlength="120"></label>
           <label>模拟响应<select v-model="scenario">
@@ -324,6 +326,11 @@ onUnmounted(() => clearInterval(timer))
             <button v-if="entry.call_id" @click="openCall(entry.call_id)">查看调用</button>
           </li></ul>
         </details>
+      </section>
+      <section v-if="settingsOnly">
+        <h2>系统偏好与安全</h2>
+        <dl class="inspector-facts"><div><dt>运行范围</dt><dd>本机工作台</dd></div><div><dt>真实 API 调用</dt><dd>{{authorization?'已授权':'关闭'}}</dd></div><div><dt>供应商配置</dt><dd>{{providers.length}} 项</dd></div></dl>
+        <RouterLink :to="{name:'system',query:{project:projectId}}">打开运行诊断</RouterLink>
       </section>
     </div>
     <section>
@@ -406,10 +413,13 @@ onUnmounted(() => clearInterval(timer))
 </template>
 
 <style scoped>
+.providers-table { width:100%;border-collapse:collapse;margin:10px 0;font-size:12px;text-align:left }
+.providers-table th,.providers-table td { border-bottom:1px solid var(--line);padding:8px;overflow-wrap:anywhere }
+.providers-table th { color:var(--ink-muted);background:var(--surface-raised) }
 .text-workspace { display:grid; gap:24px }
 .text-workspace form { max-width:unset }
 .text-workspace details { margin:0 }
 .ledger { margin-top:18px !important }
 .ledger li { margin:8px 0 }
-.version-list button[aria-pressed="true"] { border-color:#8ab7fc }
+.version-list button[aria-pressed="true"] { border-color:var(--accent) }
 </style>

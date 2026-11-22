@@ -29,6 +29,10 @@ try{
   await wait(()=>contains('已排队 2 个本地候选'),'two candidates queued')
   await click('预览推进')
   await wait(()=>evaluate("document.querySelector('video')?.readyState>=1"),'browser verified local motion media')
+  await wait(()=>evaluate("document.querySelector('.compare-control option[value]:not([value=\"\"])')!==null"),'second local candidate is ready for comparison')
+  const alternate=await evaluate("document.querySelector('.compare-control option[value]:not([value=\"\"])').value")
+  await setField('A/B 对比候选',alternate)
+  await wait(()=>evaluate("[...document.querySelectorAll('.candidate-monitors video')].length===2 && [...document.querySelectorAll('.candidate-monitors video')].every(video=>video.readyState>=1)"),'both actual local candidates decode side by side')
   await setField('素材标题','审阅通过的运镜')
   await setField('采纳说明','检视画面方向和画幅后批准用于本地测试剪辑。')
   await screenshot('p8-motion-candidates.png')
@@ -50,7 +54,7 @@ try{
   await writeFile(join(evidenceDir,'p8-browser-acceptance.json'),JSON.stringify({
     checked_at:new Date().toISOString(),browser:'Installed Chrome headless',actual_candidates:candidates.length,
     selected_asset_id:selected.selected_asset_id,selected_task_id:selected.id,sha256:selected.output.sha256,
-    browser_metadata_decoded:true,range_status:range.status,downstream_asset_selectable:true,
+    browser_metadata_decoded:true,real_ab_playback:true,range_status:range.status,downstream_asset_selectable:true,
     external_cost_micros:0,physical_resource:'local_cpu',keyboard_adoption:true,javascript_errors:errors,
   },null,2)+'\n')
   console.log('P8 local branch: actual video candidates, browser playback and downstream adoption passed.')

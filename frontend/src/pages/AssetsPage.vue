@@ -192,8 +192,8 @@ onUnmounted(() => clearInterval(refreshTimer))
 .asset-filters { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px }
 .asset-filters button { display:flex; align-items:center; gap:6px; padding:6px 8px; font-size:12px }
 .asset-filters small { color:var(--ink-muted) }
-.asset-filters button[aria-pressed=true] { background:var(--accent-surface); color:var(--accent); border-color:#3c6466 }
-.asset-search { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:0 10px; background:#111b23; border:1px solid var(--line); border-radius:7px }
+.asset-filters button[aria-pressed=true] { background:var(--accent-surface); color:var(--accent); border-color:var(--accent) }
+.asset-search { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:0 10px; background:var(--surface-raised); border:1px solid var(--line); border-radius:7px }
 .asset-search input { flex:1; border:0; padding-inline:0; background:transparent }
 .asset-row { margin:0; padding:8px 5px; align-items:center }
 .asset-row.selected { background:var(--accent-surface); border-radius:7px }
@@ -212,7 +212,7 @@ onUnmounted(() => clearInterval(refreshTimer))
 .asset-inspector .mono { margin:7px 0 0; overflow-wrap:anywhere }
 .asset-inspector details { margin-bottom:0 }
 .asset-notice { color:var(--positive) }
-.import-panel { background:#101b23; border:1px dashed #4a6674; border-radius:8px; padding:12px; margin-bottom:12px }
+.import-panel { background:var(--surface-raised); border:1px dashed var(--accent); border-radius:8px; padding:12px; margin-bottom:12px }
 .import-panel p { margin:8px 0 0 }
 .stream-summary { padding-left:20px }
 @media(max-width:1000px) { .asset-workspace { grid-template-columns:1fr } .asset-inspector { position:static } }

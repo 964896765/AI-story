@@ -271,9 +271,9 @@ onUnmounted(()=>clearInterval(timer))
 .package-panel h2,.handoff-button,.package-panel button svg { vertical-align:middle }
 .package-panel h2,.handoff-button { display:flex; align-items:center; gap:8px }
 .package-panel h2 svg { color:var(--accent) }
-.linked-run,.delivery-readiness { padding:12px; border:1px solid #36615e; border-radius:8px; background:#122730; overflow-wrap:anywhere }
+.linked-run,.delivery-readiness { padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--accent-surface); overflow-wrap:anywhere }
 .delivery-readiness { color:var(--positive); margin-bottom:13px }
-.delivery-readiness.blocked { border-color:#76564a; background:#2b2528; color:var(--warning) }
+.delivery-readiness.blocked { border-color:var(--warning); background:color-mix(in srgb,var(--warning) 10%,var(--surface-panel)); color:var(--warning) }
 .delivery-readiness p { margin:7px 0 0; color:var(--ink-secondary) }
 .delivery-readiness ul { padding-left:0; margin:10px 0 0; list-style:none }
 .delivery-readiness li { display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; align-items:center; padding:7px 0; border-top:1px solid var(--line-soft) }

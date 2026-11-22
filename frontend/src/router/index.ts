@@ -3,6 +3,8 @@ import { destinations, type Destination } from './navigation'
 
 const views: Record<Destination, RouteRecordRaw['component']> = {
   overview: () => import('../pages/OverviewPage.vue'),
+  director: () => import('../pages/DirectorPage.vue'),
+  wizard: () => import('../pages/WizardPage.vue'),
   assets: () => import('../pages/AssetsPage.vue'),
   analysis: () => import('../pages/AnalysisPage.vue'),
   story: () => import('../pages/StoryPage.vue'),

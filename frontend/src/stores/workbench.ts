@@ -1,19 +1,23 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { api, post } from '../services/api'
-import type { Asset, Project } from '../types/workbench'
+import type { Asset, Project, ProjectOverview } from '../types/workbench'
 
 export const useWorkbench = defineStore('workbench', () => {
   const projects = ref<Project[]>([])
   const projectId = ref('')
   const project = computed(() => projects.value.find(item => item.id === projectId.value))
   const assets = ref<Asset[]>([])
+  const overview = ref<ProjectOverview|null>(null)
+  const overviewError = ref('')
+  const overviewPending = ref(false)
   const initialized = ref(false)
   const health = ref<'checking' | 'ready' | 'unavailable'>('checking')
   const error = ref('')
   const refreshCount = ref(0)
   let generation = 0
   let assetRequest = 0
+  let overviewRequest: AbortController|undefined
 
   async function checkHealth() {
     try {
@@ -50,10 +54,29 @@ export const useWorkbench = defineStore('workbench', () => {
     if (projectId.value === id) return
     generation++
     assets.value = []
+    overview.value = null
+    overviewError.value = ''
     error.value = ''
     projectId.value = id
     try { sessionStorage.setItem('ai-story:last-project', id) } catch { /* storage is optional */ }
     void loadAssets()
+    void refreshOverview()
+  }
+
+  async function refreshOverview() {
+    overviewRequest?.abort()
+    if (!projectId.value) { overviewPending.value = false; return }
+    const request = new AbortController()
+    overviewRequest = request
+    overviewPending.value = !overview.value
+    try {
+      const result = await api<ProjectOverview>(`/projects/${projectId.value}/overview`, { signal: request.signal })
+      if (!request.signal.aborted) { overview.value = result; overviewError.value = '' }
+    } catch (failure) {
+      if (!request.signal.aborted) overviewError.value = String(failure)
+    } finally {
+      if (overviewRequest === request) { overviewPending.value = false; overviewRequest = undefined }
+    }
   }
 
   function lastProject() {
@@ -70,9 +93,9 @@ export const useWorkbench = defineStore('workbench', () => {
     error.value = ''
     refreshCount.value++
     if (!initialized.value) void initialize()
-    else void Promise.all([checkHealth(), loadAssets()])
+    else void Promise.all([checkHealth(), loadAssets(), refreshOverview()])
   }
 
-  return { projects, projectId, project, assets, initialized, health, error, refreshCount,
-    initialize, select, lastProject, loadAssets, createProject, refresh }
+  return { projects, projectId, project, assets, overview, overviewError, overviewPending, initialized, health, error, refreshCount,
+    initialize, select, lastProject, loadAssets, createProject, refresh, refreshOverview }
 })

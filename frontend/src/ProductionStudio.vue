@@ -292,7 +292,7 @@ onUnmounted(()=>clearInterval(timer))
 <style scoped>
 .production { margin-bottom:24px }
 .form-grid { display:grid; gap:12px; margin:14px 0 0 }
-.episode { padding:14px 0; border-top:1px solid #334050 }
+.episode { padding:14px 0; border-top:1px solid var(--line) }
 .review-desk { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.85fr); gap:16px; align-items:start }
 .episode-list { grid-column:1; grid-row:1; min-width:0 }
 .review-preview { grid-column:2; grid-row:1; min-width:0; position:sticky; top:80px; border:1px solid var(--line-soft); border-radius:8px; overflow:hidden; background:var(--surface-raised) }
@@ -311,11 +311,11 @@ onUnmounted(()=>clearInterval(timer))
 .quality-measurements div { background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:6px; padding:6px 10px }
 .quality-measurements dt { color:var(--ink-muted); font-size:11px }
 .quality-measurements dd { margin:2px 0 0; font-size:13px }
-.run-summary { background:#101d25; border:1px solid var(--line-soft); border-radius:8px; padding:12px; margin:13px 0 }
+.run-summary { background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:8px; padding:12px; margin:13px 0 }
 .run-summary > div { margin-right:auto }
 .run-summary p { margin:4px 0 0; color:var(--ink-muted) }
 .episode-filter { margin:10px 0 }
 .episode-filter button[aria-pressed=true] { color:var(--accent); background:var(--accent-surface) }
-.linked-episode { box-shadow:inset 3px 0 var(--accent); padding-left:11px; background:#122530 }
+.linked-episode { box-shadow:inset 3px 0 var(--accent); padding-left:11px; background:var(--accent-surface) }
 .finding-preview { margin:5px 0 5px 8px; font-size:12px }
 </style>

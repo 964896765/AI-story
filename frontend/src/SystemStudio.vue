@@ -54,10 +54,10 @@ onUnmounted(()=>clearInterval(timer))
 </template>
 <style scoped>
 .diagnostics { display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px }
-.diagnostics div { border:1px solid var(--line); border-radius:8px; padding:12px; background:#111d25 }
+.diagnostics div { border:1px solid var(--line); border-radius:8px; padding:12px; background:var(--surface-raised) }
 dt { color:var(--ink-muted); font-size:13px }
 dd { margin:7px 0 0; font-size:18px; font-variant-numeric:tabular-nums }
 .disk-usage { max-width:600px; margin:16px 0 }
 .disk-usage meter { width:100%; height:12px; }
-.row { display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #343e4e }
+.row { display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line) }
 </style>

@@ -160,15 +160,15 @@ watch(() => workbench.refreshCount, () => { void refresh() })
 .task-heading h2 { margin-bottom:4px }
 .task-heading p { margin-bottom:12px }
 .task-filters { display:flex; gap:7px; align-items:center; flex-wrap:wrap; color:var(--accent); margin-bottom:9px }
-.task-filters button[aria-pressed=true] { color:var(--accent); border-color:#416669; background:var(--accent-surface) }
+.task-filters button[aria-pressed=true] { color:var(--accent); border-color:var(--accent); background:var(--accent-surface) }
 .task-pages { margin-bottom:10px }
 .task-record { border:0; border-top:1px solid var(--line-soft); border-radius:0; margin:0; padding:11px 0; align-items:start; justify-content:space-between }
 .task-record > .record-buttons { flex:0 1 auto; min-width:0 }
-.task-record details { background:#121a22; padding:8px; font-size:12px }
+.task-record details { background:var(--surface-raised); padding:8px; font-size:12px }
 .task-record details pre { margin-bottom:0 }
 .task-record strong { overflow-wrap:anywhere }
 .render-gallery { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(310px,100%),1fr)); gap:12px }
-.render-item { display:flex; gap:12px; border:1px solid var(--line-soft); padding:13px; min-width:0; background:#131e27; border-radius:9px }
+.render-item { display:flex; gap:12px; border:1px solid var(--line-soft); padding:13px; min-width:0; background:var(--surface-raised); border-radius:9px }
 .render-icon { flex:0 0 42px; height:46px; border-radius:8px; display:grid; place-items:center; background:var(--accent-surface); color:var(--accent) }
 .render-thumb { position:relative; flex:0 0 clamp(75px,10vw,132px); align-self:center; overflow:hidden; padding:0!important; border-radius:7px!important; aspect-ratio:16/9 }
 .render-thumb video { display:block; width:100%; height:100%; object-fit:cover }

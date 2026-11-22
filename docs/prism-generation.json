@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-11-22T02:54:00.036Z",
+  "browser": "Installed Chrome headless",
+  "actual_candidates": 2,
+  "selected_asset_id": "a871dd0d-3cde-4b0d-8258-91fb7099e232",
+  "selected_task_id": "e5476acd-a3c0-4171-a9cd-9f57dea295da",
+  "sha256": "983c491e7534f31e6fe2cde55cec01408a376f5478aae5b0b0f51e16a1246591",
+  "browser_metadata_decoded": true,
+  "real_ab_playback": true,
+  "range_status": 206,
+  "downstream_asset_selectable": true,
+  "external_cost_micros": 0,
+  "physical_resource": "local_cpu",
+  "keyboard_adoption": true,
+  "javascript_errors": []
+}

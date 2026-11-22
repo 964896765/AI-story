@@ -13,7 +13,7 @@ const { link } = useWorkspace()
 </template>
 <style scoped>
 .delivery-tools { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); gap:12px; margin-bottom:16px }
-.delivery-tools a { display:grid; grid-template-columns:24px minmax(0,1fr) 16px; align-items:center; gap:12px; background:#14252d; border:1px solid #36505c; padding:15px; border-radius:9px; text-decoration:none }
+.delivery-tools a { display:grid; grid-template-columns:24px minmax(0,1fr) 16px; align-items:center; gap:12px; background:var(--surface-panel); border:1px solid var(--line); padding:15px; border-radius:9px; text-decoration:none }
 .delivery-tools a:hover { background:var(--accent-surface) }
 .delivery-tools small { display:block; color:var(--ink-muted); margin-top:4px }
 </style>

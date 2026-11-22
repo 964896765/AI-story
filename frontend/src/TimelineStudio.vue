@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { Film, Layers3, MonitorPlay } from 'lucide-vue-next'
+import { Film, Image, Layers3, MonitorPlay } from 'lucide-vue-next'
 import { clock, request, statusLabels } from './analysisApi'
 import { moveStart, trimBoundary, type EditEdge } from './timelineGestures'
 
@@ -30,6 +30,7 @@ const snap=ref(true)
 const workbench=ref<HTMLDivElement|null>(null)
 const sourceMonitor=ref<HTMLMediaElement|null>(null)
 const sourceError=ref(false)
+const browserPreview=ref(''), assetSearch=ref('')
 const planVersion=ref(''), planEpisode=ref(1), autoTitle=ref('')
 const keys=new Map<string,string>()
 const entityPath=`/projects/${props.projectId}/story/entities`
@@ -47,7 +48,9 @@ const selection=computed(()=>{
   }
   return null
 })
-const activeAsset = computed(() => props.assets.find(asset => asset.id === selection.value?.clip.asset_id))
+const activeAsset = computed(() => props.assets.find(asset => asset.id === (browserPreview.value || selection.value?.clip.asset_id)))
+const visibleAssets = computed(()=>props.assets.filter(asset=>/\.(png|jpe?g|webp|mp4|mov|mkv|webm|avi|wav|mp3)$/i.test(asset.name)
+  && asset.name.toLocaleLowerCase().includes(assetSearch.value.trim().toLocaleLowerCase())).slice(0,24))
 const activeMedia = computed(() => {
   const asset = activeAsset.value
   if (!asset) return undefined
@@ -60,11 +63,12 @@ const clipCount = computed(() => timeline.tracks.reduce((count,lane) => count+la
 const ticks = computed(() => Array.from({length:5},(_,i) => clock(Math.round(i*Math.max(0,timeline.frames)/4/24*1e6))))
 function cueSource() {
   const media = sourceMonitor.value
-  if (media && selection.value && Number.isFinite(media.duration)) {
+  if (media && selection.value && !browserPreview.value && Number.isFinite(media.duration)) {
     media.currentTime = Math.min(selection.value.clip.source_in/24,media.duration)
   }
 }
 watch(() => activeAsset.value?.id, () => { sourceError.value = false })
+watch(currentClip,()=>{ browserPreview.value='' })
 watch(() => selection.value?.clip.source_in, cueSource)
 function possible(lane:Track){
   const visual=lane.role==='main'||lane.role==='overlay'
@@ -253,6 +257,17 @@ onUnmounted(()=>clearInterval(timer))
     <p v-if="message" role="status">{{ message }}</p>
     <div class="story-layout timeline-desk">
       <section class="story-library">
+        <header class="timeline-panel-title"><Image :size="18" aria-hidden="true" /><h2>素材浏览器</h2></header>
+        <label>查找监看素材<input v-model="assetSearch" type="search" placeholder="按名称筛选"></label>
+        <div v-if="visibleAssets.length" class="timeline-sources">
+          <button v-for="asset in visibleAssets" :key="asset.id" type="button" :aria-pressed="asset.id===activeAsset?.id" @click="browserPreview=asset.id">
+            <img v-if="/\.(png|jpe?g|webp)$/i.test(asset.name)" :src="`/api/assets/${asset.id}/media`" alt="" loading="lazy">
+            <Film v-else :size="20" aria-hidden="true" />
+            <span :title="asset.name">{{asset.name}}</span>
+          </button>
+        </div>
+        <p v-else class="hint">没有符合条件的预览素材。</p>
+        <RouterLink :to="{name:'assets',query:{project:projectId}}">打开素材库</RouterLink>
         <header class="timeline-panel-title"><Layers3 :size="18" aria-hidden="true" /><h2>时间轴版本</h2></header>
         <button :disabled="busy" @click="fresh">新建时间轴</button>
         <button v-for="item in stack" :key="item.id" :disabled="busy" :aria-pressed="active?.id===item.id"
@@ -275,6 +290,7 @@ onUnmounted(()=>clearInterval(timer))
         </details>
       </section>
       <section class="timeline-session">
+        <form class="form-grid editor-desk" @submit.prevent="save">
         <div class="timeline-monitor">
           <div class="timeline-monitor-media">
             <img v-if="activeMedia?.tag==='img'" :src="activeMedia.url" :alt="activeMedia.name" @error="sourceError=true">
@@ -283,7 +299,7 @@ onUnmounted(()=>clearInterval(timer))
             <div v-else class="timeline-monitor-empty"><MonitorPlay :size="27" aria-hidden="true" /><span>选择素材片段进行源预览</span></div>
           </div>
           <div class="timeline-monitor-info">
-            <p class="hint">源片段监看</p>
+            <p class="hint">视频监看</p>
             <h2>{{ activeAsset?.name || title || '未命名时间轴' }}</h2>
             <p v-if="sourceError" class="error">浏览器无法解码此素材，可在智能解析生成代理。</p>
             <dl><div><dt>画幅</dt><dd>{{profiles[timeline.profile]}}</dd></div><div><dt>轨道 / 片段</dt><dd>{{timeline.tracks.length}} / {{clipCount}}</dd></div></dl>
@@ -291,7 +307,7 @@ onUnmounted(()=>clearInterval(timer))
             <p class="hint">合成画面在渲染完成后可预览。</p>
           </div>
         </div>
-        <form class="form-grid" @submit.prevent="save">
+          <div class="timeline-settings">
           <div class="editor-grid">
             <label>时间轴标题<input v-model="title" required maxlength="200"></label>
             <label>输出画幅<select v-model="timeline.profile"><option v-for="(label,key) in profiles" :key="key" :value="key">{{ label }}</option></select></label>
@@ -300,6 +316,7 @@ onUnmounted(()=>clearInterval(timer))
           <label>固定制作来源版本 ID（可选）<input :value="timeline.source_version_id||''" maxlength="36"
             @input="timeline.source_version_id=($event.target as HTMLInputElement).value.trim()||null"></label>
           <label class="check"><input v-model="snap" type="checkbox">吸附片段边界</label>
+          </div>
           <div class="tracks" aria-label="多轨片段">
             <div class="track-header"><strong>剪辑轨道</strong><span>{{ timeline.frames }} 帧 · 24 fps</span></div>
             <div class="track-ruler" aria-label="时间标尺"><time v-for="(tick,index) in ticks" :key="index">{{tick}}</time></div>
@@ -319,7 +336,7 @@ onUnmounted(()=>clearInterval(timer))
                 <template v-for="clip in lane.clips" :key="clip.id">
                   <button class="clip" type="button" :aria-pressed="clip.id===currentClip" :data-clip-id="clip.id"
                     :title="name(clip.asset_id)" :style="{left:(clip.at/Math.max(1,timeline.frames)*100)+'%',width:(clip.frames/Math.max(1,timeline.frames)*100)+'%'}"
-                    @click="currentClip=clip.id" @pointerdown="beginGesture($event,lane,clip,'move')" @keydown="clipKeys($event,lane,clip,'move')">{{ name(clip.asset_id) }}</button>
+                    @click="currentClip=clip.id;browserPreview=''" @pointerdown="beginGesture($event,lane,clip,'move')" @keydown="clipKeys($event,lane,clip,'move')">{{ name(clip.asset_id) }}</button>
                   <template v-if="clip.id===currentClip && !lane.locked">
                     <button v-for="edge in (['start','end'] as const)" :key="edge" class="trim-handle" type="button"
                       :aria-label="edge==='start'?'裁剪片段入点':'裁剪片段出点'"
@@ -336,7 +353,10 @@ onUnmounted(()=>clearInterval(timer))
             <button type="button" :disabled="timeline.tracks.length>=10 || (trackRole==='caption' && timeline.tracks.some(lane=>lane.role==='caption'))"
               @click="timeline.tracks.push(track(trackRole))">添加轨道</button>
           </div>
-          <fieldset v-if="selection" :disabled="selection.lane.locked">
+          <aside class="timeline-inspector">
+          <h2>片段属性</h2>
+          <p v-if="!selection" class="hint">在轨道中选择片段以编辑入点、位置和时长。</p>
+          <fieldset v-else :disabled="selection.lane.locked">
             <legend>{{ labels[selection.lane.role] }}片段</legend>
             <label>片段素材<select v-model="selection.clip.asset_id" required>
               <option value="">选择项目素材</option><option v-for="asset in possible(selection.lane)" :key="asset.id" :value="asset.id">{{ asset.name }}</option>
@@ -360,6 +380,7 @@ onUnmounted(()=>clearInterval(timer))
             <button type="button" :disabled="busy || !active || dirty" @click="render">渲染已保存版本</button>
             <a v-if="active" :href="`/api/timeline/versions/${active.version_id}/manifest`" download="timeline.json">工程 JSON</a>
           </div>
+          </aside>
         </form>
       </section>
     </div>
@@ -386,18 +407,30 @@ onUnmounted(()=>clearInterval(timer))
 .timeline-workbench section { min-width:0 }
 .timeline-panel-title { display:flex; align-items:center; gap:8px; color:var(--accent) }
 .timeline-panel-title h2 { color:var(--ink); margin:0 }
-.timeline-desk { grid-template-columns: minmax(190px,.65fr) minmax(0,3fr) }
-.timeline-monitor { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(170px,1fr); gap:13px; align-items:center; margin-bottom:14px; padding:9px; background:#101a22; border:1px solid var(--line-soft); border-radius:9px }
-.timeline-monitor-media { min-width:0; display:grid; place-items:center; background:#0c1218; border-radius:7px; overflow:hidden }
+.timeline-desk { grid-template-columns:minmax(175px,215px) minmax(0,1fr);gap:14px }
+.editor-desk { grid-template-columns:minmax(0,1fr) minmax(162px,235px);gap:14px;align-items:start }
+.editor-desk>* { min-width:0 }
+.editor-desk>.timeline-inspector { grid-column:2;grid-row:1/span 4;padding:12px;border:1px solid var(--line);background:var(--surface-raised);border-radius:11px }
+.timeline-inspector .actions { margin-top:10px }
+.timeline-inspector .editor-grid { grid-template-columns:minmax(0,1fr) }
+.timeline-settings>label { margin-top:8px }
+.timeline-sources { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:360px;overflow:auto }
+.timeline-sources button { display:grid;justify-items:center;gap:5px;padding:6px;min-width:0;color:var(--ink-muted) }
+.timeline-sources button[aria-pressed=true] { border-color:var(--accent);background:var(--accent-surface) }
+.timeline-sources img { width:100%;height:44px;object-fit:cover;border-radius:4px }
+.timeline-sources span { max-width:100%;text-overflow:ellipsis;white-space:nowrap;overflow:hidden;font-size:11px }
+.timeline-monitor { display:grid;grid-template-columns:minmax(0,1fr);gap:9px;padding:9px;background:var(--surface-raised);border:1px solid var(--line-soft);border-radius:11px }
+.timeline-monitor-media { min-width:0;display:grid;place-items:center;background:#172237;border-radius:7px;overflow:hidden }
 .timeline-monitor-media :is(img,video) { display:block; height:min(27vh,220px); width:100%; object-fit:contain }
 .timeline-monitor-media audio { max-width:95%; margin:18px 0 }
-.timeline-monitor-empty { display:grid; place-items:center; align-content:center; gap:9px; aspect-ratio:16/7; color:var(--ink-muted); font-size:12px; width:100%; padding:10px }
+.timeline-monitor-empty { display:grid;place-items:center;align-content:center;gap:9px;aspect-ratio:16/7;color:#dce6f4;font-size:12px;width:100%;padding:10px }
 .timeline-monitor-info { min-width:0; padding-right:4px; overflow-wrap:anywhere }
 .timeline-monitor-info h2,.timeline-monitor-info p { margin-bottom:6px }
 .timeline-monitor-info dl { display:flex; gap:18px; margin:8px 0 }
 .timeline-monitor-info dt { color:var(--ink-muted); font-size:12px }
 .timeline-monitor-info dd { margin:3px 0 0; font-variant-numeric:tabular-nums }
-.tracks { border:1px solid var(--line); border-radius:8px; background:#121b23; padding:10px }
+.tracks { border:1px solid #364660;border-radius:10px;background:#172237;color:#dce6f4;padding:10px }
+.tracks :is(label,.track-header span,.track-ruler) { color:#aebfdb }
 .track-header,.track-ruler { display:flex; justify-content:space-between; gap:5px; }
 .track-header span { color:var(--ink-muted); font-size:12px }
 .track-ruler { padding:6px 0; margin-top:6px; border-block:1px solid var(--line-soft); color:var(--ink-muted); font:11px Consolas,monospace }
@@ -406,16 +439,16 @@ onUnmounted(()=>clearInterval(timer))
 .lane { margin-bottom:12px }
 .lane-controls { min-height:42px; gap:8px }
 .lane-controls label input[type=number] { width:74px }
-.rail { height:42px; position:relative; overflow:hidden; border:1px solid #394655; border-radius:4px; background:#0f141c }
+.rail { height:42px;position:relative;overflow:hidden;border:1px solid #394b69;border-radius:4px;background:#121b2f }
 .muted { opacity:.5 }
-.clip { display:block; height:38px; min-width:9px; position:absolute; padding:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:#244857; touch-action:none; cursor:grab }
-.lane[data-role=caption] .clip { background:#514139 }
-.lane[data-role=overlay] .clip { background:#3e395d }
-.lane:is([data-role=dialogue],[data-role=music],[data-role=sfx]) .clip { background:#214635 }
+.rail .clip { display:block;height:38px;min-width:9px;position:absolute;padding:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#526d9d;color:#fff;border-color:#90a8d3;touch-action:none;cursor:grab }
+.lane[data-role=caption] .clip,.lane[data-role=overlay] .clip { background:#70649a;border-color:#a599c4 }
+.lane:is([data-role=dialogue],[data-role=music],[data-role=sfx]) .clip { background:#387a74;border-color:#6eada0 }
 .clip[aria-pressed="true"] { border-color:#95c9ff; z-index:1 }
-.trim-handle { position:absolute; z-index:2; top:3px; width:10px; height:34px; padding:0; transform:translateX(-50%); background:#86aed8; border-radius:3px; touch-action:none; cursor:ew-resize }
+.rail .trim-handle { position:absolute;z-index:2;top:3px;width:10px;height:34px;min-height:0;padding:0;transform:translateX(-50%);background:#86aed8;border-radius:3px;touch-action:none;cursor:ew-resize }
 .trim-handle:focus-visible { outline:2px solid white; outline-offset:-2px }
 .timeline-workbench video { max-height:60vh }
-@media(max-width:1020px) { .timeline-desk { grid-template-columns:1fr } }
+@media(max-width:1080px) { .timeline-desk { grid-template-columns:minmax(0,1fr) } .timeline-sources { grid-template-columns:repeat(auto-fit,minmax(82px,1fr)) } }
+@media(max-width:720px) { .editor-desk { grid-template-columns:minmax(0,1fr) } .editor-desk>.timeline-inspector { grid-column:1;grid-row:auto } }
 @media(max-width:530px) { .timeline-monitor { grid-template-columns:1fr } .track-ruler time:nth-child(even) { display:none } }
 </style>

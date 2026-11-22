@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed,nextTick,onMounted,onUnmounted,reactive,ref,watch } from 'vue'
-import { BookOpen, Download, FilePlus, Search } from 'lucide-vue-next'
+import { BookOpen, Clapperboard, Download, FilePlus, Search } from 'lucide-vue-next'
 import GuardianRules from './components/production/GuardianRules.vue'
 import ShotDetails, { type Shot } from './ShotDetails.vue'
 type Kind='novel'|'script'|'character'|'scene'|'relationship'|'episode'|'storyboard'|'generation_plan'
@@ -26,8 +26,26 @@ const editorTitle=computed(()=>selected.value?.title || ('新建'+kinds[form.kin
 const ofKind=(...types:Kind[])=>choices.value.filter(i=>types.includes(i.kind))
 const imageAssets=computed(()=>props.assets.filter(a=>/\.(png|jpe?g|webp)$/i.test(a.name)))
 const audioAssets=computed(()=>props.assets.filter(a=>/\.(wav|mp3)$/i.test(a.name)))
+const references=computed(()=>imageAssets.value.filter(asset=>form.reference_asset_ids.includes(asset.id)))
+const activeShot=ref('')
+const inspectedShot=computed(()=>form.shots.find(item=>item.shot_id===activeShot.value) || form.shots[0])
+const shotImage=computed(()=>inspectedShot.value?.contract?.source_image_asset_ids[0])
+const original=ref<Entry|null>(null), originalPending=ref(false), originalError=ref('')
 const label=(i:Entry)=>`${i.title} · v${i.version}${i.version<i.current_version?'（历史）':''}`
 async function api<T=any>(path:string,options:RequestInit={}):Promise<T>{const response=await fetch('/api'+path,options);const data=await response.json();if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data.detail));return data}
+watch([()=>form.source_version_id,()=>form.kind,()=>props.projectId],async([id,kind,project],_,cleanup)=>{
+  original.value=null; originalError.value=''; originalPending.value=false
+  if (!id || !['script','episode'].includes(kind)) return
+  const request=new AbortController()
+  cleanup(()=>request.abort())
+  originalPending.value=true
+  try {
+    const source=await api<Entry>('/story/versions/'+encodeURIComponent(id),{signal:request.signal})
+    if (!request.signal.aborted && source.project_id===project) original.value=source
+  } catch (error) {
+    if (!request.signal.aborted) originalError.value=String(error)
+  } finally { if (!request.signal.aborted) originalPending.value=false }
+},{immediate:true})
 function post(path:string,body:unknown){return api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
 const draftKey=(project:string)=>`ai-story:creative-draft:${project}${startingKind==='novel'?'':`:${startingKind}`}${props.initialVersion?`:version:${props.initialVersion}`:''}`
 function persist(){if(restoring||!currentProject.value)return;try{sessionStorage.setItem(draftKey(currentProject.value),JSON.stringify({form:{...form},selected:selected.value,requestKey:requestKey.value}));cache.value='当前浏览器草稿已缓存；保存后才写入数据库'}catch{cache.value='浏览器草稿缓存不可用，请及时保存到数据库'}}
@@ -70,6 +88,14 @@ onMounted(()=>{void run(async()=>{
   }
 })})
 onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
+
+function inspectShot(id?:string) {
+  if (!id) return
+  activeShot.value=id
+  const node=document.getElementById('guardian-shot-'+id)
+  node?.scrollIntoView({block:'center'})
+  node?.focus({preventScroll:true})
+}
 </script>
 
 <template>
@@ -78,7 +104,7 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
   <p v-if="error" class="error" role="alert">{{error}}</p><p v-if="message" role="status">{{message}}</p>
   <div class="story-layout creative-layout">
    <section class="story-library creative-library">
-     <h2><BookOpen :size="17" aria-hidden="true" />创作资产</h2>
+     <h2><BookOpen :size="17" aria-hidden="true" />{{startingKind==='character'?'身份与场景目录':startingKind==='storyboard'?'分镜目录':'章节与分集'}}</h2>
      <label>资产类型<select v-model="filter" @change="librarySearch=''"><option v-for="(label,key) in kinds" :key="key" :value="key">{{label}}</option></select></label>
      <button class="primary creative-create" :disabled="busy" @click="fresh(filter)"><FilePlus :size="16" aria-hidden="true" />新建{{kinds[filter]}}</button>
      <label class="creative-search"><Search :size="15" aria-hidden="true" /><input v-model="librarySearch" type="search" aria-label="搜索当前页创作资产" placeholder="按标题筛选"></label>
@@ -89,11 +115,37 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
      <div v-if="total>200" class="actions"><button :disabled="busy||offset===0" @click="offset-=200;run(refresh)">上一页</button><button :disabled="busy||offset+200>=total" @click="offset+=200;run(refresh)">下一页</button></div>
      <button :disabled="busy" @click="run(refresh)">刷新资产库</button>
      <a :href="`/api/projects/${projectId}/story/export`" class="creative-export"><Download :size="14" aria-hidden="true" />导出创作包 JSON</a>
+     <div v-if="form.kind==='storyboard' && form.shots.length" class="shot-index">
+       <h2>镜头序列</h2>
+       <button v-for="item in form.shots" :key="item.shot_id || item.number" type="button" :aria-pressed="inspectedShot===item" @click="inspectShot(item.shot_id)">
+         第 {{item.number}} 镜 · {{item.description || '待填画面'}}
+       </button>
+     </div>
    </section>
    <section class="story-editor">
     <header class="creative-heading"><div><p v-if="selected" class="hint">{{kinds[form.kind]}}</p><h2>{{editorTitle}}</h2></div>
       <span v-if="selected" class="status" :class="historical ? 'running' : 'succeeded'">v{{selected.version}} · {{historical ? '历史版本' : '当前版本'}}</span>
     </header>
+    <div v-if="form.kind==='storyboard' && inspectedShot" class="shot-canvas">
+      <div class="shot-monitor"><img v-if="shotImage" :src="`/api/assets/${shotImage}/media`" alt="当前镜头的固定源图">
+        <p v-else><Clapperboard :size="29" aria-hidden="true" />此镜头暂无固定源图</p></div>
+      <div v-if="inspectedShot.contract" class="shot-endpoints">
+        <article v-for="[key,label] in [['opening','镜头开始'],['closing','镜头结束']] as const" :key="key">
+          <strong>{{label}}</strong>
+          <p v-for="state in inspectedShot.contract[key]" :key="state.character_version_id">{{ofKind('character').find(item=>item.version_id===state.character_version_id)?.title || state.character_version_id}} · {{state.action}} · {{state.position}}</p>
+          <p v-if="!inspectedShot.contract[key].length" class="hint">暂无角色状态</p>
+        </article>
+      </div>
+    </div>
+    <div v-if="references.length && ['character','scene'].includes(form.kind)" class="reference-board">
+      <h2>{{form.kind==='character'?'角色定妆参考':'场景参考'}}</h2>
+      <div class="identity-images"><figure v-for="image in references" :key="image.id"><img :src="`/api/assets/${image.id}/media`" :alt="image.name" loading="lazy"><figcaption>{{image.name}}</figcaption></figure></div>
+    </div>
+    <details v-if="form.source_version_id && ['script','episode'].includes(form.kind)" class="story-comparison">
+      <summary>原文与当前稿对照</summary>
+      <p v-if="originalPending" role="status">正在读取固定原文…</p><p v-else-if="originalError" class="error" role="alert">{{originalError}}</p>
+      <div v-else-if="original" class="shot-endpoints"><article><strong>{{original.title}} · v{{original.version}}</strong><pre>{{original.content.text || original.content.body}}</pre></article><article><strong>当前稿</strong><pre>{{form.body}}</pre></article></div>
+    </details>
     <p v-if="cache" class="hint creative-cache">{{cache}}</p><p v-if="historical" class="hint">当前为历史版本。当前数据库版本为 v{{selected?.current_version}}。</p>
     <form @submit.prevent="save"><fieldset :disabled="busy||historical"><label>标题<input v-model="form.title" required maxlength="200"></label>
      <template v-if="form.kind==='novel'"><label>素材授权来源<textarea v-model="form.authorization" required maxlength="10000" placeholder="自有原创声明或授权协议来源"></textarea></label><label>导入 UTF-8 TXT<input type="file" accept=".txt" :disabled="!form.authorization.trim()" @change="importText"></label><label>小说原文<textarea v-model="form.text" class="long-text" required maxlength="1000000"></textarea></label></template>
@@ -118,6 +170,21 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
      <label>本次版本说明<textarea v-model="form.note" maxlength="10000"></textarea></label><button class="primary" :disabled="!form.title.trim()">{{selected?'保存新版本':'创建资产 v1'}}</button>
     </fieldset></form>
     <div v-if="historical" class="actions"><button :disabled="busy" @click="restore">从此历史追加恢复版本</button></div>
+   </section>
+   <section class="creative-inspector">
+    <h2>{{form.kind==='storyboard'?'镜头属性检查器':form.kind==='character'||form.kind==='scene'?'身份与参考图':'事实与版本检查'}}</h2>
+    <dl class="inspector-facts">
+      <div><dt>创作版本</dt><dd>{{selected ? `v${selected.version}` : '草稿'}}</dd></div>
+      <div v-if="form.source_version_id"><dt>固定来源</dt><dd>{{choices.find(item=>item.version_id===form.source_version_id)?.title || form.source_version_id}}</dd></div>
+      <template v-if="form.kind==='storyboard' && inspectedShot">
+        <div><dt>当前镜头</dt><dd>第 {{inspectedShot.number}} 镜</dd></div>
+        <div><dt>预计时长</dt><dd>{{inspectedShot.planned_duration}} 秒</dd></div>
+        <div><dt>已引用角色</dt><dd>{{inspectedShot.character_version_ids.length}}</dd></div>
+        <div><dt>镜头合同</dt><dd>{{inspectedShot.contract?'已登记':'待登记'}}</dd></div>
+      </template>
+      <div v-if="form.kind==='character'"><dt>身份锁</dt><dd>{{form.identity?'已登记':'待登记'}}</dd></div>
+    </dl>
+    <RouterLink :to="{name:'bible',query:{project:projectId}}">查看故事圣经</RouterLink>
     <div v-if="selected" class="story-tools"><h2>基于已保存版本的操作</h2><p class="hint">规则工具只保留/拆分原文。3秒默认镜头时长仅是可编辑计划，所有草稿须人工审核。</p><label v-if="['novel','script','episode'].includes(selected.kind)">拆分目标字数<input v-model.number="unitChars" type="number" min="100" max="10000"></label><div class="actions"><button v-if="['novel','script','episode'].includes(selected.kind)" :disabled="busy" @click="derive('structure_script')">整理为剧本草稿</button><button v-if="selected.kind==='script'" :disabled="busy" @click="derive('split_episodes')">规则拆分分集</button><button v-if="['script','episode'].includes(selected.kind)" :disabled="busy" @click="derive('split_shots')">规则拆分分镜</button><button v-if="['script','episode','storyboard'].includes(selected.kind)" :disabled="busy" @click="emit('production',selected)">引用此版本创建剪辑批次</button><button v-if="['novel','script','episode'].includes(selected.kind)" :disabled="busy" @click="emit('adaptation',selected)">使用此版本改编剧情</button><button v-if="selected.kind==='generation_plan'" :disabled="busy" @click="readEstimate">查看模型接入状态</button></div><p v-if="estimate" class="hint">{{estimate}}</p><p v-if="['script','episode','storyboard'].includes(selected.kind)" class="hint">生产入口使用用户已有视频，仅记录本版本依据；不会自动生成镜头或执行分镜计划。</p><h2>版本历史</h2><div class="version-list"><button v-for="version in history" :key="version.version_id" :disabled="busy" @click="run(()=>load(version))">v{{version.version}} · {{version.note||'未填版本说明'}}</button></div><button v-if="history.length<selected.current_version" :disabled="busy" @click="moreHistory">加载更多历史</button><div class="actions"><label>比较来源版本<select v-model.number="diffLeft"><option v-for="version in history" :key="version.version_id" :value="version.version">v{{version.version}}</option></select></label><button :disabled="busy" @click="compare">与正在查看的版本比较</button></div><pre v-if="diffText" class="log-tail">{{diffText}}</pre><p class="mono">版本 {{selected.version_id}}<br>SHA-256 {{selected.content_hash}}</p></div>
    </section>
   </div>
@@ -125,20 +192,38 @@ onUnmounted(()=>{clearTimeout(cacheTimer);persist()})
 </template>
 
 <style scoped>
-.creative-layout { grid-template-columns:minmax(205px,.7fr) minmax(0,2.6fr) }
+.creative-layout { grid-template-columns:minmax(170px,235px) minmax(0,1fr) minmax(185px,255px);gap:14px;align-items:start }
+.creative-inspector { min-width:0;overflow-wrap:anywhere }
+.identity-images { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px }
+.identity-images figure { margin:0;min-width:0 }
+.identity-images img { display:block;width:100%;aspect-ratio:1;object-fit:contain;background:var(--surface-raised);border-radius:7px }
+.identity-images figcaption { color:var(--ink-muted);font-size:11px }
+.reference-board,.shot-canvas { margin:12px 0 }
+.shot-monitor { display:grid;place-items:center;min-height:175px;background:linear-gradient(145deg,#202c49,#171d31);border-radius:11px;color:#dae5f8;text-align:center;overflow:hidden }
+.shot-monitor p { display:grid;justify-items:center;gap:8px;margin:12px }
+.shot-monitor img { display:block;width:100%;height:min(29vh,228px);object-fit:contain }
+.shot-endpoints { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px }
+.shot-endpoints article { background:var(--accent-surface);border:1px solid var(--line);border-radius:9px;padding:10px;min-width:0;font-size:12px;overflow-wrap:anywhere }
+.shot-endpoints p,.shot-endpoints pre { margin:4px 0 0 }
+.shot-endpoints pre { max-height:230px;overflow:auto }
+.shot-index { display:grid;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line) }
+.shot-index button { text-align:left;overflow-wrap:anywhere }
+.shot-index button[aria-pressed=true] { border-color:var(--accent);background:var(--accent-surface);color:var(--accent) }
+.story-row { scroll-margin-top:72px }
 .creative-library h2,.creative-create,.creative-export { display:flex; align-items:center; gap:8px }
 .creative-library h2,.creative-library p { margin:0 }
 .creative-library h2 svg,.creative-search svg { color:var(--accent) }
-.creative-library .story-item { margin:0; background:#151e27; border-color:var(--line-soft) }
+.creative-library .story-item { margin:0; background:var(--surface-raised); border-color:var(--line-soft) }
 .creative-library .story-item.active { background:var(--accent-surface); border-color:var(--accent-strong) }
 .creative-search { display:flex; align-items:center; gap:7px; padding:0 8px; border:1px solid var(--line); border-radius:7px }
 .creative-search input { flex:1; padding-inline:0; border:0; background:transparent }
 .creative-export { text-decoration:none; padding:7px 0 }
 .creative-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-bottom:11px; border-bottom:1px solid var(--line-soft) }
-.creative-heading h2 { font-size:24px; margin:0; overflow-wrap:anywhere }
+.creative-heading h2 { font-size:18px; margin:0; overflow-wrap:anywhere }
 .creative-heading p { margin:0 0 3px }
 .creative-cache { margin:9px 0 0 }
-.story-editor .long-text { background:#111b24; min-height:300px; padding:14px; }
+.story-editor .long-text { background:var(--surface-raised); min-height:300px; padding:14px; }
 .story-editor textarea,.story-editor input { line-height:1.65 }
-@media(max-width:1000px) { .creative-layout { grid-template-columns:1fr } }
+@media(max-width:1100px) { .creative-layout { grid-template-columns:minmax(150px,210px) minmax(0,1fr) } .creative-inspector { grid-column:2 } }
+@media(max-width:700px) { .creative-layout,.shot-endpoints { grid-template-columns:minmax(0,1fr) } .creative-inspector { grid-column:auto } }
 </style>

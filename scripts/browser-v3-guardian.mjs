@@ -112,11 +112,11 @@ try {
   await command('Page.navigate',{url:appLink('/delivery/guardian',{version:invalid.version_id})})
   await wait(()=>contains('角色状态存在跳变'),'Guardian renders planned continuity evidence')
   assert(await contains('存在阻断') && await contains('剧情事实 deadline 与正史不一致'))
-  await click('深色')
+  await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await wait(()=>evaluate("document.querySelector('.guardian-workbench').dataset.theme==='dark'"),'dark PRISM theme')
   assert.equal(await evaluate("getComputedStyle(document.querySelector('.guardian-toolbar select')).backgroundColor"),'rgb(27, 37, 53)')
   await screenshot('guardian-blocked.png')
-  await click('浅色')
+  await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await evaluate("document.querySelector('.lock-panel a').click()")
   await wait(()=>evaluate("document.activeElement.id==='guardian-shot-ep1-shot2'"),'evidence opens the exact pinned shot')
 

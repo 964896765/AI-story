@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-11-22T02:46:55.042Z",
+  "asset_filter": true,
+  "browser_upload_and_utf8_preview": true,
+  "compact_sidebar_persists": true,
+  "keyboard_route_search": true,
+  "server_task_filter": true,
+  "render_gallery_playback": true,
+  "mobile_viewports": [
+    "/project/assets",
+    "/creative/script",
+    "/edit/timeline",
+    "/production",
+    "/delivery/review"
+  ],
+  "reachable_routes": 20,
+  "prototype_sidebar_order_verified": true,
+  "global_theme_persists": true,
+  "local_director_handoff": true,
+  "wizard_routes_and_notes": true,
+  "real_paid_requests": 0,
+  "js_errors": []
+}

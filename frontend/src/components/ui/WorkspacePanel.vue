@@ -8,7 +8,7 @@ defineProps<{ title: string }>()
   </section>
 </template>
 <style scoped>
-.workspace-panel { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); padding: 17px; background: var(--surface-panel) }
+.workspace-panel { min-width:0;border:1px solid var(--line);border-radius:var(--radius);padding:18px;background:var(--surface-panel);box-shadow:var(--shadow) }
 .panel-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px }
-.panel-heading h2 { margin: 0; font-size: 16px }
+.panel-heading h2 { margin:0;font-size:14px }
 </style>

@@ -1,0 +1,13 @@
+{
+  "observed_at": "2026-11-22T02:50:29.4740681+00:00",
+  "url": "http://127.0.0.1:15173",
+  "frontend_bundle": "/assets/index-Lpqoo7ED.js",
+  "homepage_http": 200,
+  "director_http": 200,
+  "editor_http": 200,
+  "bundle_http": 200,
+  "backend_ready": true,
+  "workers": 1,
+  "real_paid_enabled": false,
+  "budget_default_micros": 0
+}

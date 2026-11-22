@@ -57,6 +57,8 @@ try {
   await size(1440,900)
   await wait(()=>contains('服务就绪'),'workbench connected')
   assert.equal(await evaluate("document.querySelectorAll('nav a[data-workspace]').length"),12)
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('nav a[data-workspace]'),link=>link.dataset.workspace)"),
+    ['项目总览','AI 总导演','创作向导','小说与剧本','角色与场景','分镜工作台','AI 图片与视频','配音与声音','剪辑与时间轴','生产调度','质检与交付','模型与设置'])
   await setField('当前项目',project.id)
   await wait(()=>text('overview-project').then(value=>value===project.name),'selected project bound to overview')
   await wait(()=>evaluate("document.querySelector('.feature-art img')?.naturalWidth>0"),'approved cover media decoded')
@@ -93,12 +95,33 @@ try {
   await wait(()=>contains('持久化任务队列'),'mobile task queue visible')
   assert(!await evaluate("document.querySelector('.app-sidebar').classList.contains('is-open')"))
   await size(1440,900)
-  const legacyPages = ['素材资产中心','智能解析','智能二创','剧情改编','漫剧定制','故事圣经','生成候选',
-    '配音与字幕','多轨时间轴','批量生产','质检与导出','资源与交付','运营中心','运行诊断']
+  const legacyPages = ['素材资产中心','智能解析','智能二创','剧情改编','小说与剧本','故事圣经','生成候选',
+    '配音与字幕','多轨时间轴','生产调度','质检与导出','资源与交付','运营中心','运行诊断']
   for (const title of [...legacyPages,'角色与场景','分镜编辑','文本模型与预算']) {
     await click(title)
     await wait(()=>evaluate(`document.querySelector('main h1')?.textContent.trim()===${JSON.stringify(title)}`),'routed '+title)
   }
+  await click('AI 总导演')
+  await wait(()=>contains('导演对话'),'PRISM director layout')
+  await setField('制作指令','核对第 1 集服装和镜头证据。')
+  await click('生成执行计划')
+  await wait(()=>contains('已在本机保存执行计划'),'director stores a real local handoff plan')
+  await screenshot('prism-director.png')
+  await click('确认并打开工作区')
+  await wait(()=>evaluate("location.pathname==='/delivery/guardian'"),'director hands off to Guardian')
+  await click('创作向导')
+  await wait(()=>contains('本阶段制作备注'),'six stage wizard loaded')
+  await setField('本阶段制作备注','保留原始素材授权。')
+  await click('保存本机备注')
+  await click('继续下一步')
+  await wait(()=>evaluate("new URLSearchParams(location.search).get('step')==='2'"),'wizard proceeds with project context')
+  await screenshot('prism-wizard.png')
+  await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
+  await wait(()=>evaluate("document.documentElement.dataset.theme==='dark'"),'global dark theme')
+  await command('Page.reload')
+  await wait(()=>evaluate("document.documentElement.dataset.theme==='dark' && getComputedStyle(document.body).backgroundColor==='rgb(16, 23, 37)' && document.querySelector('.wizard-grid')"),'global theme persists after reload')
+  await screenshot('prism-dark.png')
+  await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await command('Page.navigate',{url:`${base}/project/analysis?project=${project.id}&asset=${media.id}`})
   await wait(()=>evaluate(`document.querySelector('.analysis-workspace select')?.value==='${media.id}'`),'direct analysis link preserves authorized asset')
   await click('项目总览')
@@ -154,7 +177,7 @@ try {
   await command('Input.dispatchKeyEvent',{type:'keyDown',key:'k',code:'KeyK',modifiers:2,windowsVirtualKeyCode:75})
   await command('Input.dispatchKeyEvent',{type:'keyUp',key:'k',code:'KeyK',modifiers:2,windowsVirtualKeyCode:75})
   await wait(()=>evaluate("document.activeElement===document.querySelector('.workspace-command[open] input')"),'keyboard opens and focuses workspace search')
-  await setField('搜索页面','批量生产')
+  await setField('搜索页面','生产调度')
   await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',text:'\r',windowsVirtualKeyCode:13})
   await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13})
   await wait(()=>contains('持久化任务队列'),'keyboard search navigates to production')
@@ -193,7 +216,8 @@ try {
   await writeFile(join(evidenceDir,'v3-ui-acceptance.json'),JSON.stringify({
     checked_at:new Date().toISOString(), asset_filter:true, browser_upload_and_utf8_preview:true,
     compact_sidebar_persists:true, keyboard_route_search:true, server_task_filter:true,
-    render_gallery_playback:true, mobile_viewports:mobileChecks, reachable_routes:legacyPages.length+4,
+    render_gallery_playback:true, mobile_viewports:mobileChecks, reachable_routes:legacyPages.length+6,
+    prototype_sidebar_order_verified:true, global_theme_persists:true, local_director_handoff:true, wizard_routes_and_notes:true,
     real_paid_requests:0, js_errors:errors,
   },null,2)+'\n')
   console.log('V3 overview: real project, FFmpeg output, recorded tasks, mock draft, deep links, and 12 navigation groups verified.')

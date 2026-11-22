@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { AlertTriangle, GitCompareArrows, Moon, Sun } from 'lucide-vue-next'
+import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request } from '../analysisApi'
 import { useWorkspace } from '../router/workspace'
+import { appearance } from '../stores/appearance'
 
 interface Edition {
   id:string; version_id:string; title:string; version:number; project_id:string
@@ -27,7 +28,6 @@ const { workbench, query, link, go } = useWorkspace()
 const choices=ref<Edition[]>([]), history=ref<Edition[]>([]), version=ref<Edition|null>(null), report=ref<Report|null>(null)
 const candidates=ref<Candidate[]>([]), episodeNo=ref(0), selectedShot=ref(''), finding=ref<Finding|null>(null), candidateId=ref('')
 const loading=ref(true), failure=ref(''), impactFailure=ref(''), baseline=ref(''), changes=ref<Change[]|null>(null), comparing=ref(false)
-const theme=ref(localStorage.getItem('ai-story-guardian-theme')==='dark' ? 'dark' : 'light')
 const episodes=computed(()=>report.value?.episodes || [])
 const episode=computed(()=>episodes.value.find(item=>item.number===episodeNo.value))
 const shot=computed(()=>episode.value?.shots.find(item=>item.shot_id===selectedShot.value))
@@ -49,10 +49,6 @@ const evidenceLabels:Record<string,string>={expected:'预期值',observed:'实�
 const changedFields=computed(()=>finding.value?.evidence?.fields as Record<string,{expected:unknown;observed:unknown}>|undefined)
 const displayValue=(value:unknown)=>value==null || value==='' ? '—' : typeof value==='object' ? JSON.stringify(value) : String(value)
 
-function toggleTheme() {
-  theme.value=theme.value==='light'?'dark':'light'
-  localStorage.setItem('ai-story-guardian-theme',theme.value)
-}
 function pickEpisode(number:number) {
   episodeNo.value=number
   finding.value=issues.value[0] || null
@@ -109,14 +105,7 @@ async function compare() {
 </script>
 
 <template>
-  <div class="guardian-workbench" :data-theme="theme">
-    <header class="guardian-header">
-      <p>审查正史、镜头合同与制作候选</p>
-      <button type="button" :aria-label="theme==='light'?'切换深色主题':'切换浅色主题'" @click="toggleTheme">
-        <Moon v-if="theme==='light'" :size="16" aria-hidden="true" /><Sun v-else :size="16" aria-hidden="true" />
-        {{ theme==='light'?'深色':'浅色' }}
-      </button>
-    </header>
+  <div class="guardian-workbench" :data-theme="appearance">
     <p v-if="loading" role="status">正在读取制作约束与审核记录…</p>
     <p v-else-if="failure" role="alert" class="guardian-error">{{ failure }}</p>
     <p v-else-if="!workbench.projectId">请选择项目。</p>
@@ -227,12 +216,10 @@ async function compare() {
 </template>
 
 <style scoped>
-.guardian-workbench { --gb:#f5f7fb; --gp:#fff; --ga:#edf1ff; --gl:#e3e8f1; --gt:#1b2536; --gm:#53647e; --gx:#485fc6; --ge:#a52d39; color-scheme:light; color:var(--gt); background:var(--gb); padding:clamp(12px,2vw,26px); border:1px solid var(--gl); border-radius:14px; }
-.guardian-workbench[data-theme=dark] { --gb:#101725; --gp:#1b2535; --ga:#2e3c62; --gl:#35435a; --gt:#eef3fd; --gm:#b1bdd1; --gx:#a9b8ff; --ge:#ff9ca7; color-scheme:dark }
-.guardian-header,.guardian-toolbar,.compare-form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:14px }
-.guardian-header { justify-content:space-between; align-items:center }
+.guardian-workbench { --gb:var(--surface-base);--gp:var(--surface-panel);--ga:var(--accent-surface);--gl:var(--line);--gt:var(--ink);--gm:var(--ink-muted);--gx:var(--accent);--ge:var(--negative);color:var(--gt) }
+.guardian-toolbar,.compare-form { display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-bottom:14px }
 .guardian-workbench h2 { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--gt) }
-.guardian-header p,.guardian-muted,.guardian-workbench small { color:var(--gm); margin:0 }
+.guardian-muted,.guardian-workbench small { color:var(--gm);margin:0 }
 .guardian-workbench a { color:var(--gx); display:block; padding:7px 0; overflow-wrap:anywhere }
 .guardian-workbench label { color:var(--gm); min-width:0 }
 .guardian-workbench button,.guardian-workbench select { appearance:none; border:1px solid var(--gl); background-color:var(--gp); color:var(--gt); max-width:100%; transition:none }
@@ -240,7 +227,7 @@ async function compare() {
 .guardian-workbench button { display:inline-flex; align-items:center; gap:8px }
 .guardian-workbench button[aria-pressed=true],.guardian-workbench button:hover:not(:disabled) { background:var(--ga); border-color:var(--gx); color:var(--gx) }
 .guardian-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0 0 14px }
-.guardian-metrics div,.guardian-workbench .guardian-panel { padding:14px; border:1px solid var(--gl); background:var(--gp); border-radius:14px; min-width:0; margin:0 }
+.guardian-metrics div,.guardian-workbench .guardian-panel { padding:16px;border:1px solid var(--gl);background:var(--gp);border-radius:14px;min-width:0;margin:0;box-shadow:var(--shadow) }
 .guardian-metrics dt { color:var(--gm); font-size:12px }
 .guardian-metrics dd { font-size:21px; margin:4px 0 0; font-weight:700 }
 .guardian-layout { display:grid; grid-template-columns:minmax(170px,1fr) minmax(250px,2.1fr) minmax(180px,1fr); gap:12px; align-items:start }
