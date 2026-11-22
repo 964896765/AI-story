@@ -1,15 +1,18 @@
 """Persist a frame-based timeline request and enqueue a fixed local rendering task."""
+from copy import deepcopy
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 from sqlalchemy import select
 
-from .creative import create_entity, pack, require, version_ref
+from .creative import append_version, create_entity, pack, require, validate_content, version_ref
 from .db import session
+from .generation import finished_candidate
 from .guardian import candidate_matches, require_active_plan, require_reviewed_timeline
 from .models import Asset, Project, StoryEntity, StoryVersion, Task, TaskEvent
-from .series import series_report
+from .render import file_hash
+from .series import approved_guardian_shot, series_report
 from .story_schemas import Strict, Timeline
 
 router = APIRouter(prefix='/api/timeline',tags=['multitrack-timeline'])
@@ -26,6 +29,94 @@ class AutoAssemble(Strict):
     title: str=Field(min_length=1,max_length=200,pattern=r'.*\S.*')
     profile: str=Field(default='portrait',pattern=r'^(portrait|landscape|square)$')
     idempotency_key: str=Field(min_length=1,max_length=64)
+
+
+class ShotReplacement(Strict):
+    series_version_id: str = Field(min_length=1,max_length=36)
+    timeline_version_id: str = Field(min_length=1,max_length=36)
+    shot_id: str = Field(min_length=1,max_length=48)
+    candidate_id: str = Field(min_length=1,max_length=36)
+    note: str = Field(min_length=1,max_length=2000,pattern=r'\S')
+    idempotency_key: str = Field(min_length=1,max_length=64)
+
+
+def primary_clips(content):
+    return sorted((clip for track in content['tracks'] if track['enabled'] and track['role']=='main'
+                   for clip in track['clips']),key=lambda clip:clip['at'])
+
+
+@router.get('/projects/{project_id}/shot-replacements/options')
+def replacement_options(project_id: str,series_version_id: str,shot_id: str,db=Depends(session)):
+    series,_,episode,_ = approved_guardian_shot(db,project_id,series_version_id,shot_id)
+    editions = select(StoryVersion.id).where(StoryVersion.entity_id==series.id,
+                                           StoryVersion.provenance['series_approved'].as_boolean().is_(True))
+    asset_ids = set(db.scalars(select(Asset.id).where(
+        Asset.project_id==project_id,Asset.media_info['guardian_series_id'].as_string()==series.id,
+        Asset.media_info['shot_id'].as_string()==shot_id)))
+    rows = db.scalars(select(StoryVersion).join(StoryEntity,StoryEntity.id==StoryVersion.entity_id).where(
+        StoryEntity.project_id==project_id,StoryEntity.kind=='timeline',StoryEntity.current_version==StoryVersion.number,
+        StoryVersion.content['source_version_id'].as_string().in_(editions))
+        .order_by(StoryVersion.created_at.desc(),StoryVersion.id))
+    return [{'version_id':row.id,'title':row.title,'version':row.number,'profile':row.content['profile']} for row in rows
+            if (row.provenance.get('assembly_request') or {}).get('episode',episode['number'])==episode['number']
+            and any(clip['asset_id'] in asset_ids for clip in primary_clips(row.content))]
+
+
+@router.post('/projects/{project_id}/shot-replacements',status_code=201)
+def replace_shot(project_id: str,body: ShotReplacement,db=Depends(session)):
+    if not db.scalar(select(Project.id).where(Project.id==project_id).with_for_update()):
+        raise HTTPException(404,'项目不存在')
+    entity,base = version_ref(db,project_id,body.timeline_version_id,{'timeline'})
+    entity = db.scalar(select(StoryEntity).where(StoryEntity.id==entity.id).with_for_update()
+                       .execution_options(populate_existing=True))
+    key = 'guardian-replace:'+body.idempotency_key
+    request = body.model_dump(exclude={'idempotency_key'})
+    previous = db.scalar(select(StoryVersion).where(StoryVersion.entity_id==entity.id,StoryVersion.request_key==key))
+    if previous:
+        if (previous.provenance.get('shot_replacement') or {}).get('request')!=request:
+            raise HTTPException(409,'请求键已用于其他镜头替换')
+        return pack(db,entity,previous)
+    if base.number!=entity.current_version:
+        raise HTTPException(409,'时间轴已更新，请重新选择当前版本')
+    series,target,episode,shot = approved_guardian_shot(db,project_id,body.series_version_id,body.shot_id)
+    origin_id = base.content.get('source_version_id')
+    if not origin_id:
+        raise HTTPException(422,'时间轴缺少固定 Guardian 计划来源')
+    origin_entity,origin = version_ref(db,project_id,origin_id,{'story_bible'})
+    if origin_entity.id!=series.id or not origin.provenance.get('guardian_manifest'):
+        raise HTTPException(422,'时间轴须引用同一故事圣经的已批准 Guardian 版本')
+    baseline = episode if origin.id==target.id else next((item for item in series_report(db,series,origin)['episodes']
+                                                          if item['number']==episode['number']),None)
+    if not baseline or not any(item['shot_id']==body.shot_id for item in baseline['shots']):
+        raise HTTPException(422,'原时间轴分集没有对应镜头，请在多轨工作台重新装配')
+    require_reviewed_timeline(db,origin,baseline,base.content)
+    job,path = finished_candidate(db,body.candidate_id)
+    review = job.output.get('guardian_review') or {}
+    if (job.project_id!=project_id or job.story_version_id!=target.id or job.parameters.get('shot_id')!=body.shot_id
+        or review.get('request',{}).get('decision')!='approved' or review.get('output_sha256')!=job.output['sha256']):
+        raise HTTPException(409,'候选须属于当前批准镜头并通过人工内容审核')
+    asset = db.scalar(select(Asset).where(Asset.project_id==project_id,Asset.storage_key==job.output['storage_key']))
+    if not asset or not candidate_matches(asset,target,shot) or asset.sha256!=job.output['sha256']:
+        raise HTTPException(409,'请先采纳已审核候选')
+    if file_hash(path)!=asset.sha256:
+        raise HTTPException(409,'采纳候选文件校验失败')
+    content = deepcopy(base.content)
+    clip = next(clip for item,clip in zip(baseline['shots'],primary_clips(content)) if item['shot_id']==body.shot_id)
+    old_asset = clip['asset_id']
+    if old_asset==asset.id:
+        raise HTTPException(422,'所选片段已使用这个候选')
+    clip['asset_id'] = asset.id
+    content['source_version_id'] = target.id
+    require_reviewed_timeline(db,target,episode,content)
+    normalized,refs = validate_content(db,project_id,'timeline',content)
+    provenance = {'shot_replacement':{'request':request,'old_asset_id':old_asset,'new_asset_id':asset.id,
+                                      'episode':episode['number'],'contract_sha256':shot['guardian']['contract_sha256']}}
+    if assembly := base.provenance.get('assembly_request'):
+        provenance['assembly_request'] = {**assembly,'series_version_id':target.id}
+    entity.current_version += 1
+    version = append_version(db,entity,base.title,normalized,refs,key,body.note,provenance)
+    db.commit()
+    return pack(db,entity,version)
 
 
 def all_source_versions(db, project_id, content):

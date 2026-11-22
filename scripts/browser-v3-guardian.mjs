@@ -149,6 +149,9 @@ try {
     await post(taskRoot(job.id)+'/select',{...selection,title:job.parameters.shot_id})
   }
 
+  const assembling='/timeline'+path+'/assemble'
+  const originalTimeline=await post(assembling,{series_version_id:approved.version_id,episode:2,
+    title:'第 2 集时间轴',profile:'square',idempotency_key:'before-shot-rework'})
   const edited=structuredClone(boards[1].content)
   edited.shots[4].contract.visual='左侧阿青持白信，特写必须看到信封'
   const updatedBoard=await revise(boards[1],edited,'new-shot-contract')
@@ -158,15 +161,58 @@ try {
   const diff=await api(`/series/versions/${latest.version_id}/impact?baseline_version_id=${approved.version_id}`)
   assert.equal(diff.shots.filter(shot=>shot.kind==='unchanged').length,9)
   assert.deepEqual(diff.shots.filter(shot=>shot.kind==='contract_changed').map(shot=>shot.shot_id),['ep2-shot5'])
-  const assembling='/timeline'+path+'/assemble'
   const assembleBody={series_version_id:latest.version_id,episode:2,profile:'square',title:'更正后第 2 集',idempotency_key:'assemble-2'}
   await blocked(assembling,assembleBody,422)
-  const changed=(await continuity(latest)).episodes[1].shots[4]
-  const regen=await enqueue(latest,changed,room,'rework-one')
+  await command('Page.navigate',{url:appLink('/delivery/guardian',{version:latest.version_id})})
+  await wait(()=>contains('版本影响分析'),'approved Guardian rework workspace')
+  await setField('对比基线',approved.version_id)
+  await click('比较镜头合同')
+  await click('定位镜头 ep2-shot5')
+  await wait(()=>evaluate("document.activeElement.value==='ep2-shot5'"),'locate changed shot')
+  await evaluate("document.querySelector('.rework-actions summary').click()")
+  await setField('返工画幅','square')
+  await setField('返工运镜','pull_out')
+  await setField('返工原因','按新版合同保留完整信封')
+  await click('提交单镜头返工')
+  await wait(()=>contains('按新版合同保留完整信封'),'rework reason persisted')
+  const [regen]=await api('/generation'+path+'/candidates?shot_id=ep2-shot5&series_id='+latest.id)
+  assert.equal(regen.rework.reason,'按新版合同保留完整信封')
+  assert.equal(regen.story_version_id,latest.version_id)
+  assert.equal(regen.parameters.frames,24)
   await wait(()=>ready([regen.id]),'one changed shot rerendered',35000)
-  await post(taskRoot(regen.id)+'/guardian-review',{decision:'approved',note:'已按新合同核对信封'})
-  await post(taskRoot(regen.id)+'/select',{title:'返工特写',note:'批准新的镜头版本'})
-  const timelines=[await post(assembling,{...assembleBody,episode:1,title:'第 1 集',idempotency_key:'assemble-1'}),await post(assembling,assembleBody)]
+  const applyPath='/timeline'+path+'/shot-replacements'
+  const replaceBody={series_version_id:latest.version_id,timeline_version_id:originalTimeline.version_id,
+    shot_id:'ep2-shot5',candidate_id:regen.id,note:'确认只替换第五镜',idempotency_key:'blocked-unreviewed'}
+  await blocked(applyPath,replaceBody,409)
+  const followLink=label=>evaluate(`Array.from(document.querySelectorAll('a')).find(a=>a.textContent.trim()===${JSON.stringify(label)})?.click()`)
+  await followLink('打开生成与候选审核')
+  await wait(()=>evaluate(`document.querySelector('.candidate-evidence img[src*="${regen.id}/guardian-frames/1"]')?.naturalWidth>0`),'exact rework candidate evidence')
+  await setField('内容审核说明','按新合同核对画面和信封')
+  await click('保存内容审核')
+  await wait(()=>contains('内容审核已保存，可以采纳'),'rework review persisted')
+  await blocked(applyPath,replaceBody,409)
+  await setField('素材标题','返工特写')
+  await setField('采纳说明','批准新的镜头版本')
+  await click('采纳为视频素材')
+  await wait(()=>contains('已采纳 返工特写'),'replacement candidate adopted')
+  await followLink('返回镜头返工')
+  await click('将已采纳候选用于时间轴')
+  await wait(()=>evaluate(`Array.from(document.querySelectorAll('.rework-actions select option')).some(option=>option.value===${JSON.stringify(originalTimeline.version_id)})`),'baseline timeline is selectable')
+  await setField('返工基线时间轴',originalTimeline.version_id)
+  await setField('替换说明','确认只替换第五镜')
+  await click('保存单镜头替换版本')
+  await wait(()=>contains('已保存时间轴 v2'),'new timeline version saved')
+  await screenshot('guardian-shot-rework.png')
+  const [versionEntry]=await api('/story/entities/'+originalTimeline.id+'/versions')
+  const replacement=await api('/story/versions/'+versionEntry.version_id)
+  const before=originalTimeline.content.tracks[0].clips, after=replacement.content.tracks[0].clips
+  assert.deepEqual(after.slice(0,4),before.slice(0,4))
+  assert.notEqual(after[4].asset_id,before[4].asset_id)
+  assert.deepEqual({...after[4],asset_id:before[4].asset_id},before[4])
+  assert.deepEqual((await api('/story/versions/'+originalTimeline.version_id)).content,originalTimeline.content)
+  assert.equal(replacement.provenance.shot_replacement.request.candidate_id,regen.id)
+  await blocked(applyPath,{...replaceBody,idempotency_key:'blocked-stale-timeline'},409)
+  const timelines=[await post(assembling,{...assembleBody,episode:1,title:'第 1 集',idempotency_key:'assemble-1'}),replacement]
 
   const voiceRoot='/voice'+path+'/tasks'
   const voiceJob=await post(voiceRoot,{storyboard_version_id:boards[0].version_id,series_version_id:latest.version_id,
@@ -203,6 +249,7 @@ try {
   const packageBody={run_id:run.id,title:'Guardian 原创剧验收',platform:'local-test',region:'CN',idempotency_key:'package'}
   await blocked(packagePath,packageBody,409)
   const readiness=await api(`/delivery${path}/runs/${run.id}/readiness?platform=local-test&region=CN`)
+  assert(!readiness.blockers.some(item=>item.asset_id===before[4].asset_id),'replaced clip is outside delivery rights scope')
   for(const item of readiness.blockers){
     await post('/library/assets/'+item.asset_id+'/rights',{status:'approved',source_type:'owned',holder:'原创验收样片制作者',
       evidence:'自产测试画面或本机语音录制',commercial:true,regions:['CN'],platforms:['local-test'],idempotency_key:'rights'})
@@ -240,6 +287,8 @@ try {
     detected_scripted_continuity_blockers:blockingCodes,accepted_clean_plan_has_no_blockers:true,
     rule_sample_counts:{true_positive:2,false_positive:0,false_negative:0},tested_viewport_widths:[390,1280,1440,1920],
     reused_approved_shots:9,rerendered_shots:1,voice:voice.name,checked_final_batch:run.id,
+    shot_rework:{task_id:regen.id,old_timeline:originalTimeline.version_id,new_timeline:replacement.version_id,
+      unchanged_clips_in_affected_episode:4,original_timeline_preserved:true},
     verified_delivery_bytes:bytes.length,verified_delivery_sha256:receipt.sha256,guardian_delivery_manifest:true,
     external_paid_calls:0,javascript_errors:errors,
   },null,2)+'\n')

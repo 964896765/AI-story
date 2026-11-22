@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from .creative import append_version, pack, require, validate_content, version_ref
 from .db import session
-from .guardian import Guardian, RULE_VERSION, latest_approved
+from .guardian import Guardian, RULE_VERSION, latest_approved, require_active_plan
 from .models import Project, StoryEntity, StoryVersion
 from .story_schemas import Strict
 
@@ -120,6 +120,22 @@ def series_report(db, entity, version):
         result['guardian'] = {'shot_count':len(seen_shots),'contracts':guardian.contracts,
                               'style':canon['style']['description']}
     return result
+
+
+def approved_guardian_shot(db, project_id, version_id, shot_id):
+    entity, version = version_ref(db, project_id, version_id, {'story_bible'})
+    require_active_plan(db, version)
+    manifest = version.provenance.get('guardian_manifest') or {}
+    if not version.provenance.get('series_approved') or shot_id not in manifest:
+        raise HTTPException(422, '请选择当前已批准的 Guardian 镜头')
+    report = series_report(db, entity, version)
+    for episode in report['episodes']:
+        for shot in episode['shots']:
+            if shot['shot_id'] == shot_id:
+                if not shot['guardian'] or shot['guardian']['contract_sha256'] != manifest[shot_id]:
+                    raise HTTPException(409, '镜头合同与批准记录不符')
+                return entity, version, episode, shot
+    raise HTTPException(422, '批准计划缺少所选镜头')
 
 
 @router.get('/versions/{version_id}/continuity')

@@ -168,13 +168,13 @@ def require_reviewed_timeline(db, plan, episode, timeline):
     main = [clip for track in tracks if track['role']=='main' for clip in track['clips']]
     main.sort(key=lambda clip: clip['at'])
     shots = episode['shots']
-    if any(track['role']=='overlay' for track in tracks) or len(main)!=len(shots):
+    if not main or any(track['role']=='overlay' for track in tracks) or len(main)!=len(shots):
         raise HTTPException(422,f"第 {episode['number']} 集需逐镜头使用已审核主画面")
     for shot,clip in zip(shots,main):
         start = round(shot['start_ms']*24/1000)
         stop = round((shot['start_ms']+shot['duration_ms'])*24/1000)
         asset = db.get(Asset,clip['asset_id'])
-        if (not candidate_matches(asset,plan,shot) or asset.media_info.get('guardian_aspect')!=timeline['profile']
+        if (not asset or not candidate_matches(asset,plan,shot) or asset.media_info.get('guardian_aspect')!=timeline['profile']
                 or clip['at']!=start or clip['frames']!=stop-start
                 or clip['source_in'] or clip['fade_in'] or clip['fade_out']):
             raise HTTPException(422,f"镜头 {shot['shot_id']} 的候选审核或剪辑范围与批准合同不符")
@@ -187,7 +187,7 @@ def require_reviewed_timeline(db, plan, episode, timeline):
                 raise HTTPException(422,'有锁定对白的分集须使用同一批准分镜的完整配音与字幕')
             clip = clips[0]
             asset = db.get(Asset,clip['asset_id'])
-            if (asset.media_info.get('guardian_series_id')!=plan.entity_id
+            if (not asset or asset.media_info.get('guardian_series_id')!=plan.entity_id
                 or asset.media_info.get('story_version_id')!=episode['storyboard_version_id']
                 or clip['at'] or clip['source_in'] or clip['frames']!=timeline['frames']):
                 raise HTTPException(422,'配音或字幕与批准分镜及时间轴范围不符')

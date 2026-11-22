@@ -12,7 +12,7 @@ interface Candidate {
     guardian_frames?:{index:number;time_ms:number}[];
     guardian_review?:{request:{decision:'approved'|'rejected';note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
-const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialPlan?:string;initialShot?:string;initialAsset?:string}>()
+const props=defineProps<{projectId:string;assets:{id:string;name:string}[];initialPlan?:string;initialShot?:string;initialAsset?:string;initialCandidate?:string}>()
 const emit=defineEmits<{assetsChanged:[]}>()
 const images=computed(()=>props.assets.filter(item=>/\.(png|jpe?g|webp)$/i.test(item.name)))
 const candidates=ref<Candidate[]>([]), assetId=ref(props.initialAsset||''), preview=ref(''), plan=ref(props.initialPlan||''), shot=ref(props.initialShot||'')
@@ -98,7 +98,8 @@ onMounted(()=>{
       if (fixed)frames.value=Math.round((fixed.start_ms+fixed.duration_ms)*24/1000)-Math.round(fixed.start_ms*24/1000)
     }
     await refresh()
-    const match=candidates.value.find(item=>item.parameters.shot_id===shot.value && item.story_version_id===plan.value
+    const linked=candidates.value.find(item=>item.id===props.initialCandidate && item.parameters.shot_id===shot.value)
+    const match=linked || candidates.value.find(item=>item.parameters.shot_id===shot.value && item.story_version_id===plan.value
       && item.status==='succeeded' && (!assetId.value || item.asset_id===assetId.value))
     if (match)open(match)
   })

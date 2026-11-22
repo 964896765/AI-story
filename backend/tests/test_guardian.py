@@ -104,8 +104,16 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     assert client.post(job_path+'/guardian-review',json=bad_review).json()==verdict.json()
     assert client.post(job_path+'/select',json=select).status_code==409
 
-    new_task = client.post(queue,json={**body,'idempotency_key':'replacement',
-                                     'candidates':[{'preset':'pan_right','aspect':'square','frames':24}]}).json()[0]
+    reworks = f'/api/generation/projects/{project}/shot-reworks'
+    rework = {'series_version_id':approved['version_id'],'shot_id':'ep1-shot1','asset_id':image['id'],
+              'aspect':'square','preset':'pan_right','reason':'重做指定镜头','idempotency_key':'replacement'}
+    assert client.post(reworks,json={**rework,'asset_id':stray['id']}).status_code==422
+    result = client.post(reworks,json=rework)
+    assert result.status_code==201,result.text
+    new_task = result.json()
+    assert new_task['parameters']['frames']==24 and new_task['rework']['reason']=='重做指定镜头'
+    assert client.post(reworks,json=rework).json()['id']==new_task['id']
+    assert client.post(reworks,json={**rework,'reason':'不同返工原因'}).status_code==409
     assert worker.run_once()
     replacement_path = f"/api/generation/candidates/{new_task['id']}"
     assert client.post(replacement_path+'/guardian-review',json={'decision':'approved','note':'已人工复核'}).status_code==200
@@ -127,6 +135,7 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     assert 'character_not_in_canon' in {item['code'] for item in report(unbound)['issues']}
     assert approve(unbound,'identity-conflict').status_code==422
     stale_task = client.post(queue,json={**body,'idempotency_key':'queued-before-approval'}).json()[0]
+    queued_rework = client.post(reworks,json={**rework,'idempotency_key':'rework-before-approval'}).json()
     for index, board in enumerate((fixed_board,boards[1])):
         revised_shots = deepcopy(clean_shots[index])
         for shot in revised_shots:
@@ -150,4 +159,90 @@ def test_guardian_contracts_and_continuity(creative, tmp_path):
     stale_path = f"/api/generation/candidates/{stale_task['id']}"
     assert client.post(stale_path+'/guardian-review',json={'decision':'approved','note':'过期提交'}).status_code==409
     assert client.post(stale_path+'/select',json=select).status_code==409
+    assert worker.run_once()
+    stale_rework = task_status(queued_rework['id'])
+    assert stale_rework['status']=='failed' and '已有新版获批' in stale_rework['error']
     assert media.read_bytes()==original
+
+
+def test_guardian_replacement_keeps_other_clips_and_audio(creative, tmp_path):
+    fixture, create = creative
+    client, project, audio, upload, _, task_status, resolve, _ = fixture
+    picture = tmp_path/'replacement.png'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','testsrc2=s=128x96',
+                    '-frames:v','1','-threads','1',str(picture)],check=True,timeout=15)
+    image = upload('原创灯室.png',picture.read_bytes())
+    source = create('script','灯室剧本',{'body':'灯室的两个定场镜头。'})
+    scene = create('scene','灯室',{'description':'虚构灯室'})
+    episode = create('episode','灯室首集',{'number':1,'body':'镜头从灯到窗。','source_version_id':source['version_id']})
+    shots = [{'number':n,'shot_id':f'room-{n}','description':f'灯室视角 {n}','planned_duration':1,
+              'scene_version_id':scene['version_id'],'strategy':'still_motion',
+              'contract':{'visual':'固定灯室','source_image_asset_ids':[image['id']]}} for n in (1,2)]
+    board = create('storyboard','灯室分镜',{'source_version_id':episode['version_id'],'shots':shots})
+    bible = create('story_bible','灯室制作计划',{'script_version_id':source['version_id'],'theme':'灯光','world':'虚构灯室',
+        'guardian':{'facts':{'location':'两个镜头都在灯室内'},'scene_version_ids':[scene['version_id']],
+                    'style':{'description':'写实'}},
+        'episodes':[{'episode_version_id':episode['version_id'],'storyboard_version_id':board['version_id'],
+                     'target_duration_ms':2000}]})
+    approved = client.post(f"/api/series/entities/{bible['id']}/approve",json={
+        'expected_version':1,'note':'固定两镜','idempotency_key':'approve'})
+    assert approved.status_code==201,approved.text
+    plan = approved.json()['version_id']
+    generate = f'/api/generation/projects/{project}/shot-reworks'
+
+    def candidate(shot, preset):
+        result = client.post(generate,json={
+            'series_version_id':plan,'shot_id':shot,'asset_id':image['id'],'preset':preset,'aspect':'square',
+            'reason':'灯室验收','idempotency_key':shot+preset})
+        assert result.status_code==201,result.text
+        task = result.json()
+        assert worker.run_once()
+        return task['id']
+
+    def adopt(task):
+        root = f'/api/generation/candidates/{task}'
+        assert client.post(root+'/guardian-review',json={'decision':'approved','note':'逐帧核对'}).status_code==200
+        selected = client.post(root+'/select',json={'title':'灯室镜头','note':'实测采纳'})
+        assert selected.status_code==201,selected.text
+        return selected.json()
+
+    first = adopt(candidate('room-1','push_in'))
+    second = adopt(candidate('room-2','push_in'))
+    edit = create('timeline','灯室多轨时间轴',{'source_version_id':plan,'profile':'square','frames':48,'tracks':[
+        {'id':'main','role':'main','clips':[{'id':'a','asset_id':first['id'],'at':0,'frames':24},
+                                         {'id':'b','asset_id':second['id'],'at':24,'frames':24}]},
+        {'id':'music','role':'music','volume':.25,'clips':[{'id':'mix','asset_id':audio['id'],'at':0,'frames':48}]},
+    ]})
+    replacement = candidate('room-1','pull_out')
+    root = f'/api/timeline/projects/{project}/shot-replacements'
+    body = {'series_version_id':plan,'timeline_version_id':edit['version_id'],'shot_id':'room-1',
+            'candidate_id':replacement,'note':'仅替换首镜','idempotency_key':'apply'}
+    assert client.post(root,json=body).status_code==409
+    new_asset = adopt(replacement)
+    path = resolve(new_asset['storage_key'])
+    before = path.read_bytes()
+    try:
+        path.write_bytes(b'\x00'*len(before))
+        assert client.post(root,json=body).status_code==409
+    finally:
+        path.write_bytes(before)
+    options = client.get(root+'/options',params={'series_version_id':plan,'shot_id':'room-1'}).json()
+    assert [item['version_id'] for item in options]==[edit['version_id']]
+    saved = client.post(root,json=body)
+    assert saved.status_code==201,saved.text
+    new = saved.json()
+    assert new['id']==edit['id'] and new['version']==2
+    assert client.post(root,json=body).json()['version_id']==new['version_id']
+    assert client.post(root,json={**body,'note':'冲突'}).status_code==409
+    assert client.post(root,json={**body,'idempotency_key':'stale'}).status_code==409
+    expected = deepcopy(edit['content'])
+    expected['tracks'][0]['clips'][0]['asset_id'] = new_asset['id']
+    assert new['content']==expected
+    assert client.get(f"/api/story/versions/{edit['version_id']}").json()['content']==edit['content']
+    render = client.post(f'/api/timeline/projects/{project}/renders',json={
+        'version_id':new['version_id'],'idempotency_key':'render-replacement'})
+    assert render.status_code==201,render.text
+    assert worker.run_once()
+    result = task_status(render.json()['id'])
+    assert result['status']=='succeeded',result['error']
+    assert result['output']['frames']==48 and result['output']['has_audio']

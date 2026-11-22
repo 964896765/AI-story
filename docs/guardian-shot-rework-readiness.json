@@ -1,0 +1,10 @@
+{
+  "ready": true,
+  "database_revision": "0015",
+  "worker_online": 1,
+  "guardian_route_http": 200,
+  "shot_rework_api_registered": true,
+  "timeline_replacement_api_registered": true,
+  "live_api_authorized": false,
+  "live_budget_micros": 0
+}

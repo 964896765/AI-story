@@ -1,0 +1,54 @@
+{
+  "checked_at": "2026-11-22T12:13:11.309Z",
+  "episodes": 2,
+  "characters": 2,
+  "scenes": 2,
+  "shot_count": 10,
+  "accepted_original_candidates": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "visual_model_precision": null,
+  "visual_model_recall": null,
+  "detected_scripted_continuity_blockers": [
+    [
+      "ep1-shot2",
+      "shot_state_change"
+    ],
+    [
+      "ep1-shot3",
+      "canon_fact_conflict"
+    ]
+  ],
+  "accepted_clean_plan_has_no_blockers": true,
+  "rule_sample_counts": {
+    "true_positive": 2,
+    "false_positive": 0,
+    "false_negative": 0
+  },
+  "tested_viewport_widths": [
+    390,
+    1280,
+    1440,
+    1920
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "voice": "Microsoft Huihui Desktop",
+  "checked_final_batch": "d8596f11-6df1-4fdb-a229-31ec4eefb554",
+  "shot_rework": {
+    "task_id": "7007c0b0-ecf7-4254-9157-347142e6e203",
+    "old_timeline": "52d40cc0-77bd-43e6-8dd9-d7280003a06f",
+    "new_timeline": "03448265-ca7c-4849-ad8e-815be70cd069",
+    "unchanged_clips_in_affected_episode": 4,
+    "original_timeline_preserved": true
+  },
+  "verified_delivery_bytes": 732033,
+  "verified_delivery_sha256": "c5cd1c1cecfe0d442fb535994265bf98eb1c2f8ea28f90862a37f9a8755ce7cd",
+  "guardian_delivery_manifest": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

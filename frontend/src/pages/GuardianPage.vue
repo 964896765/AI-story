@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
-import { request } from '../analysisApi'
+import { request, statusLabels } from '../analysisApi'
+import GuardianShotRework from '../components/production/GuardianShotRework.vue'
 import { useWorkspace } from '../router/workspace'
 import { appearance } from '../stores/appearance'
 
@@ -19,7 +20,8 @@ interface Episode {number:number;title:string;storyboard_version_id:string;shots
 interface Report {approved:boolean;ready_for_review:boolean;issues:Finding[];episodes:Episode[];guardian?:{style:string;shot_count:number}}
 interface Candidate {
   id:string;asset_id:string;story_version_id:string;status:string;guardian?:{contract_sha256:string;series_id:string}
-  parameters:{shot_id:string;preset:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
+  selected_asset_id:string|null;progress:number;error:string|null;rework?:{reason:string}
+  parameters:{shot_id:string;preset:string;aspect:string};output:{actual_external_cost_micros?:number;guardian_frames?:{index:number;time_ms:number}[];
     guardian_review?:{request:{decision:string;note:string;category:string|null};evidence:{time_ms:number}|null}}
 }
 interface Change {shot_id:string;kind:string;before:{episode:number;start_ms:number}|null;after:{episode:number;start_ms:number}|null}
@@ -39,6 +41,13 @@ const editionOptions=computed(()=>Array.from(new Map([...choices.value,...(versi
 const activeCandidates=computed(()=>candidates.value.filter(item=>item.guardian?.series_id===version.value?.id
   && item.guardian?.contract_sha256===shot.value?.guardian?.contract_sha256 && item.parameters.shot_id===shot.value?.shot_id))
 const candidate=computed(()=>activeCandidates.value.find(item=>item.id===candidateId.value) || activeCandidates.value[0])
+const applicableCandidate=computed(()=>candidate.value?.story_version_id===version.value?.version_id &&
+  candidate.value?.selected_asset_id && candidate.value.output.guardian_review?.request.decision==='approved' ? candidate.value.id : undefined)
+const activeApproval=computed(()=>history.value.find(item=>item.provenance.guardian_manifest)?.version_id===version.value?.version_id)
+const shotFrames=computed(()=>shot.value ? Math.round((shot.value.start_ms+shot.value.duration_ms)*24/1000)-Math.round(shot.value.start_ms*24/1000) : 0)
+const shotSelect=ref<HTMLSelectElement|null>(null)
+const candidateFailure=ref('')
+const refreshCandidates=ref(0)
 const issueCount=(number:number)=>report.value?.issues.filter(item=>item.episode===number).length || 0
 const time=(ms:number)=>(ms/1000).toFixed(3)+' 秒'
 const kinds:Record<string,string>={added:'新增',removed:'移除',contract_changed:'合同变化',moved:'位置变化',unchanged:'可按原合同复用'}
@@ -65,6 +74,35 @@ function pickShot(id:string) {
   finding.value=issues.value.find(item=>item.shot===id) || null
   candidateId.value=''
 }
+async function locateImpact(change:Change) {
+  if (!change.after) return
+  pickEpisode(change.after.episode)
+  pickShot(change.shot_id)
+  await nextTick()
+  shotSelect.value?.focus()
+}
+function queuedRework(id:string) {
+  candidateId.value=id
+  refreshCandidates.value++
+}
+watch([version,selectedShot,refreshCandidates],([edition,id],_,onCleanup)=>{
+  candidateFailure.value=''
+  if (!edition || !id) { candidates.value=[]; return }
+  let current=true
+  let timer:ReturnType<typeof setTimeout>
+  onCleanup(()=>{current=false;clearTimeout(timer)})
+  const params=new URLSearchParams({series_id:edition.id,shot_id:id})
+  async function refresh() {
+    try {
+      const rows=await request<Candidate[]>(`/generation/projects/${workbench.projectId}/candidates?${params}`)
+      if (!current) return
+      candidates.value=rows
+      candidateFailure.value=''
+      if (rows.some(item=>['queued','running'].includes(item.status))) timer=setTimeout(refresh,1500)
+    } catch(error) { if (current) candidateFailure.value=String(error) }
+  }
+  void refresh()
+})
 let loadToken=0
 watch(()=>workbench.projectId,async(project)=>{
   const token=++loadToken
@@ -73,12 +111,9 @@ watch(()=>workbench.projectId,async(project)=>{
   if(!project)return
   try {
     const path='/projects/'+encodeURIComponent(project)+'/story/entities?kind=story_bible'
-    const [list,rows]=await Promise.all([
-      request<{items:Edition[]}>(path),request<Candidate[]>('/generation/projects/'+encodeURIComponent(project)+'/candidates'),
-    ])
+    const list=await request<{items:Edition[]}>(path)
     if(token!==loadToken)return
     choices.value=list.items
-    candidates.value=rows
     const id=query('version') || list.items[0]?.version_id
     if(!id)return
     const current=await request<Edition>('/story/versions/'+encodeURIComponent(id))
@@ -90,7 +125,10 @@ watch(()=>workbench.projectId,async(project)=>{
     ])
     if(token!==loadToken)return
     version.value=current; report.value=result; history.value=versions
-    pickEpisode(result.issues[0]?.episode ?? result.episodes[0]?.number ?? 0)
+    const linkedShot=query('shot')
+    const linkedEpisode=result.episodes.find(item=>item.shots.some(shot=>shot.shot_id===linkedShot))
+    pickEpisode(linkedEpisode?.number ?? result.issues[0]?.episode ?? result.episodes[0]?.number ?? 0)
+    if (linkedEpisode) { pickShot(linkedShot); candidateId.value=query('candidate') }
   }catch(error){if(token===loadToken)failure.value=String(error)}finally{if(token===loadToken)loading.value=false}
 },{immediate:true})
 
@@ -145,7 +183,7 @@ async function compare() {
 
           <section class="guardian-panel evidence-panel">
             <h2>问题与证据</h2>
-            <label v-if="episode">镜头<select :value="selectedShot" @change="pickShot(($event.target as HTMLSelectElement).value)">
+            <label v-if="episode">镜头<select ref="shotSelect" :value="selectedShot" @change="pickShot(($event.target as HTMLSelectElement).value)">
               <option value="">选择镜头</option>
               <option v-for="item in episode.shots" :key="item.shot_id" :value="item.shot_id">{{item.number}} · {{item.description}}</option>
             </select></label>
@@ -177,7 +215,17 @@ async function compare() {
               </div>
               <p v-if="candidate?.output.guardian_review">{{ candidate.output.guardian_review.request.decision==='approved'?'人工通过':'人工退回' }} · {{candidate.output.guardian_review.request.note}}</p>
               <p v-else-if="candidate?.status==='succeeded'">候选待人工内容审核。</p>
+              <p v-else-if="candidate" role="status">{{statusLabels[candidate.status] || candidate.status}} · {{Math.round(candidate.progress)}}%</p>
               <p v-else class="guardian-muted">此合同暂无已验证候选证据。</p>
+              <p v-if="candidate?.rework">返工原因 · {{candidate.rework.reason}}</p>
+              <p v-if="candidate?.error || candidateFailure" class="guardian-error" role="alert">{{candidate?.error || candidateFailure}}</p>
+              <template v-if="report.approved && shot.guardian && shot.strategy==='still_motion'">
+                <RouterLink :to="link('generation',{plan:version.version_id,shot:shot.shot_id,asset:candidate?.asset_id || Object.keys(shot.guardian.source_images)[0],candidate:candidate?.id})">打开生成与候选审核</RouterLink>
+                <GuardianShotRework v-if="activeApproval" :key="shot.shot_id" :project-id="workbench.projectId" :series-version-id="version.version_id"
+                  :shot-id="shot.shot_id" :frames="shotFrames" :source-ids="Object.keys(shot.guardian.source_images)"
+                  :candidate-id="applicableCandidate" :candidate-aspect="candidate?.parameters.aspect" @queued="queuedRework" />
+                <p v-else class="guardian-muted">请切换至当前批准版本后提交返工。</p>
+              </template>
             </template>
             <p v-else-if="!finding" class="guardian-muted">请选择分集或镜头以查看证据。</p>
           </section>
@@ -196,7 +244,6 @@ async function compare() {
               </template>
             </dl>
             <RouterLink v-if="episode" :to="link('storyboard',{version:episode.storyboard_version_id,shot:shot?.shot_id})">打开固定分镜</RouterLink>
-            <RouterLink v-if="report.approved && shot?.guardian && shot.strategy==='still_motion'" :to="link('generation',{plan:version.version_id,shot:shot.shot_id,asset:Object.keys(shot.guardian.source_images)[0]})">打开生成与候选审核</RouterLink>
           </aside>
         </div>
         <section v-if="history.length>1" class="guardian-panel impact-panel">
@@ -208,7 +255,10 @@ async function compare() {
             <button type="submit" :disabled="!baseline || comparing">{{ comparing?'正在比较…':'比较镜头合同' }}</button>
           </form>
           <p v-if="impactFailure" role="alert" class="guardian-error">{{impactFailure}}</p>
-          <ul v-if="changes" class="impact-list"><li v-for="change in changes" :key="change.shot_id">{{change.shot_id}} · {{kinds[change.kind]}}</li></ul>
+          <ul v-if="changes" class="impact-list"><li v-for="change in changes" :key="change.shot_id">
+            {{change.shot_id}} · {{kinds[change.kind]}}
+            <button v-if="change.after && change.kind!=='unchanged'" type="button" @click="locateImpact(change)">定位镜头 {{change.shot_id}}</button>
+          </li></ul>
         </section>
       </template>
     </template>

@@ -22,7 +22,7 @@ from .media import probe
 from .guardian import require_active_plan
 from .models import Asset, Project, StoryVersion, Task, TaskEvent, now
 from .render import execute_ffmpeg, file_hash, validate_output, write_manifest
-from .series import series_report
+from .series import approved_guardian_shot, series_report
 from .story_schemas import Strict
 
 router = APIRouter(prefix='/api/generation', tags=['generation'])
@@ -57,6 +57,20 @@ class CandidateReview(Strict):
     note: str=Field(min_length=1,max_length=2000,pattern=r'\S')
 
 
+class ShotRework(Strict):
+    series_version_id: str = Field(min_length=1,max_length=36)
+    shot_id: str = Field(min_length=1,max_length=48)
+    asset_id: str = Field(min_length=1,max_length=36)
+    preset: Literal['push_in','pull_out','pan_right']
+    aspect: Literal['portrait','landscape','square']
+    reason: str = Field(min_length=1,max_length=2000,pattern=r'\S')
+    idempotency_key: str = Field(min_length=1,max_length=64)
+
+
+def shot_frames(shot):
+    return round((shot['start_ms']+shot['duration_ms'])*24/1000)-round(shot['start_ms']*24/1000)
+
+
 @router.get('/capabilities')
 def capabilities():
     return {'modes': [
@@ -73,6 +87,7 @@ def public(task):
             'mode':'local_still_motion','status':task.status,'stage':task.stage,'progress':task.progress,
             'parameters':task.parameters,'cancel_requested':task.cancel_requested,'error':task.error,
             'output':output,'guardian':task.input_snapshot.get('guardian'),
+            'rework':task.input_snapshot.get('rework'),
             'created_at':task.created_at}
 
 
@@ -113,29 +128,70 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
                 raise HTTPException(409,'镜头合同与批准记录不符')
             if shot['strategy']!='still_motion' or contract['source_images'].get(image.id)!=image.sha256:
                 raise HTTPException(422,'运镜方式或源图不符合已批准镜头合同')
-            frames = round((shot['start_ms']+shot['duration_ms'])*24/1000)-round(shot['start_ms']*24/1000)
+            frames = shot_frames(shot)
             if any(candidate.frames!=frames for candidate in body.candidates):
                 raise HTTPException(422,f'镜头合同要求候选输出 {frames} 帧')
             guardian = {'series_id':entity.id,'contract_sha256':contract['contract_sha256']}
+    tasks = enqueue_motion(db, image, body.story_version_id, parameters, keys, guardian)
+    db.commit()
+    return [public(task) for task in tasks]
+
+
+def enqueue_motion(db, image, version_id, parameters, keys, guardian, rework=None):
     snapshot = {'image':{'id':image.id,'storage_key':image.storage_key,'sha256':image.sha256}}
     if guardian:
         snapshot['guardian'] = guardian
+    if rework:
+        snapshot['rework'] = rework
     timestamp = now()
-    tasks = [Task(project_id=project_id,asset_id=image.id,kind='still_motion',story_version_id=body.story_version_id,
+    tasks = [Task(project_id=image.project_id,asset_id=image.id,kind='still_motion',story_version_id=version_id,
         idempotency_key=key,parameters=option,created_at=timestamp+timedelta(microseconds=index),
         input_snapshot=snapshot)
         for index,(option,key) in enumerate(zip(parameters,keys))]
     db.add_all(tasks)
     db.flush()
-    db.add_all([TaskEvent(task_id=task.id,attempt=0,message='静图运镜候选已排队') for task in tasks])
+    message = 'Guardian 单镜头返工候选已排队' if rework else '静图运镜候选已排队'
+    db.add_all([TaskEvent(task_id=task.id,attempt=0,message=message) for task in tasks])
+    return tasks
+
+
+@router.post('/projects/{project_id}/shot-reworks',status_code=201)
+def rework_shot(project_id: str,body: ShotRework,db=Depends(session)):
+    if not db.scalar(select(Project.id).where(Project.id==project_id).with_for_update()):
+        raise HTTPException(404,'项目不存在')
+    key = 'shot-rework:'+body.idempotency_key
+    request = body.model_dump(exclude={'idempotency_key'})
+    previous = db.scalar(select(Task).where(Task.project_id==project_id,Task.idempotency_key==key))
+    if previous:
+        if previous.kind!='still_motion' or previous.input_snapshot.get('rework')!=request:
+            raise HTTPException(409,'请求键已用于其他镜头返工')
+        return public(previous)
+    entity,version,_,shot = approved_guardian_shot(db,project_id,body.series_version_id,body.shot_id)
+    image = require(db,Asset,body.asset_id)
+    contract = shot['guardian']
+    if (shot['strategy']!='still_motion' or image.project_id!=project_id
+        or Path(image.storage_key).suffix.lower() not in IMAGE_SUFFIXES
+        or contract['source_images'].get(image.id)!=image.sha256):
+        raise HTTPException(422,'返工须使用合同允许的本机运镜源图')
+    frames = shot_frames(shot)
+    if not 12<=frames<=240:
+        raise HTTPException(422,'本机运镜支持 12 至 240 帧，请先修订镜头合同')
+    parameters = {'preset':body.preset,'aspect':body.aspect,'frames':frames,'shot_id':body.shot_id}
+    guardian = {'series_id':entity.id,'contract_sha256':contract['contract_sha256']}
+    task, = enqueue_motion(db,image,version.id,[parameters],[key],guardian,rework=request)
     db.commit()
-    return [public(task) for task in tasks]
+    return public(task)
 
 
 @router.get('/projects/{project_id}/candidates')
-def candidates(project_id: str,db=Depends(session)):
+def candidates(project_id: str,shot_id: str|None=None,series_id: str|None=None,db=Depends(session)):
     require(db,Project,project_id)
-    rows = db.scalars(select(Task).where(Task.kind=='still_motion',Task.project_id==project_id)
+    statement = select(Task).where(Task.kind=='still_motion',Task.project_id==project_id)
+    if shot_id:
+        statement = statement.where(Task.parameters['shot_id'].as_string()==shot_id)
+    if series_id:
+        statement = statement.where(Task.input_snapshot['guardian']['series_id'].as_string()==series_id)
+    rows = db.scalars(statement
                       .order_by(Task.created_at.desc(),Task.id).limit(100)).all()
     published = {task.output['storage_key'] for task in rows if task.status=='succeeded'}
     assets = {asset.storage_key:asset.id for asset in db.scalars(select(Asset).where(Asset.storage_key.in_(published)))}
@@ -283,6 +339,12 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     manifest = target.parent / 'motion.json'
     expected = {'size':SIZES[options.aspect],'audio':False,'duration':options.frames/24}
     guardian = input_snapshot.get('guardian')
+    if rework := input_snapshot.get('rework'):
+        with factory() as db:
+            try:
+                require_active_plan(db,require(db,StoryVersion,rework['series_version_id']))
+            except HTTPException as exc:
+                raise ValueError(exc.detail) from exc
     signature_parts = [PIPELINE,item['sha256'],options.model_dump()]
     if guardian:
         signature_parts.append(guardian)
