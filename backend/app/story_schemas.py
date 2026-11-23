@@ -8,6 +8,9 @@ class Strict(BaseModel):
     model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
 
 VersionId = Annotated[str, Field(min_length=1,max_length=36)]
+class SpecBound(Strict):
+    production_spec_version_id: VersionId | None = Field(default=None, exclude_if=lambda key:key is None)
+
 RuleKey = Annotated[str, Field(pattern=r'^[a-z][a-z0-9_-]{0,47}$')]
 RuleText = Annotated[str, Field(min_length=1,max_length=1000,pattern=r'\S')]
 
@@ -66,7 +69,7 @@ class GuardianCanon(Strict):
     scene_version_ids: list[VersionId] = Field(min_length=1,max_length=100)
     style: StyleLock
 
-class Novel(Strict):
+class Novel(SpecBound):
     text: str=Field(min_length=1,max_length=1_000_000,pattern=r'.*\S.*')
     authorization: str=Field(min_length=1,max_length=10000,pattern=r'.*\S.*')
     source_asset_id: str | None=None
@@ -77,7 +80,7 @@ class Voice(Strict):
     provider: Literal['disabled']='disabled'
     voice_id: str=Field(default='',max_length=200)
 
-class Character(Strict):
+class Character(SpecBound):
     description: str=Field(default='',max_length=20000)
     appearance: str=Field(default='',max_length=20000)
     personality: str=Field(default='',max_length=20000)
@@ -85,13 +88,13 @@ class Character(Strict):
     reference_asset_ids: list[str]=Field(default_factory=list,max_length=20)
     identity: IdentityLock | None=None
 
-class Scene(Strict):
+class Scene(SpecBound):
     description: str=Field(default='',max_length=20000)
     location: str=Field(default='',max_length=1000)
     time_of_day: str=Field(default='',max_length=200)
     reference_asset_ids: list[str]=Field(default_factory=list,max_length=20)
 
-class Script(Strict):
+class Script(SpecBound):
     summary: str=Field(default='',max_length=20000)
     body: str=Field(min_length=1,max_length=1_000_000,pattern=r'.*\S.*')
     source_version_id: str | None=None
@@ -110,7 +113,7 @@ class Relation(Strict):
         if self.from_character_version_id==self.to_character_version_id:raise ValueError('人物关系两端不能相同')
         return self
 
-class Relationships(Strict):
+class Relationships(SpecBound):
     relationships: list[Relation]=Field(min_length=1,max_length=200)
 
 class Shot(Strict):
@@ -143,7 +146,7 @@ class Shot(Strict):
             raise ValueError('对白时长超过镜头计划时长')
         return self
 
-class Storyboard(Strict):
+class Storyboard(SpecBound):
     source_version_id: str
     shots: list[Shot]=Field(min_length=1,max_length=200)
     @model_validator(mode='after')
@@ -154,7 +157,7 @@ class Storyboard(Strict):
         if len(shot_ids)!=len(set(shot_ids)):raise ValueError('镜头稳定 ID 不能重复')
         return self
 
-class GenerationPlan(Strict):
+class GenerationPlan(SpecBound):
     capability: Literal['text','speech','image','video']
     prompt: str=Field(min_length=1,max_length=100000)
     input_version_ids: list[str]=Field(default_factory=list,max_length=100)
@@ -179,7 +182,7 @@ class StoryThread(Strict):
     setup_episode: int=Field(ge=1,le=1000)
     payoff_episode: int | None=Field(default=None,ge=1,le=1000)
 
-class StoryBible(Strict):
+class StoryBible(SpecBound):
     script_version_id: str=Field(min_length=1,max_length=36)
     theme: str=Field(min_length=1,max_length=2000,pattern=r'.*\S.*')
     world: str=Field(min_length=1,max_length=8000,pattern=r'.*\S.*')
@@ -212,7 +215,7 @@ class TimelineTrack(Strict):
     volume: float=Field(default=1,ge=0,le=4)
     clips: list[TimelineClip]=Field(default_factory=list,max_length=40)
 
-class Timeline(Strict):
+class Timeline(SpecBound):
     source_version_id: str | None=Field(default=None,min_length=1,max_length=36)
     frame_rate: Literal[24]=24
     profile: Literal['portrait','landscape','square']='portrait'

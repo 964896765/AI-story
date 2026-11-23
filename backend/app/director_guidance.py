@@ -43,6 +43,8 @@ def prepare_prompt(db, project_id, plan_ids, goal):
         version = require(db,StoryVersion,version_id)
         source_version = source_version or version
         summary.update(title=version.title[:160],version=version.number)
+        if plan.production_spec_version_id:
+            summary['production_spec_version_id'] = plan.production_spec_version_id
         options.append(summary)
     prompt = json.dumps({'prompt_version':PROMPT_VERSION,'goal':goal,'options':options},ensure_ascii=False)
     return source_version,prompt

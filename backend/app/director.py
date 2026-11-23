@@ -14,6 +14,7 @@ from .guardian import require_active_plan
 from .models import DirectorPlan, ModelCall, ProductionRun, Project, StoryEntity, StoryVersion, Task, now, uid
 from .series import series_report
 from .story_schemas import Strict, Timeline
+from .production_specs import approval_spec
 from .text_schemas import DirectorAdviceInput, DirectorAdviceReview, ReconcileInput, RetryInput
 
 router = APIRouter(prefix='/api/director/projects/{project_id}', tags=['director'])
@@ -77,6 +78,7 @@ def public(plan, task=None, run=None):
         'id': plan.id, 'instruction': plan.instruction, 'action': plan.action, 'parameters': plan.parameters,
         'input_hash': plan.input_hash, 'created_at': plan.created_at, 'approved_at': plan.approved_at,
         'external_cost_cents': 0, 'run_id': plan.run_id, 'run': run, 'preview': plan.preview,
+        'production_spec_version_id':plan.production_spec_version_id,
         'task': {
             'id': task.id, 'status': task.status, 'stage': task.stage, 'progress': task.progress,
             'elapsed_seconds': task.elapsed_seconds, 'error': task.error,
@@ -242,13 +244,18 @@ def prepare(project_id: str, body: Draft, db=Depends(session)):
     preview = None
     if action == 'batch':
         _, _, episodes, digest = prepare_batch(db, project_id, params)
+        spec = episodes[0].snapshot.get('production_spec')
         preview = [{'number': item.number, 'version_id': item.version.id, 'title': item.version.title,
                     'version': item.version.number, 'mode': item.mode} for item in episodes]
     else:
         _, snapshot = fixed_input(db, project_id, action, params)
         digest = fingerprint(snapshot)
+        spec = snapshot.get('production_spec')
+    if not spec:
+        approval_spec(db,project_id,{},require_pin=True)
     plan = DirectorPlan(project_id=project_id, request_key=body.idempotency_key, instruction=body.instruction,
-                        action=action, parameters=params, input_hash=digest, preview=preview)
+                        action=action, parameters=params, input_hash=digest, preview=preview,
+                        production_spec_version_id=spec['id'] if spec else None)
     db.add(plan)
     db.commit()
     return public(plan)

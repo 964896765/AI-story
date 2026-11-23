@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { clock, request, statusLabels } from './analysisApi'
+import SpecReference from './components/production/SpecReference.vue'
+import type { ProductionSpecRef } from './types/productionSpec'
 
 interface Voice { name:string; locale:string }
 interface Edition { version_id:string; title:string; version:number; content:{shots?:{dialogue:string;speaker_version_id?:string;contract?:object}[];
   identity?:{local_voice?:string}} | null; provenance?:{guardian_manifest?:object} }
 interface Binding { character_version_id:string; title:string; voice:string; rate:number; authorization:string; locked:boolean }
 interface Job {
+  production_spec?:ProductionSpecRef
   id:string;status:string;stage:string;error:string|null;storyboard_version_id:string
   output:{duration_ms?:number;cues?:{text:string;voice:string;start_ms:number;end_ms:number;shot_number:number}[]}
 }
@@ -147,6 +150,7 @@ onUnmounted(()=>clearInterval(timer))
       </section>
       <section class="voice-properties">
         <h2>声音属性</h2>
+        <SpecReference :project-id="projectId" :version-id="selected?.production_spec?.id" />
         <dl class="inspector-facts"><div><dt>合成引擎</dt><dd>Windows 离线语音</dd></div>
           <div><dt>可用音色</dt><dd>{{voices.length}}</dd></div>
           <div><dt>固定角色音色</dt><dd>{{bindings.filter(item=>item.locked).length}}</dd></div>

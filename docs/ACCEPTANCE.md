@@ -10,6 +10,8 @@
 
 六阶段 24 步已经逐项核对现有入口、代码、任务和实测边界，向导也显示对应的软件能力状态。 [制作流程审计](V3_WORKFLOW_AUDIT.md)
 
+V3.11 增加数据库规格版本、差异、影响与恢复。批准分镜、导演、候选、配音、时间轴、质检和 ZIP 按固定规格读取。 [项目制作规格](V3_11_PRODUCTION_SPECS_ACCEPTANCE.md)
+
 Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型仍待接入。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
 
 Guardian 成片对白质检已验证固定配音与字幕配对、字幕内容与时序、近静音与轨道静音阻断、本机听写告警和回听定位。 [对白质检、浏览器证据与回滚](V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)

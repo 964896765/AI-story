@@ -11,6 +11,7 @@ from .text_schemas import AdaptInput,AdaptedDraft,DirectorAdviceInput,DirectorAd
 from .text_adapters import approved_endpoint,build_adapter,live_gate,configured_key,redact,CallFailure
 from .adaptation_policy import PROMPT_VERSION,SYSTEM_PROMPT,prompt_for,reserve_quote,priced_cost,validated_usage,validated_draft
 from .model_adapters import ModelRequest
+from .production_specs import pinned, task_fields
 
 def provider_public(provider):
     return {'id':provider.id,'label':provider.label,'kind':provider.kind,'enabled':provider.enabled,'settings':provider.settings,'key_configured':bool(configured_key(provider.settings)) if provider.kind!='mock' else False,'live_authorized':live_gate(),'network_tested':False}
@@ -107,6 +108,10 @@ def reserve_call(db,project_id,body):
         if not source:raise HTTPException(422,'源版本无可改编正文')
         prompt=prompt_for(source,request)
         system_prompt=SYSTEM_PROMPT
+    spec = pinned(db,project_id,version.content)
+    if spec and not director:
+        creative_settings = {key:spec['settings'][key] for key in ('episode_count','episode_duration_ms','style','restrictions')}
+        prompt += '\n固定制作规格（项目输入）：' + json.dumps(creative_settings,ensure_ascii=False)
     # Reserve the entire verified input/context bound, rather than guessing tokenizer ratios.
     if len((prompt+system_prompt).encode())+4096>provider.settings['input_token_limit']:
         raise HTTPException(422,'原文或提示词超过保守输入边界，请选择较小的分集或核实模型输入上限')
@@ -125,7 +130,7 @@ def reserve_call(db,project_id,body):
     parameters={'model_call_id':call_id}
     if director:
         parameters['purpose']='director_advice'
-    task=Task(id=task_id,project_id=project_id,asset_id=None,kind='adapt',story_version_id=version.id,idempotency_key='text-call:'+call_id,parameters=parameters,input_snapshot={'source_version_id':version.id,'content_hash':version.content_hash},max_attempts=1)
+    task=Task(id=task_id,project_id=project_id,asset_id=None,kind='adapt',story_version_id=version.id,idempotency_key='text-call:'+call_id,parameters=parameters,input_snapshot={'source_version_id':version.id,'content_hash':version.content_hash,**task_fields(spec)},max_attempts=1)
     db.add(task);db.flush()
     call=ModelCall(id=call_id,project_id=project_id,task_id=task_id,provider_id=provider.id,budget_id=budget.id,source_version_id=version.id,request_key=body.idempotency_key,request_hash=fingerprint,request=request,provider_snapshot={'kind':provider.kind,'label':provider.label,**provider.settings},prompt_version=prompt_version,prompt=prompt,simulated=mode=='mock',reserved_micros=upper)
     db.add(call);db.flush()

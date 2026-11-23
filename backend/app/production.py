@@ -17,7 +17,8 @@ from .guardian_balance import RULE_VERSION as DIALOGUE_BALANCE_RULE
 from .models import ProductionEpisode, ProductionRun, Project, QualityReview, StoryVersion, Task, TaskEvent, now
 from .render import file_hash
 from .series import series_report
-from .story_schemas import Strict
+from .story_schemas import Strict, Timeline
+from .production_specs import approval_spec, pinned, task_fields, verify_timeline
 from .timeline import all_source_versions
 
 router = APIRouter(prefix='/api/production',tags=['series-production'])
@@ -145,7 +146,8 @@ def public(db,run,*,details=True,include_episodes=False):
         episodes.append(unit)
     statuses = {unit['status'] for unit in episodes}
     state = next((item for item in ('processing','needs_rework','needs_review','cancelled') if item in statuses),'passed')
-    return {'id':run.id,'workflow':WORKFLOW,'plan_version_id':run.plan_version_id,
+    spec = pinned(db,run.project_id,require(db,StoryVersion,run.plan_version_id).content)
+    return {'id':run.id,'workflow':WORKFLOW,'plan_version_id':run.plan_version_id,**task_fields(spec),
             'previous_run_id':run.previous_run_id,'status':state,'created_at':run.created_at,
             'episode_count':len(episodes),'episodes':episodes if details or include_episodes else None,
             'policy':run.policy,'passed':sum(unit['status']=='passed' for unit in episodes),
@@ -162,7 +164,7 @@ def add_tasks(db,run,episode):
         db.add(render)
         db.flush()
         db.add(TaskEvent(task_id=render.id,attempt=0,message='整剧渲染步骤已排队'))
-    inputs = {'render_task_id':render.id}
+    inputs = {'render_task_id':render.id,**task_fields(episode.snapshot.get('production_spec'))}
     if episode.dialogue:
         inputs['dialogue'] = episode.dialogue
     qc = Task(project_id=run.project_id,kind='qc_review',story_version_id=version.id,
@@ -201,6 +203,7 @@ def prepare_episodes(db,project_id,body,policy):
     if not plan_report['approved']:
         raise HTTPException(422,'请选已批准的整剧计划版本')
     require_active_plan(db,plan)
+    spec = approval_spec(db,project_id,plan.content)
     old_rows = {}
     keep_quality = False
     if body.previous_run_id:
@@ -223,13 +226,16 @@ def prepare_episodes(db,project_id,body,policy):
         _,timeline = version_ref(db,project_id,versions[number],{'timeline'})
         if timeline.content['source_version_id']!=plan.id:
             raise HTTPException(422,f'第 {number} 集时间轴未固定到整剧生产计划')
+        if spec and timeline.content.get('production_spec_version_id')!=spec['id']:
+            raise HTTPException(422,f'第 {number} 集时间轴与批准规格不一致')
+        verify_timeline(spec,Timeline.model_validate(timeline.content))
         assembly = timeline.provenance.get('assembly_request')
         if assembly and assembly['episode']!=number:
             raise HTTPException(422,f'第 {number} 集和自动装配记录不匹配')
         voices = require_reviewed_timeline(db,plan,entry,timeline.content)
         duration_ms = round(timeline.content['frames']*1000/timeline.content['frame_rate'])
         dialogue = fixed_dialogue(db,project_id,entry,voices,duration_ms) if voices else None
-        snapshot = {'version_hash':timeline.content_hash,'assets':all_source_versions(db,project_id,timeline.content)}
+        snapshot = {'version_hash':timeline.content_hash,'assets':all_source_versions(db,project_id,timeline.content),**task_fields(spec)}
         old = old_rows.get(number)
         render = prior_qc = None
         if old and old.timeline_version_id==timeline.id:

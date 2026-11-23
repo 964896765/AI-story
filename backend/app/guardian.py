@@ -11,8 +11,9 @@ STATE_FIELDS = ('wardrobe_id', 'left_hand', 'right_hand', 'action', 'position')
 
 
 class Guardian:
-    def __init__(self, db, canon, get, issue):
+    def __init__(self, db, canon, get, issue, production_spec=None):
         self.db, self.canon, self.get, self.issue = db, canon, get, issue
+        self.production_spec = production_spec
         self.characters = self.roster('character')
         self.scenes = self.roster('scene')
         self.images = {}
@@ -170,9 +171,12 @@ class Guardian:
                    'style': self.canon['style'], 'props': {key:self.canon['props'].get(key) for key in props},
                    'version_hashes': {key: row.content_hash for key, row in versions.items()},
                    'asset_hashes': asset_hashes}
+        if self.production_spec:
+            payload['production_spec'] = self.production_spec
         self.contracts[shot_id] = fingerprint(payload)
         checklist = contract.get('visual_checklist')
         return {'contract_sha256': self.contracts[shot_id], 'visual':contract['visual'], 'has_dialogue':has_dialogue,
+                **({'production_spec':self.production_spec} if self.production_spec else {}),
                 'source_images': {key: asset_hashes[key] for key in contract['source_image_asset_ids']},
                 **({'visual_references':self.visual_references(shot,versions,asset_hashes)} if include_references else {}),
                 **({'visual_checklist':True} if checklist else {}),

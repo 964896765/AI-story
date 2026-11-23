@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-vue-next'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 import { useWorkspace } from '../router/workspace'
 import { capabilityLabels, phases, suggestedStep, workflowSteps } from '../router/workflow'
+import ProductionSpecCenter from '../components/production/ProductionSpecCenter.vue'
 
 const { workbench, link, query, go } = useWorkspace()
 const key=`ai-story:wizard:${workbench.projectId}`
@@ -54,6 +55,8 @@ function save() {
       <RouterLink v-for="(item,number) in phases" :key="item.title" :aria-current="number===index?'step':undefined" :to="link('wizard',{step:number+1})"><span>{{number+1}}</span>{{item.title}}</RouterLink>
     </nav>
     <div class="wizard-grid">
+      <ProductionSpecCenter v-if="index===0 && workbench.projectId" :project-id="workbench.projectId"
+        :initial-version="query('spec')" :legacy-note="notes[0]" />
       <WorkspacePanel :title="phase.title">
         <p class="hint capability-caption">能力状态说明本机能执行到哪一步，项目进度见项目记录。</p>
         <ol class="workflow-checklist" :start="index*4+1">

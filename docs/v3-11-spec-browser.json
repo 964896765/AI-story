@@ -1,0 +1,36 @@
+{
+  "tested_at": "2026-11-23T04:05:37.619Z",
+  "versions": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "pinned_version": 2,
+  "stable_contract_sha256": "1d8101bd5b3385e3dc5c3fa0cc45fedd5d7334fa7242acdc638ff6ce49daf94b",
+  "independent_app_reload": true,
+  "isolated_project": true,
+  "incomplete_approval_blocked": true,
+  "wrong_aspect_and_region_blocked": true,
+  "legacy_browser_note_preserved": true,
+  "approved_run_id": "b789d8d3-8e11-401b-86fb-152b8199863d",
+  "render_and_qc_passed": true,
+  "verified_zip_bytes": 227806,
+  "delivery_spec": {
+    "delivery_settings": {
+      "episode_count": 1,
+      "episode_duration_ms": 1500,
+      "fps": 24,
+      "height": 720,
+      "platform": "local-test",
+      "profile": "square",
+      "region": "CN",
+      "width": 720
+    },
+    "id": "4ba8ed65-9ed8-4208-9f49-b2bf0ff349f8",
+    "sha256": "a3edeee6eddae6ed22dd7909dcaa9a2301e590471569b1bf2517a06a5c09d9d2",
+    "version": 2
+  },
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

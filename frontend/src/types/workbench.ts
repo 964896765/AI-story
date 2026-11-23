@@ -54,7 +54,8 @@ export interface ProjectOverview {
   cover: { id: string; name: string } | null
   task_counts: Record<string, number>
   story_counts: Record<string, number>
-  workflow?: { approved_series_id: string | null; director_plan_id: string | null; adopted_candidates: number; adaptation_source_id: string | null }
+  workflow?: { approved_series_id: string | null; director_plan_id: string | null; adopted_candidates: number; adaptation_source_id: string | null;
+    production_spec?:{id:string;version:number}|null }
   render_count: number
   delivery_count: number
   recent_renders: RecentRender[]

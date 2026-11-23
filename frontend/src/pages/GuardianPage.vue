@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import SpecReference from '../components/production/SpecReference.vue'
+import type { ProductionSpecRef } from '../types/productionSpec'
 import { computed, nextTick, ref, watch } from 'vue'
 import { AlertTriangle, GitCompareArrows } from 'lucide-vue-next'
 import { request, statusLabels } from '../analysisApi'
@@ -22,7 +24,7 @@ interface Shot {
   guardian?:{contract_sha256:string; visual:string; source_images:Record<string,string>;screen_text?:ScreenTextContract}|null
 }
 interface Episode {number:number;title:string;storyboard_version_id:string;shots:Shot[]}
-interface Report {approved:boolean;ready_for_review:boolean;issues:Finding[];episodes:Episode[];guardian?:{style:string;shot_count:number}}
+interface Report {approved:boolean;ready_for_review:boolean;issues:Finding[];episodes:Episode[];guardian?:{style:string;shot_count:number};production_spec?:ProductionSpecRef}
 interface Candidate {
   id:string;asset_id:string;story_version_id:string;status:string;guardian?:{contract_sha256:string;series_id:string}
   selected_asset_id:string|null;progress:number;error:string|null;rework?:{reason:string}
@@ -178,6 +180,7 @@ async function compare() {
       </ol>
     </section>
     <template v-else>
+      <SpecReference :project-id="workbench.projectId" :version-id="report?.production_spec?.id" />
       <div class="guardian-toolbar">
         <label>故事圣经<select :value="version.version_id" @change="go('guardian',{version:($event.target as HTMLSelectElement).value})">
           <option v-for="item in editionOptions" :key="item.version_id" :value="item.version_id">{{ item.title }} · v{{ item.version }}</option>

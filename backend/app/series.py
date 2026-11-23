@@ -8,6 +8,7 @@ from .db import session
 from .guardian import Guardian, RULE_VERSION, latest_approved, require_active_plan
 from .models import Project, StoryEntity, StoryVersion
 from .story_schemas import Strict
+from .production_specs import compatibility, current as current_spec, pinned, task_fields
 
 router = APIRouter(prefix='/api/series', tags=['series-planning'])
 
@@ -18,7 +19,7 @@ class Approval(Strict):
     idempotency_key: str = Field(min_length=1, max_length=70)
 
 
-def series_report(db, entity, version, *, reference_shot=None):
+def series_report(db, entity, version, *, reference_shot=None, for_approval=False):
     content = version.content
     issues, episodes = [], []
     cache = {}
@@ -49,7 +50,20 @@ def series_report(db, entity, version, *, reference_shot=None):
     script_id = content['script_version_id']
     seen_shots = set()
     canon = content.get('guardian')
-    guardian = Guardian(db,canon,get,issue) if canon else None
+    spec = pinned(db,entity.project_id,content)
+    if spec:
+        missing, errors = compatibility(spec['settings'])
+        if missing or errors:
+            issue('production_spec_incomplete',0,'固定制作规格不完整或超出本机生产能力',
+                  evidence={'missing_fields':missing,'compatibility_errors':errors})
+        if spec['settings']['episode_count'] is not None and len(content['episodes'])!=spec['settings']['episode_count']:
+            issue('production_spec_episode_count',0,'分集数量与固定制作规格不一致')
+        if canon and spec['settings']['style'] and canon['style']['description'].strip()!=spec['settings']['style']:
+            issue('production_spec_style',0,'Guardian 美术风格须与固定制作规格一致')
+    elif (for_approval or not version.provenance.get('series_approved')) and current_spec(db,entity.project_id):
+        issue('production_spec_required',0,'请固定一份完整的项目制作规格')
+    spec_ref = {key:spec[key] for key in ('id','version','sha256')} if spec else None
+    guardian = Guardian(db,canon,get,issue,spec_ref) if canon else None
     if guardian:
         _, script = get(script_id,'script')
         guardian.check_roster(script.content['character_version_ids'],script.content['scene_version_ids'],
@@ -64,6 +78,10 @@ def series_report(db, entity, version, *, reference_shot=None):
             issue('episode_source',number,'分集必须引用计划固定的总剧本版本')
         if board_version.content['source_version_id'] != episode.id:
             issue('storyboard_source',number,'分镜必须直接引用本集固定版本')
+        if spec and board_version.content.get('production_spec_version_id')!=spec['id']:
+            issue('production_spec_storyboard',number,'分镜与故事圣经须固定同一制作规格版本')
+        if spec and spec['settings']['episode_duration_ms'] not in (None,block['target_duration_ms']):
+            issue('production_spec_duration',number,'单集目标时长与固定制作规格不一致')
         opener = boundary(block['opener'],number,'开场')
         closer = boundary(block['closer'],number,'收尾')
         if guardian:
@@ -116,7 +134,7 @@ def series_report(db, entity, version, *, reference_shot=None):
     should_block = any(item['severity']=='error' for item in issues)
     result = {'version_id':version.id,'rule_version':RULE_VERSION if guardian else 'continuity-v1','analysis_kind':'deterministic',
             'approved':bool(version.provenance.get('series_approved')),
-            'ready_for_review':not should_block,'episodes':episodes,'issues':issues}
+            'ready_for_review':not should_block,'episodes':episodes,'issues':issues,**task_fields(spec)}
     if guardian:
         result['guardian'] = {'shot_count':len(seen_shots),'contracts':guardian.contracts,
                               'style':canon['style']['description']}
@@ -199,7 +217,7 @@ def approve(entity_id: str, body: Approval, db=Depends(session)):
     last_approved = latest_approved(db,entity.id)
     if last_approved and last_approved.content.get('guardian') and not source.content.get('guardian'):
         raise HTTPException(422,'已启用 Guardian 的故事圣经必须保留制作约束')
-    report = series_report(db,entity,source)
+    report = series_report(db,entity,source,for_approval=True)
     if not report['ready_for_review']:
         raise HTTPException(422,{'message':'计划仍有阻断项','issues':report['issues']})
     normalized, refs = validate_content(db,entity.project_id,'story_bible',source.content)

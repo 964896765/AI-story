@@ -6,7 +6,8 @@ import { workflowSteps } from '../../router/workflow'
 import { useWorkspace } from '../../router/workspace'
 
 const props=defineProps<{page:Destination}>()
-const {query,link}=useWorkspace()
+const {query,link,workbench}=useWorkspace()
+const spec=computed(()=>workbench.overview?.workflow?.production_spec)
 const aliases:Partial<Record<Destination,number>>={analysis:5,video:22,quality:23,operations:24,system:3}
 const defaultStep:Partial<Record<Destination,number>>={guardian:21,bible:9,generation:18,story:5}
 const current=computed(()=>{
@@ -22,7 +23,10 @@ const current=computed(()=>{
         <strong>第 {{current.phase}} 阶段 · {{current.title}}</strong>
         <span>需要 {{current.input}} <span class="divider">·</span> 产出 {{current.output}}</span>
       </div>
-      <RouterLink :to="link('wizard',{step:current.phase})">查看本阶段步骤 <ArrowRight :size="14" aria-hidden="true" /></RouterLink>
+      <div class="context-links">
+        <RouterLink v-if="spec" :to="link('wizard',{step:1,spec:spec.id})">项目当前规格 v{{spec.version}}</RouterLink>
+        <RouterLink :to="link('wizard',{step:current.phase})">查看本阶段步骤 <ArrowRight :size="14" aria-hidden="true" /></RouterLink>
+      </div>
   </aside>
 </template>
 
@@ -33,4 +37,5 @@ const current=computed(()=>{
 .context-content { display:flex;align-items:baseline;gap:4px 12px;flex-wrap:wrap }
 .context-content > span,.divider { color:var(--ink-muted) }
 .workflow-context a { display:inline-flex;align-items:center;gap:4px }
+.context-links { display:flex;flex-wrap:wrap;gap:12px }
 </style>

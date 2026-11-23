@@ -5,11 +5,14 @@ import VisualCandidateCheck, { type VisualEvidence, type VisualReport } from './
 import ScreenTextCheck, { type ScreenTextReport } from './components/production/ScreenTextCheck.vue'
 import GuardianReferenceCompare, { type ComparisonInput, type SavedComparison } from './components/production/GuardianReferenceCompare.vue'
 import type { ChecklistEntry, SavedChecklist } from './components/production/GuardianVisualChecklist.vue'
+import SpecReference from './components/production/SpecReference.vue'
+import type { ProductionSpecRef } from './types/productionSpec'
 
 type Preset = 'push_in'|'pull_out'|'pan_right'
 interface Candidate {
   id:string; asset_id:string; status:string; stage:string; progress:number; error:string|null
   story_version_id:string|null
+  production_spec?:ProductionSpecRef
   cancel_requested:boolean; selected_asset_id:string|null; parameters:{preset:Preset;shot_id:string|null}
   guardian?:{contract_sha256:string;visual_checklist?:boolean}|null
   output:{duration?:number; width?:number; height?:number; reused_from_task_id?:string;
@@ -142,7 +145,8 @@ onMounted(()=>{
   void run(async()=>{
     modeList.value=(await request<{modes:typeof modeList.value}>('/generation/capabilities')).modes
     if (plan.value && shot.value) {
-      const result=await request<{episodes:{shots:{shot_id:string;start_ms:number;duration_ms:number}[]}[]}>(`/series/versions/${plan.value}/continuity`)
+      const result=await request<{production_spec?:{settings:{profile:string}};episodes:{shots:{shot_id:string;start_ms:number;duration_ms:number}[]}[]}>(`/series/versions/${plan.value}/continuity`)
+      if(result.production_spec)aspect.value=result.production_spec.settings.profile
       const fixed=result.episodes.flatMap(episode=>episode.shots).find(item=>item.shot_id===shot.value)
       if (fixed)frames.value=Math.round((fixed.start_ms+fixed.duration_ms)*24/1000)-Math.round(fixed.start_ms*24/1000)
     }
@@ -226,6 +230,7 @@ onUnmounted(()=>clearInterval(timer))
         </section>
       </aside>
       <section class="generation-review">
+        <SpecReference :project-id="projectId" :version-id="selected?.production_spec?.id" />
         <header class="panel-heading"><h2>候选审核与采纳</h2><span v-if="selected?.selected_asset_id">已采纳为项目素材</span></header>
         <p v-if="selected?.status!=='succeeded'" class="empty">从候选记录选择已验证的视频进行审核。</p>
         <template v-if="selected?.status==='succeeded' && selected.guardian">

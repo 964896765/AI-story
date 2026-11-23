@@ -20,6 +20,18 @@ class Project(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (CheckConstraint('budget_cents >= 0'),)
 
+class ProductionSpec(Base):
+    __tablename__ = 'production_specs'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id', ondelete='CASCADE'))
+    number: Mapped[int] = mapped_column(Integer)
+    settings: Mapped[dict] = mapped_column(JSONB)
+    sha256: Mapped[str] = mapped_column(String(64))
+    request_key: Mapped[str] = mapped_column(String(100))
+    restored_from_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('project_id', 'number'), UniqueConstraint('project_id', 'request_key'))
+
 class Asset(Base):
     __tablename__ = 'assets'
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -106,6 +118,8 @@ Index('ix_tasks_dispatch_ready',Task.status,Task.next_run_at,Task.created_at,Tas
 
 class DirectorPlan(Base):
     __tablename__ = 'director_plans'
+    production_spec_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey('production_specs.id', name='fk_director_plans_production_spec'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'), index=True)
     request_key: Mapped[str] = mapped_column(String(64))

@@ -179,4 +179,4 @@ def test_migration_refuses_unsafe_downgrade(studio):
     assert result.returncode!=0 and ('refusing unsafe P1 downgrade' in result.stderr or 'P3 audit records exist' in result.stderr or 'Active tasks exist' in result.stderr or 'P4 creative records exist' in result.stderr)
     from sqlalchemy import text
     with factory() as db:
-        assert db.scalar(text('SELECT version_num FROM alembic_version'))=='0016'
+        assert db.scalar(text('SELECT version_num FROM alembic_version'))=='0017'

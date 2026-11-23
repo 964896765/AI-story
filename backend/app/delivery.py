@@ -22,6 +22,7 @@ from .models import Asset, ProductionRun, Project, StoryReference, StoryVersion,
 from .production import project_run, public as run_public
 from .render import file_hash, write_manifest
 from .story_schemas import Strict
+from .production_specs import task_fields
 
 router=APIRouter(prefix='/api/delivery',tags=['verified-delivery'])
 SCHEMA='ai-story-delivery-v1'
@@ -119,6 +120,12 @@ def readiness_report(db, run, report, platform, region, *, check_current_dialogu
         'rights_checked': False, 'source_count': None, 'authorized_sources': None,
         'authorization_revision': None, 'blockers': [], 'dialogue_rechecks': [],
     }
+    if spec := report.get('production_spec'):
+        result.update(task_fields(spec))
+        target = spec['settings']
+        if (platform,region)!=(target['platform'],target['region']):
+            result['production_spec_issue'] = '交付平台或地域与固定制作规格不一致'
+            return result, []
     if pending or not episodes:
         return result, []
     if check_current_dialogue:
@@ -137,6 +144,8 @@ def eligible(db,params,expected=None,*,check_current_dialogue=True):
     report=run_public(db,run)
     readiness, rights = readiness_report(db, run, report, params['platform'], params['region'],
                                         check_current_dialogue=check_current_dialogue)
+    if readiness.get('production_spec_issue'):
+        raise HTTPException(422,readiness['production_spec_issue'])
     if readiness['dialogue_rechecks']:
         raise HTTPException(409,'部分分集缺少固定对白核验，请使用当前规则复检后再交付')
     if not readiness['rights_checked']:
@@ -151,7 +160,9 @@ def eligible(db,params,expected=None,*,check_current_dialogue=True):
 def public(task):
     return {'id':task.id,'status':task.status,'stage':task.stage,'error':task.error,
             'parameters':task.parameters,'created_at':task.created_at,'sha256':task.output.get('sha256'),
-            'size_bytes':task.output.get('size_bytes'),'guardian_frame_count':task.output.get('guardian_frame_count')}
+            'size_bytes':task.output.get('size_bytes'),'guardian_frame_count':task.output.get('guardian_frame_count'),
+            **({'production_spec':{key:spec[key] for key in ('id','version','sha256')}}
+               if (spec := task.input_snapshot.get('production_spec')) else {})}
 
 
 @router.post('/projects/{project_id}/packages',status_code=201)
@@ -176,7 +187,8 @@ def package_snapshot(db,project_id,params):
     if run.project_id!=project_id:
         raise HTTPException(422,'生产批次不属于当前项目')
     _,report,rights=eligible(db,params)
-    return run,{'rights':rights,'qc_files':[unit['qc']['output_sha256'] for unit in report['episodes']]}
+    return run,{'rights':rights,'qc_files':[unit['qc']['output_sha256'] for unit in report['episodes']],
+                **task_fields(report.get('production_spec'))}
 
 
 def enqueue_package(db,project_id,run,key,params,snapshot):
@@ -292,6 +304,8 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
         units=report['episodes']
         if [unit['qc']['output_sha256'] for unit in units]!=snapshot['qc_files']:
             raise ValueError('生产质检依据已变化')
+        if snapshot.get('production_spec')!=report.get('production_spec'):
+            raise ValueError('交付的固定制作规格已变化')
         if target.is_file():
             saved=json.loads(manifest_file.read_text(encoding='utf-8'))
             if saved['signature']!=signature or saved['sha256']!=file_hash(target,lambda *_:update('delivery_verify',95)):
@@ -349,6 +363,10 @@ def deliver(task_id,attempt,params,snapshot,update,factory):
             save_json(prefix+'/timeline.json',{'version_id':unit['timeline_version_id'],'timeline':timeline})
             save_json(prefix+'/quality.json',{'technical':unit['qc'],'human_review':unit['review']})
         save_json('rights.json',rights)
+        if spec := snapshot.get('production_spec'):
+            save_json('production_spec.json', {**{key:spec[key] for key in ('id','version','sha256')},
+                     'delivery_settings':{key:spec['settings'][key] for key in
+                         ('episode_count','episode_duration_ms','profile','width','height','fps','platform','region')}})
         if guardian:
             for name,path,digest,_,error in evidence:
                 try:

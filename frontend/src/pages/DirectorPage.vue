@@ -4,6 +4,7 @@ import { ArrowRight, Check, ClipboardCheck } from 'lucide-vue-next'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 import DirectorBatchFields, { type BatchOperation, type RunOption } from '../components/production/DirectorBatchFields.vue'
 import DirectorAdvice from '../components/production/DirectorAdvice.vue'
+import SpecReference from '../components/production/SpecReference.vue'
 import { useWorkspace } from '../router/workspace'
 import type { Destination } from '../router/navigation'
 import { api, post } from '../services/api'
@@ -33,6 +34,7 @@ type SavedPlan = {
   created_at:string
   approved_at:string|null
   input_hash:string
+  production_spec_version_id?:string|null
   external_cost_cents:number
   task:Pick<Task,'id'|'status'|'stage'|'progress'|'elapsed_seconds'|'error'>|null
 } & ({ action:'render';parameters:{version_id:string} }
@@ -259,6 +261,7 @@ onBeforeUnmount(()=>abort.abort())
       <template v-if="active">
         <div ref="planHeading" tabindex="-1" class="director-note"><ClipboardCheck :size="17" aria-hidden="true" /><strong>{{workflows[active.action].label}}</strong><span data-testid="director-plan-status">{{active.run ? batchStates[active.run.status] : active.task ? states[active.task.status] : active.approved_at ? '正在读取批次' : '待批准'}}</span></div>
         <p class="director-instruction">{{active.instruction}}</p>
+        <SpecReference :project-id="workbench.projectId" :version-id="active.production_spec_version_id" />
         <dl class="director-facts">
           <div v-if="active.action==='render'"><dt>时间轴版本</dt><dd><RouterLink :to="link('timeline',{timeline:active.parameters.version_id})">{{active.parameters.version_id}}</RouterLink></dd></div>
           <template v-else-if="active.action==='release'">

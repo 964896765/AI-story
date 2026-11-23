@@ -22,6 +22,7 @@ from .guardian import require_active_plan
 from .models import Asset, Project, StoryVersion, Task, TaskEvent
 from .render import file_hash, write_manifest
 from .series import series_report
+from .production_specs import approval_spec, task_fields
 from .story_schemas import Strict
 
 router = APIRouter(prefix='/api/voice',tags=['local-voice'])
@@ -100,6 +101,7 @@ def plan_lines(storyboard,bindings):
 
 def public(task):
     return {'id':task.id,'storyboard_version_id':task.story_version_id,'status':task.status,'stage':task.stage,
+            **task_fields(task.input_snapshot.get('production_spec')),
             'error':task.error,'attempt':task.attempt,'output':{key:value for key,value in task.output.items()
              if key!='files'},'created_at':task.created_at}
 
@@ -121,6 +123,7 @@ def submit(project_id: str,body:VoiceRequest,db=Depends(session)):
             raise HTTPException(409,'请求键已用于其他配音参数')
         return public(prior)
     guarded = any(shot.get('contract') for shot in version.content['shots'])
+    spec = approval_spec(db,project_id,version.content)
     if guarded != bool(body.series_version_id):
         raise HTTPException(422,'Guardian 分镜须固定批准计划后才能配音')
     if guarded:
@@ -142,7 +145,7 @@ def submit(project_id: str,body:VoiceRequest,db=Depends(session)):
         version_ref(db,project_id,binding['character_version_id'],{'character'})
     task = Task(project_id=project_id,asset_id=None,kind='local_voice',idempotency_key=key,
         story_version_id=version.id,parameters=params,input_snapshot={
-            'version_hash':version.content_hash,'lines':lines,'duration_ms':duration})
+            'version_hash':version.content_hash,'lines':lines,'duration_ms':duration,**task_fields(spec)})
     db.add(task)
     db.flush()
     db.add(TaskEvent(task_id=task.id,attempt=0,message='本机配音已按固定分镜排队'))

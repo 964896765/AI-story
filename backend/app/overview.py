@@ -10,6 +10,7 @@ from .models import Asset, DirectorPlan, ModelBudget, ModelCall, ProductionRun, 
 from .director_guidance import PROMPT_VERSION as DIRECTOR_PROMPT_VERSION
 from .production import public as production_summary
 from .text_adapters import live_gate
+from .production_specs import current as current_spec
 
 router = APIRouter(prefix='/api/projects', tags=['project-overview'])
 
@@ -83,10 +84,12 @@ def overview(project_id: str, db=Depends(session)):
     ).order_by((StoryEntity.kind == 'novel').desc(), StoryVersion.created_at.desc()).limit(1))
     adopted_candidates = db.scalar(select(func.count()).select_from(Asset).where(
         asset_scope, Asset.media_info['origin'].as_string() == 'local_still_motion'))
+    spec = current_spec(db,project_id)
     return {'asset_count': asset_count, 'cover': dict(cover) if cover else None, 'task_counts': task_counts,
             'story_counts': story_counts, 'render_count': render_count, 'delivery_count': delivery_count, 'recent_renders': outputs,
             'workflow': {'approved_series_id': approved_series_id, 'director_plan_id': director_plan_id,
-                         'adopted_candidates': adopted_candidates, 'adaptation_source_id': adaptation_source_id},
+                         'adopted_candidates': adopted_candidates, 'adaptation_source_id': adaptation_source_id,
+                         'production_spec': {'id':spec.id,'version':spec.number} if spec else None},
             'draft_review_count': draft_count, 'draft_reviews': draft_reviews, 'latest_run': batch_view,
             'latest_delivery': delivery_view,
             'costs': [{'currency': item['currency'], 'amount_micros': item['amounts_micros']['booked_api'],

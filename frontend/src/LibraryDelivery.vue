@@ -2,12 +2,16 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowRight, ClipboardCheck, PackageCheck, ShieldAlert } from 'lucide-vue-next'
 import { request, statusLabels } from './analysisApi'
+import SpecReference from './components/production/SpecReference.vue'
+import type { ProductionSpecRef } from './types/productionSpec'
 
 interface Work {id:string;title:string;origin:string;tags:string[];archived:boolean;episodes?:{number:number;title:string;asset_id:string;name:string;sha256:string}[]}
 interface Rights {id:string;revision:number;status:string;holder:string;expires_at:string|null;scope:{regions:string[];platforms:string[];commercial:boolean};evidence:string}
 interface Batch {id:string;plan_version_id:string;status:string;episode_count:number;created_at:string}
 interface Package {id:string;status:string;stage:string;parameters:{title:string;platform:string;region:string};sha256:string|null;error:string|null;guardian_frame_count:number|null}
 interface Readiness {
+  production_spec?:ProductionSpecRef
+  production_spec_issue?:string
   run_id:string;ready:boolean;rights_checked:boolean;source_count:number|null;authorized_sources:number|null
   passed_episodes:number;episode_count:number;authorization_revision:string|null
   blockers:{asset_id:string;name:string;reason:string}[]
@@ -234,10 +238,11 @@ onUnmounted(()=>clearInterval(timer))
       <div v-if="lastCheck" class="delivery-readiness" :class="{ blocked:!lastCheck.ready }" aria-live="polite">
         <div class="actions">
           <component :is="lastCheck.ready ? ClipboardCheck : ShieldAlert" :size="18" aria-hidden="true" />
-          <strong>{{lastCheck.ready ? '质检与当前授权通过' : lastCheck.rights_checked ? '交付授权尚未通过' : lastCheck.dialogue_rechecks.length ? '分集需要对白复检' : '整剧质检尚未通过'}}</strong>
+          <strong>{{lastCheck.production_spec_issue || (lastCheck.ready ? '质检与当前授权通过' : lastCheck.rights_checked ? '交付授权尚未通过' : lastCheck.dialogue_rechecks.length ? '分集需要对白复检' : '整剧质检尚未通过')}}</strong>
         </div>
         <p>{{lastCheck.passed_episodes}} / {{lastCheck.episode_count}} 集通过
           <template v-if="lastCheck.rights_checked"> · {{lastCheck.authorized_sources}} / {{lastCheck.source_count}} 项素材授权覆盖目标范围</template></p>
+        <SpecReference :project-id="projectId" :version-id="lastCheck.production_spec?.id" />
         <ul v-if="lastCheck.blockers.length">
           <li v-for="blocker in lastCheck.blockers" :key="blocker.asset_id">
             <span><strong>{{blocker.name}}</strong> · {{blocker.reason}}</span>

@@ -1,0 +1,12 @@
+{
+  "ready": true,
+  "schema": "0017",
+  "worker_online": 1,
+  "projects": 7,
+  "existing_project_spec_api_http": 200,
+  "wizard_http": 200,
+  "latest_build": true,
+  "live_text_authorized": false,
+  "actual_external_execution": false,
+  "real_budget_micros": 0
+}

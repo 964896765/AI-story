@@ -24,6 +24,7 @@ from .guardian_ocr import inspect_screen_text
 from .models import Asset, Project, StoryVersion, Task, TaskEvent, now
 from .render import execute_ffmpeg, file_hash, validate_output, write_manifest
 from .series import approved_guardian_shot, series_report
+from .production_specs import FRAME_SIZES, approval_spec, task_fields, verify_profile
 from .story_schemas import Strict
 from .visual_quality import MAX_FINDINGS, inspect_video
 
@@ -32,7 +33,7 @@ PIPELINE = 'local-still-motion-v1'
 DEMUXERS = {'.png':'png_pipe','.jpg':'jpeg_pipe','.jpeg':'jpeg_pipe','.webp':'webp_pipe'}
 REFERENCE_TYPES = {'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'}
 CHECKLIST_RULE = 'guardian-visual-checklist-v1'
-SIZES = {'portrait':(720,1280),'landscape':(1280,720),'square':(720,720)}
+SIZES = FRAME_SIZES
 
 
 class StillMotion(Strict):
@@ -111,6 +112,7 @@ def public(task):
             'parameters':task.parameters,'cancel_requested':task.cancel_requested,'error':task.error,
             'output':output,'guardian':task.input_snapshot.get('guardian'),
             'rework':task.input_snapshot.get('rework'),
+            **task_fields(task.input_snapshot.get('production_spec')),
             'created_at':task.created_at}
 
 
@@ -137,6 +139,7 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
             raise HTTPException(409,'请求键已用于其他候选配置')
         return [public(task) for task in result]
     guardian = None
+    spec = None
     if body.story_version_id:
         entity, version = version_ref(db,project_id,body.story_version_id,{'story_bible'})
         require_active_plan(db,version)
@@ -145,6 +148,9 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
                      if shot['shot_id']==body.shot_id),None)
         if not report['approved'] or not shot:
             raise HTTPException(422,'只能使用已批准计划中存在的镜头')
+        spec = report.get('production_spec')
+        for candidate in body.candidates:
+            verify_profile(spec,candidate.aspect)
         if report.get('guardian'):
             contract = shot['guardian']
             if not contract or (version.provenance.get('guardian_manifest') or {}).get(body.shot_id)!=contract['contract_sha256']:
@@ -155,13 +161,13 @@ def submit(project_id: str, body: StillRequest, db=Depends(session)):
             if any(candidate.frames!=frames for candidate in body.candidates):
                 raise HTTPException(422,f'镜头合同要求候选输出 {frames} 帧')
             guardian = guardian_input(entity.id,contract)
-    tasks = enqueue_motion(db, image, body.story_version_id, parameters, keys, guardian)
+    tasks = enqueue_motion(db, image, body.story_version_id, parameters, keys, guardian, spec=spec)
     db.commit()
     return [public(task) for task in tasks]
 
 
-def enqueue_motion(db, image, version_id, parameters, keys, guardian, rework=None):
-    snapshot = {'image':{'id':image.id,'storage_key':image.storage_key,'sha256':image.sha256}}
+def enqueue_motion(db, image, version_id, parameters, keys, guardian, rework=None, spec=None):
+    snapshot = {'image':{'id':image.id,'storage_key':image.storage_key,'sha256':image.sha256},**task_fields(spec)}
     if guardian:
         snapshot['guardian'] = guardian
     if rework:
@@ -190,6 +196,8 @@ def rework_shot(project_id: str,body: ShotRework,db=Depends(session)):
             raise HTTPException(409,'请求键已用于其他镜头返工')
         return public(previous)
     entity,version,_,shot = approved_guardian_shot(db,project_id,body.series_version_id,body.shot_id)
+    spec = approval_spec(db,project_id,version.content)
+    verify_profile(spec,body.aspect)
     image = require(db,Asset,body.asset_id)
     contract = shot['guardian']
     if (shot['strategy']!='still_motion' or image.project_id!=project_id
@@ -201,7 +209,7 @@ def rework_shot(project_id: str,body: ShotRework,db=Depends(session)):
         raise HTTPException(422,'本机运镜支持 12 至 240 帧，请先修订镜头合同')
     parameters = {'preset':body.preset,'aspect':body.aspect,'frames':frames,'shot_id':body.shot_id}
     guardian = guardian_input(entity.id,contract)
-    task, = enqueue_motion(db,image,version.id,[parameters],[key],guardian,rework=request)
+    task, = enqueue_motion(db,image,version.id,[parameters],[key],guardian,rework=request,spec=spec)
     db.commit()
     return public(task)
 
@@ -501,6 +509,8 @@ def build_motion(task_id,attempt,parameters,input_snapshot,update,factory):
     signature_parts = [PIPELINE,item['sha256'],options.model_dump()]
     if guardian:
         signature_parts.append(guardian)
+    if spec := input_snapshot.get('production_spec'):
+        signature_parts.append(spec['id'])
     signature = hashlib.sha256(json.dumps(signature_parts,sort_keys=True).encode()).hexdigest()
 
     def check():

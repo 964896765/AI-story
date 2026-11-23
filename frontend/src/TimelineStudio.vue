@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { Film, Image, Layers3, MonitorPlay } from 'lucide-vue-next'
 import { clock, request, statusLabels } from './analysisApi'
 import { moveStart, trimBoundary, type EditEdge } from './timelineGestures'
+import SpecReference from './components/production/SpecReference.vue'
+import type { ProductionSettings } from './types/productionSpec'
 
 type Role='main'|'overlay'|'dialogue'|'music'|'sfx'|'caption'
 type Profile='portrait'|'landscape'|'square'
@@ -12,6 +14,7 @@ interface Clip {
 }
 interface Track { id:string;role:Role;enabled:boolean;locked:boolean;volume:number;clips:Clip[] }
 interface Timeline {
+  production_spec_version_id?:string|null
   source_version_id:string|null;frame_rate:24;profile:Profile;frames:number;tracks:Track[];music_ducking?:boolean
 }
 interface Version {id:string;version_id:string;title:string;version:number;current_version:number;content:Timeline|null}
@@ -37,7 +40,7 @@ const entityPath=`/projects/${props.projectId}/story/entities`
 const base=`/timeline/projects/${props.projectId}`
 let timer:ReturnType<typeof setInterval>|undefined
 function track(role:Role):Track {return {id:crypto.randomUUID(),role,enabled:true,locked:false,volume:1,clips:[]}}
-const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,tracks:[track('main')],music_ducking:false})
+const freshContent=():Timeline=>({frame_rate:24,profile:'portrait',frames:72,source_version_id:null,production_spec_version_id:null,tracks:[track('main')],music_ducking:false})
 const timeline=reactive(freshContent())
 const canDuckMusic=computed(()=>['dialogue','music'].every(role=>timeline.tracks.some(lane=>
   lane.role===role && lane.enabled && lane.volume>0 && lane.clips.length>0)))
@@ -160,7 +163,7 @@ async function open(item:Version){
   const version= item.content?item:await request<Version>('/story/versions/'+item.version_id)
   active.value=version
   title.value=version.title
-  Object.assign(timeline,{music_ducking:false},version.content)
+  Object.assign(timeline,{music_ducking:false,production_spec_version_id:null},version.content)
   saved.value=JSON.stringify([title.value,timeline])
   editions.value=await request<Version[]>('/story/entities/'+version.id+'/versions')
   currentClip.value=''
@@ -211,7 +214,10 @@ async function restore(){
 }
 async function assemble(){
   await run(async()=>{
-    const body={series_version_id:planVersion.value.trim(),episode:planEpisode.value,title:autoTitle.value,profile:timeline.profile}
+    const id=planVersion.value.trim()
+    const report=await request<{production_spec?:{settings:ProductionSettings}}>(`/series/versions/${encodeURIComponent(id)}/continuity`)
+    const body={series_version_id:id,episode:planEpisode.value,title:autoTitle.value,
+      profile:report.production_spec?.settings.profile || timeline.profile}
     const result=await request<Version>(base+'/assemble',{...body,idempotency_key:requestKey(body)})
     await list()
     await open(result)
@@ -312,6 +318,7 @@ onUnmounted(()=>clearInterval(timer))
           <div class="timeline-settings">
           <div class="editor-grid">
             <label>时间轴标题<input v-model="title" required maxlength="200"></label>
+            <SpecReference :project-id="projectId" :version-id="timeline.production_spec_version_id" />
             <label>输出画幅<select v-model="timeline.profile"><option v-for="(label,key) in profiles" :key="key" :value="key">{{ label }}</option></select></label>
             <label>总帧数（24 fps）<input v-model.number="timeline.frames" required type="number" min="12" max="14400"></label>
           </div>

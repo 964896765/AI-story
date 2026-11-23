@@ -13,6 +13,7 @@ from .guardian import candidate_matches, require_active_plan, require_reviewed_t
 from .models import Asset, Project, StoryEntity, StoryVersion, Task, TaskEvent
 from .render import file_hash
 from .series import approved_guardian_shot, series_report
+from .production_specs import approval_spec, task_fields, verify_profile, verify_timeline
 from .story_schemas import Strict, Timeline
 
 router = APIRouter(prefix='/api/timeline',tags=['multitrack-timeline'])
@@ -146,6 +147,8 @@ def render(project_id:str,body:Enqueue,db=Depends(session)):
 
 
 def render_snapshot(db,project_id,version,timeline):
+    spec = approval_spec(db,project_id,version.content)
+    verify_timeline(spec,timeline)
     if not any(track.role=='main' and track.enabled and track.clips for track in timeline.tracks):
         raise HTTPException(422,'主画面轨道必须含已启用片段')
     if timeline.source_version_id:
@@ -164,7 +167,7 @@ def render_snapshot(db,project_id,version,timeline):
             require_reviewed_timeline(db,source,episode,version.content)
         if entity.kind=='storyboard' and any(shot.get('contract') for shot in source.content['shots']):
             raise HTTPException(422,'锁定分镜的渲染须引用已批准 Guardian 故事圣经')
-    return {'version_hash':version.content_hash,'assets':all_source_versions(db,project_id,version.content)}
+    return {'version_hash':version.content_hash,'assets':all_source_versions(db,project_id,version.content),**task_fields(spec)}
 
 
 def enqueue_render(db,project_id,version,key,snapshot):
@@ -212,6 +215,7 @@ def assemble(project_id:str,body:AutoAssemble,db=Depends(session)):
     if not report['approved']:
         raise HTTPException(422,'只有已批准的计划可以自动剪辑')
     require_active_plan(db,series)
+    verify_profile(report.get('production_spec'),body.profile)
     episode = next((entry for entry in report['episodes'] if entry['number']==body.episode),None)
     if not episode:
         raise HTTPException(422,'所选分集不在固定制作计划中')

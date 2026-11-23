@@ -18,7 +18,7 @@ from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[1]
 BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)))
-V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr', 'v3-guardian', 'v3-director')
+V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr', 'v3-guardian', 'v3-director', 'v3-spec')
 LOAD_PHASE = 'v3-production-load'
 
 def run_browser(env, path, phases):
@@ -33,6 +33,7 @@ def run_browser(env, path, phases):
         executable = sys._base_executable
         env = {**env, "PYTHONPATH": sysconfig.get_path("purelib")}
     env = {**env, "AI_STORY_QA_API_PORT":str(api_port), "AI_STORY_QA_WEB_PORT":str(browser_port),
+           "AI_STORY_QA_PYTHON":executable,
            "FRONTEND_ORIGIN":f"http://127.0.0.1:{browser_port}"}
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),

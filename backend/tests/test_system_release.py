@@ -73,7 +73,7 @@ def test_full_three_episode_30_second_production_delivery(delivery_fixture,tmp_p
     metrics=client.get('/api/system/metrics')
     assert metrics.status_code==200,metrics.text
     counters=metrics.json()
-    assert counters['database_revision']=='0016' and counters['observed_attempts']>=6 and counters['disk']['total']>0
+    assert counters['database_revision']=='0017' and counters['observed_attempts']>=6 and counters['disk']['total']>0
     assert any(node['state']=='offline' for node in counters['workers'])
     assert all(not node['online'] for node in counters['workers'] if node['state']=='offline')
     assert len(client.get(root+'/tasks?limit=2').json())==2

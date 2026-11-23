@@ -2,6 +2,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { request } from './analysisApi'
 import GuardianRules from './components/production/GuardianRules.vue'
+import SpecPicker from './components/production/SpecPicker.vue'
+import SpecReference from './components/production/SpecReference.vue'
+import { specPath, type ProductionSpec } from './types/productionSpec'
 
 interface Canon {
   facts:Record<string,string>; props:Record<string,string>; character_version_ids:string[]; scene_version_ids:string[]
@@ -17,6 +20,7 @@ interface Episode {
   opener: Boundary[]; closer: Boundary[]; bridge_note: string
 }
 interface Bible {
+  production_spec_version_id:string|null
   script_version_id: string; theme: string; world: string; rules: string; timeline: string; episodes: Episode[]
   threads: {label:string; setup_episode:number; payoff_episode:number|null}[]
   guardian?:Canon|null
@@ -40,7 +44,7 @@ const history = ref<Edition[]>([]), selected = ref<Edition|null>(null), report =
 const title = ref(''), reviewNote = ref(''), saved = ref(''), error = ref(''), info = ref(''), busy = ref(false)
 const referenceKind = ref<EntityKind>('script'), manualVersion = ref(''), manualRefs = ref<Edition[]>([])
 const keys = new Map<string,string>()
-const defaults = ():Bible => ({script_version_id:'',theme:'',world:'',rules:'',timeline:'',episodes:[],threads:[],guardian:null})
+const defaults = ():Bible => ({script_version_id:'',theme:'',world:'',rules:'',timeline:'',episodes:[],threads:[],guardian:null,production_spec_version_id:null})
 const plan=reactive(defaults())
 const dirty=computed(()=>saved.value!==JSON.stringify([title.value,plan]))
 const boundaries=[{id:'opener',name:'开场状态'},{id:'closer',name:'收尾状态'}] as const
@@ -130,6 +134,18 @@ async function includeVersion() {
 function addEpisode() {
   plan.episodes.push({episode_version_id:'',storyboard_version_id:'',target_duration_ms:3000,opener:[],closer:[],bridge_note:''})
 }
+async function applySpecTargets() {
+  await run(async()=>{
+    const id=plan.production_spec_version_id
+    if(!id)return
+    const {settings}=await request<ProductionSpec>(specPath(props.projectId)+'/'+encodeURIComponent(id))
+    if(settings.episode_duration_ms!==null) {
+      for(const episode of plan.episodes) episode.target_duration_ms=settings.episode_duration_ms
+    }
+    if(plan.guardian && settings.style) plan.guardian.style.description=settings.style
+    info.value='已填入固定规格的时长和画风，请核对后保存'
+  })
+}
 function addState(list: Boundary[]) {
   list.push({character_version_id:'',scene_version_id:null,wardrobe:'',prop_state:'',condition:''})
 }
@@ -172,6 +188,9 @@ onMounted(()=>void run(async()=>{
       <section>
         <form class="series-form" @submit.prevent="save">
           <label>故事圣经标题<input v-model="title" required maxlength="200"></label>
+          <SpecPicker v-model="plan.production_spec_version_id" :project-id="projectId" />
+          <SpecReference :project-id="projectId" :version-id="plan.production_spec_version_id" />
+          <button v-if="plan.production_spec_version_id" type="button" :disabled="busy" @click="applySpecTargets">填写固定时长与画风</button>
           <label>固定总剧本<select v-model="plan.script_version_id" required>
             <option value="">选择剧本版本</option>
             <option v-for="edition in options('script',[plan.script_version_id])" :key="edition.version_id" :value="edition.version_id">{{ label(edition) }}</option>

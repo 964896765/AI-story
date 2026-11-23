@@ -187,7 +187,7 @@ try {
     }
   }
   assert.deepEqual(auditedCapabilities,[
-    'local','partial','partial','partial','local','simulated','manual','partial','local','partial','manual','local',
+    'local','local','partial','partial','local','simulated','manual','partial','local','partial','manual','local',
     'manual','manual','partial','local','pending','manual','pending','local','manual','local','local','local',
   ])
   await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")

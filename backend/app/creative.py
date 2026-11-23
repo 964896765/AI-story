@@ -13,6 +13,7 @@ from .db import session
 from .models import Project,Asset,StoryEntity,StoryVersion,StoryReference,StoryOperation,Task
 from .story_schemas import CONTENT_MODELS,Kind,Shot,EntityInput,VersionInput,RestoreInput,DeriveInput
 from .model_adapters import adapter_for,ModelRequest
+from .production_specs import resolve as resolve_spec
 
 router=APIRouter(prefix='/api',tags=['creative'])
 IMAGES={'.png','.jpg','.jpeg','.webp'}
@@ -49,6 +50,16 @@ def validate_content(db,project_id,kind,content):
             if row.project_id!=project_id:raise HTTPException(422,'不允许跨项目引用素材')
             if Path(row.storage_key).suffix.lower() not in suffixes:raise HTTPException(422,'引用素材格式不符')
             refs.append((role,None,key))
+    spec_id = normalized.get('production_spec_version_id')
+    source_id = normalized.get('source_version_id') or normalized.get('script_version_id')
+    if source_id and (not spec_id or kind=='timeline'):
+        source_spec = version_ref(db,project_id,source_id)[1].content.get('production_spec_version_id')
+        if kind=='timeline' and spec_id and source_spec!=spec_id:
+            raise HTTPException(422,'时间轴规格须与来源版本一致')
+        if source_spec and not spec_id:
+            spec_id = normalized['production_spec_version_id'] = source_spec
+    if spec_id:
+        resolve_spec(db,project_id,spec_id)
     if kind=='novel':asset('source_text',normalized['source_asset_id'],{'.txt'})
     if kind in ('character','scene'):
         for key in normalized['reference_asset_ids']:asset('reference_image',key,IMAGES)
@@ -179,7 +190,13 @@ def compare_versions(entity_id:str,left:int,right:int,db=Depends(session)):
 def save_version(entity_id:str,body:VersionInput,db=Depends(session)):
     entity=db.scalar(select(StoryEntity).where(StoryEntity.id==entity_id).with_for_update())
     if not entity:raise HTTPException(404,'创作资产不存在')
-    content,refs=validate_content(db,entity.project_id,entity.kind,body.content)
+    requested = body.content
+    if 'production_spec_version_id' not in requested:
+        base = db.scalar(select(StoryVersion).where(
+            StoryVersion.entity_id==entity_id,StoryVersion.number==body.expected_version))
+        if base and (key := base.content.get('production_spec_version_id')):
+            requested = {**requested,'production_spec_version_id':key}
+    content,refs=validate_content(db,entity.project_id,entity.kind,requested)
     previous=db.scalar(select(StoryVersion).where(StoryVersion.entity_id==entity_id,StoryVersion.request_key==body.idempotency_key))
     if previous:
         if previous.content_hash!=digest(entity.kind,body.title,content) or previous.note!=body.note:raise HTTPException(409,'版本幂等键已用于不同内容')
