@@ -162,16 +162,34 @@ try {
   await click('创作向导')
   await wait(()=>contains('本阶段制作备注'),'six stage wizard loaded')
   assert(await evaluate("document.querySelector('.workflow-checklist').start===1 && document.querySelectorAll('.workflow-checklist li').length===4"))
+  const readCapabilities=()=>evaluate("Array.from(document.querySelectorAll('.step-capability'),step=>step.dataset.capability)")
+  const auditedCapabilities=await readCapabilities()
   await setField('本阶段制作备注','保留原始素材授权。')
   await click('保存本机备注')
   await click('继续下一步')
   await wait(()=>evaluate("new URLSearchParams(location.search).get('step')==='2'"),'wizard proceeds with project context')
   assert(await evaluate("document.querySelector('.workflow-checklist').start===5 && document.querySelectorAll('.workflow-checklist li').length===4"))
+  auditedCapabilities.push(...await readCapabilities())
   await screenshot('prism-wizard.png')
   for (let phase=3;phase<=6;phase++) {
     await click('继续下一步')
     await wait(()=>evaluate(`document.querySelector('.workflow-checklist')?.start===${(phase-1)*4+1} && document.querySelectorAll('.workflow-checklist li').length===4`),'four steps in phase '+phase)
+    auditedCapabilities.push(...await readCapabilities())
+    if(phase===5) {
+      const pendingLinks=await evaluate(`Array.from(document.querySelectorAll('.workflow-checklist li')).filter(
+        item=>item.querySelector('[data-capability="pending"]')).map(item=>{const link=item.querySelector('a');
+        return [link.textContent.trim(),new URL(link.href).pathname,new URL(link.href).searchParams.get('flow')];})`)
+      assert.deepEqual(pendingLinks,[['打开本机工作区','/ai/candidates','17'],['打开本机工作区','/ai/candidates','19']])
+      await screenshot('prism-workflow-capabilities.png')
+      await size(390,844,true)
+      assert(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'))
+      await size(1440,900)
+    }
   }
+  assert.deepEqual(auditedCapabilities,[
+    'local','partial','partial','partial','local','simulated','manual','partial','local','partial','manual','local',
+    'manual','manual','partial','local','pending','manual','pending','local','manual','local','local','local',
+  ])
   await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await wait(()=>evaluate("document.documentElement.dataset.theme==='dark'"),'global dark theme')
   await command('Page.reload')
@@ -270,7 +288,8 @@ try {
     checked_at:new Date().toISOString(),viewports:scopes,primary_navigation_entries:12,legacy_pages_reached:legacyPages,
     additional_pages_reached:['角色与场景','分镜编辑','模型接入与预算'],actual_render_playback:true,deep_link_reload:true,project_isolation:true,
     model_connections:{codex_draft_persisted:true,video_draft_persisted:true,verified_text_preset_saved_disabled:true,execution_enabled:connections.execution_enabled},
-    workflow:{six_phases:true,step_count:24,guardian_prerequisite_links:3,project_brief_handoff:true},
+    workflow:{six_phases:true,step_count:24,audited_capabilities:auditedCapabilities,
+      guardian_prerequisite_links:3,project_brief_handoff:true},
     actual_project_creation:true, asset_probe_auto_refresh:true,
     model_calls:{simulated:1,live:0,paid_micros:0},unknown_cost_count:0,openapi_operations:paths,javascript_errors:errors},null,2)+'\n')
   await writeFile(join(evidenceDir,'v3-ui-acceptance.json'),JSON.stringify({

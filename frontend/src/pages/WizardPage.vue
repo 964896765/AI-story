@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { ArrowRight } from 'lucide-vue-next'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 import { useWorkspace } from '../router/workspace'
-import { phases, suggestedStep, workflowSteps } from '../router/workflow'
+import { capabilityLabels, phases, suggestedStep, workflowSteps } from '../router/workflow'
 
 const { workbench, link, query, go } = useWorkspace()
 const key=`ai-story:wizard:${workbench.projectId}`
@@ -55,12 +55,14 @@ function save() {
     </nav>
     <div class="wizard-grid">
       <WorkspacePanel :title="phase.title">
+        <p class="hint capability-caption">能力状态说明本机能执行到哪一步，项目进度见项目记录。</p>
         <ol class="workflow-checklist" :start="index*4+1">
           <li v-for="item in steps" :key="item.number">
-            <div><strong>{{item.title}}</strong><small v-if="item.state"> · 外部能力{{item.state}}</small>
+            <div><div class="step-heading"><strong>{{item.title}}</strong>
+              <span class="step-capability" :data-capability="item.capability">{{capabilityLabels[item.capability]}}</span></div>
             <p>{{item.action}}</p><p class="hint">输入 {{item.input}} <span>·</span> 产出 {{item.output}}</p></div>
             <RouterLink v-if="item.page!=='wizard'" :to="link(item.page, item.number===1 && !workbench.projectId ? {create:'1',flow:item.number} : {flow:item.number})">
-              打开工作区 <ArrowRight :size="15" aria-hidden="true" />
+              {{item.capability==='pending' ? '打开本机工作区' : '打开工作区'}} <ArrowRight :size="15" aria-hidden="true" />
             </RouterLink>
           </li>
         </ol>
@@ -80,7 +82,7 @@ function save() {
 <style scoped>
 .wizard-body { display:grid;gap:14px }
 .wizard-steps,.wizard-grid { display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px }
-.wizard-steps a,.wizard-links a { display:flex;align-items:center;gap:7px;padding:10px 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface-panel);font-size:12px;text-decoration:none;color:var(--ink) }
+.wizard-steps a { display:flex;align-items:center;gap:7px;padding:10px 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface-panel);font-size:12px;text-decoration:none;color:var(--ink) }
 .wizard-steps a span { display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--surface-raised);flex:none }
 .wizard-steps a[aria-current=step] { border-color:var(--accent);background:var(--accent-surface);color:var(--accent);font-weight:700 }
 .wizard-steps a[aria-current=step] span { background:var(--primary-fill);color:#fff }
@@ -89,14 +91,16 @@ function save() {
 .wizard-resume :is(h2,p) { margin:0 0 3px }
 .wizard-resume a,.workflow-checklist a { display:inline-flex; align-items:center; gap:5px; white-space:nowrap }
 .wizard-note { display:grid;gap:9px;margin-top:12px }
+.capability-caption { margin:0 0 4px }
 .workflow-checklist { margin:0; padding-inline-start:25px }
 .workflow-checklist li { padding:9px 0;border-bottom:1px solid var(--line) }
-.workflow-checklist li > div { display:inline-block; width:min(100%,calc(100% - 115px)); vertical-align:middle; padding-inline-end:8px }
+.workflow-checklist li > div { display:inline-block; width:min(100%,calc(100% - 128px)); vertical-align:middle; padding-inline-end:8px }
 .workflow-checklist li > div p { margin:4px 0 }
-.workflow-checklist li small { color:var(--ink-muted) }
+.step-heading { display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px }
+.step-capability { background:var(--surface-raised);border:1px solid var(--line);border-radius:5px;color:var(--ink-muted);font-size:11px;line-height:1.4;padding:2px 6px }
+.step-capability[data-capability=local] { color:var(--accent);background:var(--accent-surface) }
 .wizard-records { margin:0;padding:0;list-style:none }
 .wizard-records li { display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line) }
-.wizard-records svg { color:var(--accent) }
 .wizard-next { margin-top:13px;display:inline-flex;gap:6px;align-items:center }
 @media(max-width:940px) { .wizard-steps { grid-template-columns:repeat(3,minmax(0,1fr)) } }
 @media(max-width:700px) { .wizard-steps { grid-template-columns:repeat(2,minmax(0,1fr)) } .wizard-grid { grid-template-columns:minmax(0,1fr) } .workflow-checklist li > div { width:100% } }

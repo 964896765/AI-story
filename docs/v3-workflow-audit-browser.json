@@ -1,0 +1,66 @@
+{
+  "baseline": "5e99d685c39b19177fae8891dcc16018e875c839",
+  "wizard_checked_at": "2026-11-23T03:10:30.953Z",
+  "workflow": {
+    "six_phases": true,
+    "step_count": 24,
+    "audited_capabilities": [
+      "local",
+      "partial",
+      "partial",
+      "partial",
+      "local",
+      "simulated",
+      "manual",
+      "partial",
+      "local",
+      "partial",
+      "manual",
+      "local",
+      "manual",
+      "manual",
+      "partial",
+      "local",
+      "pending",
+      "manual",
+      "pending",
+      "local",
+      "manual",
+      "local",
+      "local",
+      "local"
+    ],
+    "guardian_prerequisite_links": 3,
+    "project_brief_handoff": true
+  },
+  "model_connections": {
+    "codex_draft_persisted": true,
+    "video_draft_persisted": true,
+    "verified_text_preset_saved_disabled": true,
+    "execution_enabled": false
+  },
+  "guardian_checked_at": "2026-11-23T03:12:07.953Z",
+  "episodes": 2,
+  "shot_count": 10,
+  "visual_fixtures_rejected_by_recorded_review": [
+    "identity",
+    "wardrobe",
+    "scene",
+    "shot_mismatch"
+  ],
+  "reused_approved_shots": 9,
+  "rerendered_shots": 1,
+  "delivery_evidence": {
+    "shots": 10,
+    "frames": 30,
+    "missing_blocked": true,
+    "same_size_tampering_blocked": true,
+    "verified_extracted_jpegs": true,
+    "checklist_and_comparison_resolved": true,
+    "retried_in_browser": true,
+    "single_delivery": true
+  },
+  "verified_delivery_bytes": 1652407,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}
