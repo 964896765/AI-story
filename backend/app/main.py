@@ -35,6 +35,7 @@ from .distribution import router as distribution_router
 from .accounting import router as accounting_router
 from .system_console import router as system_router
 from .overview import router as overview_router
+from .model_connections import router as model_connections_router
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
@@ -54,6 +55,7 @@ app.include_router(distribution_router)
 app.include_router(accounting_router)
 app.include_router(system_router)
 app.include_router(overview_router)
+app.include_router(model_connections_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -130,7 +132,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0015'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0016'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})

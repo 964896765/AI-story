@@ -22,7 +22,7 @@ const views: Record<Destination, RouteRecordRaw['component']> = {
   library: () => import('../pages/LibraryPage.vue'),
   operations: () => import('../pages/OperationsPage.vue'),
   system: () => import('../SystemStudio.vue'),
-  models: () => import('../pages/AdaptationPage.vue'),
+  models: () => import('../pages/ModelsPage.vue'),
 }
 
 export const router = createRouter({

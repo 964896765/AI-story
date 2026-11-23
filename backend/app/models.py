@@ -321,6 +321,12 @@ class TextProvider(Base):
     settings: Mapped[dict]=mapped_column(JSON)
     created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now)
 
+class ModelConnectionDraft(Base):
+    __tablename__ = 'model_connection_drafts'
+    connector: Mapped[str] = mapped_column(String(40), primary_key=True)
+    settings: Mapped[dict] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
 class ModelBudget(Base):
     __tablename__='model_budgets'
     id: Mapped[str]=mapped_column(String(36),primary_key=True,default=uid)

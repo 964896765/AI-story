@@ -1,0 +1,610 @@
+{
+  "browser": "Installed Chrome headless",
+  "checked_at": "2026-11-23T01:29:13.369Z",
+  "viewports": [
+    [
+      1920,
+      1080
+    ],
+    [
+      1440,
+      900
+    ],
+    [
+      1280,
+      800
+    ],
+    [
+      390,
+      844
+    ]
+  ],
+  "primary_navigation_entries": 12,
+  "legacy_pages_reached": [
+    "素材资产中心",
+    "智能解析",
+    "智能二创",
+    "剧情改编",
+    "小说与剧本",
+    "故事圣经",
+    "生成候选",
+    "配音与字幕",
+    "多轨时间轴",
+    "生产调度",
+    "质检与导出",
+    "资源与交付",
+    "运营中心",
+    "运行诊断"
+  ],
+  "additional_pages_reached": [
+    "角色与场景",
+    "分镜编辑",
+    "模型接入与预算"
+  ],
+  "actual_render_playback": true,
+  "deep_link_reload": true,
+  "project_isolation": true,
+  "model_connections": {
+    "codex_draft_persisted": true,
+    "video_draft_persisted": true,
+    "verified_text_preset_saved_disabled": true,
+    "execution_enabled": false
+  },
+  "workflow": {
+    "six_phases": true,
+    "step_count": 24,
+    "guardian_prerequisite_links": 3,
+    "project_brief_handoff": true
+  },
+  "actual_project_creation": true,
+  "asset_probe_auto_refresh": true,
+  "model_calls": {
+    "simulated": 1,
+    "live": 0,
+    "paid_micros": 0
+  },
+  "unknown_cost_count": 0,
+  "openapi_operations": [
+    {
+      "path": "/api/projects/{project_id}/story/entities",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/story/entities",
+      "method": "POST"
+    },
+    {
+      "path": "/api/story/entities/{entity_id}/versions",
+      "method": "GET"
+    },
+    {
+      "path": "/api/story/entities/{entity_id}/versions",
+      "method": "POST"
+    },
+    {
+      "path": "/api/story/versions/{version_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/story/entities/{entity_id}/compare",
+      "method": "GET"
+    },
+    {
+      "path": "/api/story/entities/{entity_id}/restore",
+      "method": "POST"
+    },
+    {
+      "path": "/api/projects/{project_id}/story/derive",
+      "method": "POST"
+    },
+    {
+      "path": "/api/model-capabilities",
+      "method": "GET"
+    },
+    {
+      "path": "/api/story/entities/{entity_id}/model-estimate",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/story/export",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/status",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/providers",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/providers",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/providers/{provider_id}/availability",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/providers/{provider_id}/quote",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/projects/{project_id}/budgets",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/projects/{project_id}/budgets",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/projects/{project_id}/calls",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/projects/{project_id}/calls",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/calls/{call_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/cancel",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/retry",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/settle",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/reconcile",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/billing",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/draft",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/drafts",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/review",
+      "method": "POST"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/drafts/{number}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/calls/{call_id}/compare",
+      "method": "GET"
+    },
+    {
+      "path": "/api/text/projects/{project_id}/ledger",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/tasks",
+      "method": "POST"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/tasks/{task_id}/result",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks/{task_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks/{task_id}/subtitle-tracks/{stream_index}/revisions",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks/{task_id}/subtitle-tracks/{stream_index}/revisions",
+      "method": "POST"
+    },
+    {
+      "path": "/api/analysis/projects/{project_id}/assets/{asset_id}/tasks/{task_id}/subtitle-tracks/{stream_index}/revisions/{revision_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/tasks/{task_id}/artifacts/{number}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/tasks/{task_id}/logs/{attempt}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/capabilities",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/assets/{asset_id}/revisions",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/assets/{asset_id}/revisions",
+      "method": "POST"
+    },
+    {
+      "path": "/api/analysis/revisions/{revision_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/analysis/revisions/{revision_id}/adopt",
+      "method": "POST"
+    },
+    {
+      "path": "/api/series/versions/{version_id}/continuity",
+      "method": "GET"
+    },
+    {
+      "path": "/api/series/versions/{version_id}/impact",
+      "method": "GET"
+    },
+    {
+      "path": "/api/series/entities/{entity_id}/approve",
+      "method": "POST"
+    },
+    {
+      "path": "/api/generation/capabilities",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/projects/{project_id}/still-motion",
+      "method": "POST"
+    },
+    {
+      "path": "/api/generation/projects/{project_id}/shot-reworks",
+      "method": "POST"
+    },
+    {
+      "path": "/api/generation/projects/{project_id}/candidates",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/video",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/guardian-frames/{index}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/guardian-references",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/guardian-references/{index}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/guardian-review",
+      "method": "POST"
+    },
+    {
+      "path": "/api/generation/candidates/{task_id}/select",
+      "method": "POST"
+    },
+    {
+      "path": "/api/voice/capabilities",
+      "method": "GET"
+    },
+    {
+      "path": "/api/voice/projects/{project_id}/tasks",
+      "method": "POST"
+    },
+    {
+      "path": "/api/voice/projects/{project_id}/tasks",
+      "method": "GET"
+    },
+    {
+      "path": "/api/voice/tasks/{task_id}/files/{name}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/voice/tasks/{task_id}/select",
+      "method": "POST"
+    },
+    {
+      "path": "/api/timeline/projects/{project_id}/shot-replacements/options",
+      "method": "GET"
+    },
+    {
+      "path": "/api/timeline/projects/{project_id}/shot-replacements",
+      "method": "POST"
+    },
+    {
+      "path": "/api/timeline/projects/{project_id}/renders",
+      "method": "POST"
+    },
+    {
+      "path": "/api/timeline/projects/{project_id}/renders",
+      "method": "GET"
+    },
+    {
+      "path": "/api/timeline/versions/{version_id}/manifest",
+      "method": "GET"
+    },
+    {
+      "path": "/api/timeline/projects/{project_id}/assemble",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/batch-options",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/batch-options/{version_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice/{call_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice/{call_id}/cancel",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice/{call_id}/retry",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice/{call_id}/reconcile",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/advice/{call_id}/review",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/plans",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/plans",
+      "method": "POST"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/plans/{plan_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/director/projects/{project_id}/plans/{plan_id}/execute",
+      "method": "POST"
+    },
+    {
+      "path": "/api/production/projects/{project_id}/runs",
+      "method": "POST"
+    },
+    {
+      "path": "/api/production/projects/{project_id}/runs",
+      "method": "GET"
+    },
+    {
+      "path": "/api/production/runs/{run_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/production/projects/{project_id}/runs/{run_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/production/runs/{run_id}/cancel",
+      "method": "POST"
+    },
+    {
+      "path": "/api/production/runs/{run_id}/episodes/{number}/review",
+      "method": "POST"
+    },
+    {
+      "path": "/api/library/projects/{project_id}/works",
+      "method": "GET"
+    },
+    {
+      "path": "/api/library/projects/{project_id}/works",
+      "method": "POST"
+    },
+    {
+      "path": "/api/library/works/{work_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/library/works/{work_id}/archive",
+      "method": "POST"
+    },
+    {
+      "path": "/api/library/assets/{asset_id}/rights",
+      "method": "GET"
+    },
+    {
+      "path": "/api/library/assets/{asset_id}/rights",
+      "method": "POST"
+    },
+    {
+      "path": "/api/delivery/projects/{project_id}/packages",
+      "method": "POST"
+    },
+    {
+      "path": "/api/delivery/projects/{project_id}/packages",
+      "method": "GET"
+    },
+    {
+      "path": "/api/delivery/projects/{project_id}/runs/{run_id}/readiness",
+      "method": "GET"
+    },
+    {
+      "path": "/api/delivery/projects/{project_id}/packages/{task_id}",
+      "method": "GET"
+    },
+    {
+      "path": "/api/delivery/packages/{task_id}/file",
+      "method": "GET"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/channels",
+      "method": "GET"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/channels",
+      "method": "POST"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/publications",
+      "method": "GET"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/publications",
+      "method": "POST"
+    },
+    {
+      "path": "/api/distribution/publications/{publication_id}/events",
+      "method": "POST"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/promotions",
+      "method": "GET"
+    },
+    {
+      "path": "/api/distribution/projects/{project_id}/promotions",
+      "method": "POST"
+    },
+    {
+      "path": "/api/distribution/promotions/{task_id}/file",
+      "method": "GET"
+    },
+    {
+      "path": "/api/finance/projects/{project_id}/settlements/import",
+      "method": "POST"
+    },
+    {
+      "path": "/api/finance/projects/{project_id}/settlements",
+      "method": "POST"
+    },
+    {
+      "path": "/api/finance/projects/{project_id}/settlements",
+      "method": "GET"
+    },
+    {
+      "path": "/api/finance/projects/{project_id}/summary",
+      "method": "GET"
+    },
+    {
+      "path": "/api/system/metrics",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/overview",
+      "method": "GET"
+    },
+    {
+      "path": "/api/models/connections",
+      "method": "GET"
+    },
+    {
+      "path": "/api/models/connections/{connector}",
+      "method": "POST"
+    },
+    {
+      "path": "/api/health",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects",
+      "method": "POST"
+    },
+    {
+      "path": "/api/projects/{project_id}/assets",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/assets",
+      "method": "POST"
+    },
+    {
+      "path": "/api/assets/{asset_id}/media",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/tasks",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/tasks",
+      "method": "POST"
+    },
+    {
+      "path": "/api/tasks/{task_id}/retry",
+      "method": "POST"
+    },
+    {
+      "path": "/api/tasks/{task_id}/cancel",
+      "method": "POST"
+    },
+    {
+      "path": "/api/tasks/{task_id}/output",
+      "method": "GET"
+    },
+    {
+      "path": "/api/tasks/{task_id}/events",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/costs",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/batches",
+      "method": "POST"
+    },
+    {
+      "path": "/api/queue",
+      "method": "GET"
+    },
+    {
+      "path": "/api/queue",
+      "method": "POST"
+    },
+    {
+      "path": "/api/tasks/{task_id}/attempts",
+      "method": "GET"
+    },
+    {
+      "path": "/api/tasks/{task_id}/attempts/{number}/logs",
+      "method": "GET"
+    },
+    {
+      "path": "/api/projects/{project_id}/production-summary",
+      "method": "GET"
+    }
+  ],
+  "javascript_errors": []
+}

@@ -5,6 +5,7 @@ import { ArrowRight, Check, ClipboardCheck, Film, Image, Play, Plus, SquarePen, 
 import { useWorkspace } from '../router/workspace'
 import type { Destination } from '../router/navigation'
 import type { RecentRender } from '../types/workbench'
+import { phases, suggestedStep, workflowSteps } from '../router/workflow'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 const OutputPreview = defineAsyncComponent(() => import('../components/ui/OutputPreview.vue'))
 
@@ -23,9 +24,9 @@ const flow = computed(() => {
   return [
     { label:'立项与预算', info:`${overview.value?.asset_count || 0} 项素材`, ready:!!overview.value?.asset_count, page:'assets' },
     { label:'剧本与故事', info:`${(story.novel || 0)+(story.script || 0)+(story.episode || 0)} 份文本`, ready:!!story.script, page:'story' },
-    { label:'人物场景', info:`${(story.character || 0)+(story.scene || 0)} 项角色和场景`, ready:!!(story.character || story.scene), page:'characters' },
-    { label:'镜头规划', info:`${story.storyboard || 0} 份分镜`, ready:!!story.storyboard, page:'storyboard' },
-    { label:'模型生成', info:overview.value?.live_authorized?'真实调用已授权':'本机候选与配音', ready:!!story.generation_plan, page:'generation' },
+    { label:'人物场景', info:`${(story.character || 0)+(story.scene || 0)} 项角色和场景`, ready:!!(story.character && story.scene), page:'characters' },
+    { label:'镜头规划', info:overview.value?.workflow?.approved_series_id?'已有批准计划':`${story.storyboard || 0} 份分镜`, ready:!!overview.value?.workflow?.approved_series_id, page:'storyboard' },
+    { label:'模型生成', info:`${overview.value?.workflow?.adopted_candidates || 0} 个已采纳本机候选`, ready:!!overview.value?.workflow?.adopted_candidates, page:'generation' },
     { label:'剪辑交付', info:`${overview.value?.delivery_count || 0} 份已验证交付包`, ready:!!overview.value?.delivery_count, page:'library' },
   ] as const
 })
@@ -42,9 +43,9 @@ const nextStep = computed<{ page:Destination; label:string; query?:LocationQuery
   }
   const draft = overview.value?.draft_reviews[0]
   if (draft) return {page:'adaptation',label:'审核改编稿',query:{call:draft.id}}
-  const story = overview.value?.story_counts || {}
-  const page = overview.value?.render_count?'quality':story.timeline?'timeline':story.storyboard?'storyboard':story.script?'story':'assets'
-  return {page,label:'继续制作'}
+  if(!overview.value) return {page:'wizard',label:'打开创作向导'}
+  const next=suggestedStep(overview.value)
+  return {page:workflowSteps[next.step-1].page,label:next.label,query:{...next.query,flow:next.step}}
 })
 
 function money(micros:string,currency:string) {
@@ -97,9 +98,9 @@ watch(() => workbench.projectId, () => { preview.value=''; rejectedCover.value='
       <div class="overview-details">
         <WorkspacePanel title="六段生产流程">
           <div class="stage-track">
-            <RouterLink v-for="(stage,index) in flow" :key="stage.page" class="stage-step" :to="link(stage.page)">
+            <RouterLink v-for="(stage,index) in flow" :key="stage.page" class="stage-step" :to="link('wizard',{step:index+1})">
               <span class="step-icon" :class="{ready:stage.ready}"><Check v-if="stage.ready" :size="14" aria-hidden="true" /><template v-else>{{index+1}}</template></span>
-              <span><strong>{{stage.label}}</strong><small>{{stage.info}}</small></span>
+              <span><strong>{{phases[index].title}}</strong><small>{{stage.info}}</small></span>
             </RouterLink>
           </div>
           <RouterLink class="panel-cta" :to="link('wizard')">进入创作向导 <ArrowRight :size="14" aria-hidden="true" /></RouterLink>

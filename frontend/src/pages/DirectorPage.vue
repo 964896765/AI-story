@@ -225,14 +225,19 @@ onBeforeUnmount(()=>abort.abort())
 </script>
 
 <template>
-  <p v-if="!workbench.projectId" class="empty">请选择一个项目后制定执行计划。</p>
+  <section v-if="!workbench.projectId">
+    <h2>先建立制作项目</h2>
+    <p>在项目说明写入原创创意或改编目标。进入项目后可把它带入制作指令。</p>
+    <RouterLink :to="link('assets',{create:'1',flow:1})">新建制作项目</RouterLink>
+  </section>
   <div v-else class="director-grid">
     <WorkspacePanel title="导演对话">
       <div v-if="plan && !active" class="dialogue"><div><strong>制作指令</strong><p>{{plan.instruction}}</p></div><div><strong>执行计划已准备</strong><p>{{focus?.label}} · {{plan.confirmed?'已确认交接':'待确认'}}</p></div></div>
-      <p v-else class="hint">选择工作流并填写制作要求。说明随计划保存。</p>
+      <p v-else class="hint">先选工作流，再填写目标、集数、画幅和审核要求。本机按所选工作流整理步骤，生产须经人工确认。</p>
       <form class="director-form" @submit.prevent="submit">
         <fieldset class="director-form" :disabled="busy">
-        <label>制作指令<textarea v-model="instruction" required maxlength="4000" placeholder="例如修正第二集的镜头服装，保留其他镜头"></textarea></label>
+        <label>制作指令<textarea v-model="instruction" required maxlength="4000" placeholder="例如先试制第 1 集，90 秒、竖屏，角色形象需先确认"></textarea></label>
+        <button v-if="workbench.project?.description && !instruction.trim()" type="button" @click="instruction=workbench.project.description.slice(0,4000)">引用项目说明</button>
         <label>工作流<select v-model="target"><option v-for="(item,key) in workflows" :key="key" :value="key">{{item.label}}</option></select></label>
         <template v-if="target==='render'">
           <label>时间轴<select v-model="timelineId" required><option value="" disabled>{{ loading?'读取中…':timelines.length?'选择时间轴':'暂无时间轴' }}</option><option v-for="item in timelines" :key="item.id" :value="item.id">{{item.title}}</option></select></label>
@@ -327,7 +332,7 @@ onBeforeUnmount(()=>abort.abort())
         <div><dt>最近批次</dt><dd>{{batch?`${batch.passed} / ${batch.episode_count} 集通过`:'暂无'}}</dd></div>
         <div><dt>付费调用授权</dt><dd>{{workbench.overview ? (workbench.overview.live_authorized?'已授权':'关闭'):'待读取'}}</dd></div>
       </dl>
-      <RouterLink :to="link('models')">查看模型与预算</RouterLink>
+      <RouterLink :to="link('models',{flow:3})">配置 Codex、模型与预算</RouterLink>
       <a class="advice-anchor" href="#director-model-planning">打开模型规划</a>
       <p class="director-note director-mode">渲染和交付由本机 Worker 执行。剧情改编与镜头返工在对应工作区审核。</p>
     </WorkspacePanel>

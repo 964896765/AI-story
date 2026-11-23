@@ -165,7 +165,18 @@ async function compare() {
     <p v-if="loading" role="status">正在读取制作约束与审核记录…</p>
     <p v-else-if="failure" role="alert" class="guardian-error">{{ failure }}</p>
     <p v-else-if="!workbench.projectId">请选择项目。</p>
-    <p v-else-if="!version">先在故事圣经建立制作计划。 <RouterLink :to="link('bible')">打开故事圣经</RouterLink></p>
+    <section v-else-if="!version" class="guardian-panel guardian-start">
+      <div>
+        <h2>当前项目还没有故事圣经</h2>
+        <p>Guardian 需要一份固定计划，把分集、分镜和审核证据对应到具体镜头。</p>
+        <RouterLink :to="link('wizard',{step:4})">查看分镜到质检的完整步骤</RouterLink>
+      </div>
+      <ol>
+        <li><RouterLink :to="link('story',{flow:5})">保存原稿、剧本和分集</RouterLink><small>先确定本次采用的内容版本。</small></li>
+        <li><RouterLink :to="link('storyboard',{flow:13})">建立分镜</RouterLink><small>给每个镜头填写时长、人物、场景和动作。</small></li>
+        <li><RouterLink :to="link('bible',{flow:16})">打开故事圣经</RouterLink><small>引用固定分镜，核对连续性并批准计划，再回来检查候选与证据。</small></li>
+      </ol>
+    </section>
     <template v-else>
       <div class="guardian-toolbar">
         <label>故事圣经<select :value="version.version_id" @change="go('guardian',{version:($event.target as HTMLSelectElement).value})">
@@ -295,6 +306,12 @@ async function compare() {
 </template>
 
 <style scoped>
+.guardian-start { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px;align-items:start }
+.guardian-start h2 { margin-top:0 }
+.guardian-start ol { margin:0;padding-inline-start:24px }
+.guardian-start li { padding:6px 0 }
+.guardian-start small { display:block;color:var(--ink-muted);margin-top:3px }
+@media(max-width:730px) { .guardian-start { grid-template-columns:minmax(0,1fr) } }
 .guardian-workbench { --gb:var(--surface-base);--gp:var(--surface-panel);--ga:var(--accent-surface);--gl:var(--line);--gt:var(--ink);--gm:var(--ink-muted);--gx:var(--accent);--ge:var(--negative);color:var(--gt) }
 .guardian-toolbar,.compare-form { display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin-bottom:14px }
 .guardian-workbench h2 { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--gt) }

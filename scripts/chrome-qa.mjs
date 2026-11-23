@@ -32,7 +32,7 @@ const workspaceTargets = {
   '生成候选':['AI 图片与视频'], '配音与字幕':['配音与声音'], '多轨时间轴':['剪辑与时间轴','timeline'],
   '智能二创':['剪辑与时间轴','video'], '批量生产':['生产调度'], '生产调度':['生产调度'], '质检与导出':['质检与交付','quality'],
   '资源与交付':['质检与交付','library'], '运营中心':['质检与交付','operations'], '运行诊断':['模型与设置','system'],
-  '文本模型与预算':['模型与设置','models'],
+  '模型接入与预算':['模型与设置','models'],
 }
 
 export async function navigateWorkspace(evaluate, text) {

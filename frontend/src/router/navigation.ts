@@ -22,7 +22,7 @@ export const destinations = {
   library: { path: '/delivery/library', label: '资源与交付' },
   operations: { path: '/operations', label: '运营中心' },
   system: { path: '/settings/system', label: '运行诊断' },
-  models: { path: '/settings/models', label: '文本模型与预算' },
+  models: { path: '/settings/models', label: '模型接入与预算' },
 } as const
 
 export type Destination = keyof typeof destinations

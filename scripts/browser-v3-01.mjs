@@ -115,25 +115,63 @@ try {
   await size(1440,900)
   const legacyPages = ['素材资产中心','智能解析','智能二创','剧情改编','小说与剧本','故事圣经','生成候选',
     '配音与字幕','多轨时间轴','生产调度','质检与导出','资源与交付','运营中心','运行诊断']
-  for (const title of [...legacyPages,'角色与场景','分镜编辑','文本模型与预算']) {
+  for (const title of [...legacyPages,'角色与场景','分镜编辑','模型接入与预算']) {
     await click(title)
     await wait(()=>evaluate(`document.querySelector('main h1')?.textContent.trim()===${JSON.stringify(title)}`),'routed '+title)
   }
+  await wait(()=>contains('账号能力未核验'),'offline Codex status')
+  await setField('Codex 首选模型 ID','codex-test-preference')
+  await click('保存配置草稿')
+  await wait(()=>contains('配置草稿已保存'),'Codex draft persisted')
+  await command('Page.navigate',{url:`${base}/settings/models?project=${project.id}&connector=hailuo-video`})
+  await wait(()=>contains('实际费率未知'),'media connector remains gated')
+  await setField('供应商模型 ID','video-test-preference')
+  await setField('供应商 Base URL','https://model-settings.example.test/v1')
+  await setField('密钥环境变量名称','AI_STORY_FIXTURE_VIDEO_API_KEY')
+  await click('保存配置草稿')
+  await wait(()=>contains('配置草稿已保存'),'video draft persisted')
+  await command('Page.reload')
+  await wait(()=>evaluate("document.querySelector('.connector-details form input')?.value==='video-test-preference'"),'media draft restored after reload')
+  const connections=await api('/models/connections')
+  assert.equal(connections.execution_enabled,false)
+  assert.equal(connections.drafts.codex.model,'codex-test-preference')
+  assert.equal(connections.drafts['hailuo-video'].secret_env,'AI_STORY_FIXTURE_VIDEO_API_KEY')
+  assert.equal((await api('/text/status')).default_live_budget_micros,0)
+  await screenshot('prism-model-connections.png')
+  await size(390,844)
+  assert(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'))
+  await size(1440,900)
+  await evaluate("Array.from(document.querySelectorAll('summary')).find(item=>item.textContent.includes('配置真实文本供应商')).click()")
+  await setField('供应商模板','OpenAI')
+  await setField('模型名称','text-test-preference')
+  await click('保存禁用的真实配置')
+  await wait(async()=>(await api('/text/providers')).some(item=>item.label==='OpenAI' && !item.enabled),'text provider preset saves a disabled real configuration')
   await click('AI 总导演')
   await wait(()=>contains('导演对话'),'PRISM director layout')
+  await click('引用项目说明')
+  assert(await evaluate("document.querySelector('.director-form textarea')?.value.includes('原创验收短片')"))
   await setField('制作指令','核对第 1 集服装和镜头证据。')
   await click('生成执行计划')
   await wait(()=>contains('已在本机保存执行计划'),'director stores a real local handoff plan')
   await screenshot('prism-director.png')
   await click('确认并打开工作区')
   await wait(()=>evaluate("location.pathname==='/delivery/guardian'"),'director hands off to Guardian')
+  await wait(()=>contains('当前项目还没有故事圣经'),'empty Guardian explains prerequisites')
+  assert(await evaluate("document.querySelectorAll('.guardian-start ol a').length===3"))
+  await screenshot('prism-guardian-start.png')
   await click('创作向导')
   await wait(()=>contains('本阶段制作备注'),'six stage wizard loaded')
+  assert(await evaluate("document.querySelector('.workflow-checklist').start===1 && document.querySelectorAll('.workflow-checklist li').length===4"))
   await setField('本阶段制作备注','保留原始素材授权。')
   await click('保存本机备注')
   await click('继续下一步')
   await wait(()=>evaluate("new URLSearchParams(location.search).get('step')==='2'"),'wizard proceeds with project context')
+  assert(await evaluate("document.querySelector('.workflow-checklist').start===5 && document.querySelectorAll('.workflow-checklist li').length===4"))
   await screenshot('prism-wizard.png')
+  for (let phase=3;phase<=6;phase++) {
+    await click('继续下一步')
+    await wait(()=>evaluate(`document.querySelector('.workflow-checklist')?.start===${(phase-1)*4+1} && document.querySelectorAll('.workflow-checklist li').length===4`),'four steps in phase '+phase)
+  }
   await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await wait(()=>evaluate("document.documentElement.dataset.theme==='dark'"),'global dark theme')
   await command('Page.reload')
@@ -230,7 +268,9 @@ try {
   const paths = Object.entries(spec.paths).flatMap(([route, operations])=>Object.keys(operations).filter(op=>methods.has(op)).map(method=>({path:route,method:method.toUpperCase()})))
   await writeFile(join(evidenceDir,'v3-01-browser-acceptance.json'),JSON.stringify({browser:'Installed Chrome headless',
     checked_at:new Date().toISOString(),viewports:scopes,primary_navigation_entries:12,legacy_pages_reached:legacyPages,
-    additional_pages_reached:['角色与场景','分镜编辑','文本模型与预算'],actual_render_playback:true,deep_link_reload:true,project_isolation:true,
+    additional_pages_reached:['角色与场景','分镜编辑','模型接入与预算'],actual_render_playback:true,deep_link_reload:true,project_isolation:true,
+    model_connections:{codex_draft_persisted:true,video_draft_persisted:true,verified_text_preset_saved_disabled:true,execution_enabled:connections.execution_enabled},
+    workflow:{six_phases:true,step_count:24,guardian_prerequisite_links:3,project_brief_handoff:true},
     actual_project_creation:true, asset_probe_auto_refresh:true,
     model_calls:{simulated:1,live:0,paid_micros:0},unknown_cost_count:0,openapi_operations:paths,javascript_errors:errors},null,2)+'\n')
   await writeFile(join(evidenceDir,'v3-ui-acceptance.json'),JSON.stringify({

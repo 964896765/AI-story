@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { destinations, navigation, workspaces, type Destination } from '../router/navigation'
 import { useWorkspace } from '../router/workspace'
 import { appearance, toggleAppearance } from '../stores/appearance'
+import WorkflowContext from '../components/ui/WorkflowContext.vue'
 
 const { route, workbench, link } = useWorkspace()
 const router = useRouter()
@@ -39,7 +40,7 @@ const descriptions: Partial<Record<Destination,string>> = {
   library:'核对素材授权，整理和下载交付文件。',
   operations:'管理发行记录、推广文件和结算。',
   system:'检查数据库、视频工具与后台进程。',
-  models:'配置文本供应商和项目预算，查看用量记录。',
+  models:'管理 Codex、文本和媒体模型的接入配置、预算与用量。',
 }
 const commandResults = computed(() => workspaces.flatMap(workspace => workspace.pages.map(page => ({
   page, label:destinations[page].label, group:workspace.label, icon:workspace.icon,
@@ -181,6 +182,7 @@ onUnmounted(() => { window.removeEventListener('keydown',keyboard); clearInterva
         </header>
         <p v-if="workbench.error" class="error" role="alert">{{ workbench.error }} <button @click="workbench.error = ''">关闭</button></p>
         <p v-else-if="workbench.initialized && route.query.project && !workbench.projectId" class="error" role="alert">链接中的项目不可用，请选择现有项目。</p>
+        <WorkflowContext v-if="workbench.initialized" :page="name" />
         <slot v-if="workbench.initialized" />
         <p v-else-if="!workbench.error" class="empty" role="status">正在读取项目…</p>
       </main>

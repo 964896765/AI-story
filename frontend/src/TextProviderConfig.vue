@@ -7,6 +7,13 @@ const form = reactive({ label: '', base_url: '', model: '', secret_env: 'AI_STOR
   input_per_million: '', output_per_million: '', input_token_limit: 8192, output_token_limit: 2048,
   price_source: '', billing_verified: false, rejection_is_nonbillable: false,
   token_parameter: 'max_completion_tokens', response_format: 'json_schema', timeout_seconds: 60 })
+const template = ref('')
+function useProviderTemplate() {
+  form.label = template.value
+  form.model = ''
+  form.secret_env = 'AI_STORY_TEXT_API_KEY'
+  form.base_url = template.value === 'OpenAI' ? 'https://api.openai.com/v1' : ''
+}
 async function save() {
   busy.value = true; error.value = ''; notice.value = ''
   try {
@@ -27,6 +34,10 @@ async function save() {
     <p class="hint">本阶段授权预算为 0。保存配置不会发出请求。费率留空即未知；核验计费条款不能替代后续明确调用授权。</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
     <form class="create" @submit.prevent="save">
+      <label>供应商模板<select v-model="template" @change="useProviderTemplate">
+        <option value="">自定义兼容接口</option><option>OpenAI</option><option>通义千问</option><option>DeepSeek</option>
+        <option>Claude 兼容网关</option><option>Gemini 兼容网关</option>
+      </select></label>
       <label>供应商配置名称<input v-model="form.label" required maxlength="120"></label>
       <label>Base URL<input v-model="form.base_url" required type="url" placeholder="https://供应商域名/v1" maxlength="500"></label>
       <label>模型名称<input v-model="form.model" required maxlength="160"></label>

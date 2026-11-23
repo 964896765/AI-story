@@ -1,0 +1,14 @@
+{
+  "checked_at": "2026-11-23T01:32:01.214Z",
+  "browser": "Installed Chrome headless",
+  "build": "Vite production preview",
+  "keyboard_navigation": true,
+  "first_load_script_count": 7,
+  "dynamic_diagnostics_script_loaded": true,
+  "logical_cpus": 16,
+  "db_revision": "0016",
+  "disk_free_bytes": 115165274112,
+  "cross_site_write_blocked": true,
+  "request_id_attached": true,
+  "javascript_errors": []
+}

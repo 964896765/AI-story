@@ -1,0 +1,12 @@
+{
+  "ready": true,
+  "worker_online": 1,
+  "database_revision": "0016",
+  "model_page_http": 200,
+  "wizard_http": 200,
+  "codex_cli_detected": true,
+  "external_execution_enabled": false,
+  "live_text_authorized": false,
+  "live_default_budget_micros": 0,
+  "selected_project_overview_verified": true
+}

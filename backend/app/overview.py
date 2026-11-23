@@ -6,7 +6,7 @@ from .accounting import summary as accounting_summary
 from .asset_validation import IMAGE_SUFFIXES
 from .creative import require
 from .db import session
-from .models import Asset, ModelBudget, ModelCall, ProductionRun, Project, StoryEntity, StoryVersion, Task
+from .models import Asset, DirectorPlan, ModelBudget, ModelCall, ProductionRun, Project, StoryEntity, StoryVersion, Task
 from .director_guidance import PROMPT_VERSION as DIRECTOR_PROMPT_VERSION
 from .production import public as production_summary
 from .text_adapters import live_gate
@@ -71,8 +71,22 @@ def overview(project_id: str, db=Depends(session)):
     budgets = db.scalars(select(ModelBudget).where(ModelBudget.project_id == project.id, ModelBudget.mode == 'live')
                          .order_by(ModelBudget.currency)).all()
     accounts = accounting_summary(project.id, db)['by_currency']
+    approved_series_id = db.scalar(select(StoryVersion.id).join(StoryEntity).where(
+        StoryEntity.project_id == project.id, StoryEntity.kind == 'story_bible',
+        StoryVersion.provenance['series_approved'].as_boolean().is_(True),
+    ).order_by(StoryVersion.created_at.desc(), StoryVersion.number.desc()).limit(1))
+    director_plan_id = db.scalar(select(DirectorPlan.id).where(DirectorPlan.project_id == project.id)
+                                 .order_by(DirectorPlan.created_at.desc()).limit(1))
+    adaptation_source_id = db.scalar(select(StoryVersion.id).join(StoryEntity).where(
+        StoryEntity.project_id == project.id, StoryEntity.kind.in_(('novel', 'episode')),
+        StoryVersion.number == StoryEntity.current_version,
+    ).order_by((StoryEntity.kind == 'novel').desc(), StoryVersion.created_at.desc()).limit(1))
+    adopted_candidates = db.scalar(select(func.count()).select_from(Asset).where(
+        asset_scope, Asset.media_info['origin'].as_string() == 'local_still_motion'))
     return {'asset_count': asset_count, 'cover': dict(cover) if cover else None, 'task_counts': task_counts,
             'story_counts': story_counts, 'render_count': render_count, 'delivery_count': delivery_count, 'recent_renders': outputs,
+            'workflow': {'approved_series_id': approved_series_id, 'director_plan_id': director_plan_id,
+                         'adopted_candidates': adopted_candidates, 'adaptation_source_id': adaptation_source_id},
             'draft_review_count': draft_count, 'draft_reviews': draft_reviews, 'latest_run': batch_view,
             'latest_delivery': delivery_view,
             'costs': [{'currency': item['currency'], 'amount_micros': item['amounts_micros']['booked_api'],
