@@ -18,12 +18,15 @@ const filter = ref<typeof filters[number]['id']>('all')
 const events = ref<{ id: number; created_at: string; attempt: number; message: string }[]>([])
 const pageSize = 50
 const labels: Record<string, string> = { queued:'排队中', running:'执行中', succeeded:'已完成', failed:'失败', cancelled:'已取消' }
-const kinds: Record<string, string> = { probe:'读取媒体信息', analyze:'媒体解析', render:'视频剪辑', adapt:'剧情改编', still_motion:'运镜候选', local_voice:'本机配音', timeline_render:'多轨渲染', qc_review:'技术质检', delivery:'整剧交付', promotion:'推广包' }
+const kinds: Record<string, string> = { probe:'读取媒体信息', analyze:'媒体解析', render:'视频剪辑', adapt:'剧情改编', image_candidate:'图片候选', still_motion:'运镜候选', local_voice:'本机配音', timeline_render:'多轨渲染', qc_review:'技术质检', delivery:'整剧交付', promotion:'推广包' }
 const stages: Record<string, string> = { queued:'等待领取', recovered:'中断恢复', inspecting:'检查输入', encoding:'FFmpeg 编码', validating:'验证成片', publishing:'发布输出', succeeded:'完成', failed:'失败', cancelled:'已取消', retry_wait:'等待自动重试', checkpoint:'核验检查点', resuming_checkpoint:'复用编码检查点', awaiting_review:'待人工审核', approved:'人工已通过', rejected:'人工已拒绝', settlement_recovery:'恢复用量核算', dispatching:'模型调用处理中', received:'响应已保存，核算中' }
+Object.assign(stages,{image_verify_inputs:'核对固定图片输入',image_simulate:'离线模拟',image_dispatch:'等待图片接口响应',image_decode:'解码核对',image_publish:'保存候选'})
 let timer: ReturnType<typeof setInterval> | undefined
 let pending: AbortController | undefined
 const isRender = (task: Task) => ['render', 'timeline_render'].includes(task.kind)
 const finished = (task: Task) => isRender(task) && task.status === 'succeeded'
+const canRetry = (task: Task) => ['failed','cancelled'].includes(task.status) && task.kind!=='adapt'
+  && (task.kind!=='image_candidate' || task.parameters.mode==='mock')
 const shown = computed(() => tasks.value.slice(0,pageSize))
 const hasNext = computed(() => tasks.value.length > pageSize)
 const title = (task: Task) => task.kind==='adapt' && task.parameters.purpose==='director_advice' ? '总导演规划建议'
@@ -141,7 +144,8 @@ watch(() => workbench.refreshCount, () => { void refresh() })
     <div class="actions record-buttons">
       <button @click="logs(task.id)">日志</button>
       <button v-if="['queued', 'running'].includes(task.status)" :disabled="busy || task.cancel_requested" @click="control(task, 'cancel')">取消</button>
-      <button v-if="task.kind !== 'adapt' && ['failed', 'cancelled'].includes(task.status)" :disabled="busy" @click="control(task, 'retry')">安全重试</button>
+      <button v-if="canRetry(task)" :disabled="busy" @click="control(task, 'retry')">安全重试</button>
+      <RouterLink v-if="task.kind==='image_candidate'" :to="{name:'generation',query:{project:workbench.projectId,imageTask:task.id},hash:'#image-candidates'}">打开图片审核</RouterLink>
       <button v-if="finished(task)" @click="preview = task.id">预览成片</button>
       <a v-if="finished(task)" :href="`/api/tasks/${task.id}/output?download=true`">下载成片</a>
     </div>

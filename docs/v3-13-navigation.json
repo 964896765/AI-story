@@ -1,0 +1,42 @@
+{
+  "checked_at": "2026-11-23T05:13:36.669Z",
+  "primary_navigation_entries": 12,
+  "workflow": {
+    "six_phases": true,
+    "step_count": 24,
+    "audited_capabilities": [
+      "local",
+      "local",
+      "partial",
+      "partial",
+      "local",
+      "simulated",
+      "manual",
+      "partial",
+      "local",
+      "partial",
+      "manual",
+      "local",
+      "manual",
+      "manual",
+      "partial",
+      "local",
+      "partial",
+      "manual",
+      "pending",
+      "local",
+      "manual",
+      "local",
+      "local",
+      "local"
+    ],
+    "guardian_prerequisite_links": 3,
+    "project_brief_handoff": true
+  },
+  "model_calls": {
+    "simulated": 1,
+    "live": 0,
+    "paid_micros": 0
+  },
+  "javascript_errors": []
+}

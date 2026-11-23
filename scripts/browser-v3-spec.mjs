@@ -87,6 +87,20 @@ try {
   await wait(()=>contains('已保存规格 v3'),'different aspect saved as a new version')
   const [newer]=(await api(specs)).items
   assert.equal(newer.settings.profile,'portrait')
+  const imageRoute='/generation'+root+'/images'
+  const keyframe={spec_version_id:fixed.id,source_version_id:approved.version_id,shot_id:'pilot-shot',
+    prompt:'港灯关键帧验收',idempotency_key:'fixed-keyframe'}
+  await blocked(imageRoute,{...keyframe,spec_version_id:newer.id},422,'不一致')
+  const queuedKeyframe=await post(imageRoute,keyframe)
+  let renderedKeyframe
+  await wait(async()=>{
+    renderedKeyframe=(await api(imageRoute)).find(item=>item.id===queuedKeyframe.id)
+    if (renderedKeyframe?.status==='failed') throw new Error(JSON.stringify(renderedKeyframe))
+    return renderedKeyframe?.status==='succeeded'
+  },'actual image decode for fixed approved shot')
+  assert.equal(renderedKeyframe.source.contract_sha256,firstHash)
+  assert.equal(renderedKeyframe.references[0].id,image.id)
+  assert.equal(renderedKeyframe.output.width,1024)
   const mixed=await create('story_bible','混用规格的计划',bible(board,newer.id),'mixed-plan')
   await blocked('/series/entities/'+mixed.id+'/approve',approve('mixed',mixed),422,'production_spec_storyboard')
   await click('比较规格与影响')
@@ -236,6 +250,7 @@ try {
     pinned_version:fixed.version,stable_contract_sha256:firstHash,independent_app_reload:true,isolated_project:true,
     incomplete_approval_blocked:true,wrong_aspect_and_region_blocked:true,legacy_browser_note_preserved:true,
     approved_run_id:batch.id,render_and_qc_passed:true,verified_zip_bytes:bytes.length,
+    simulated_keyframe_fixed_contract:renderedKeyframe.source.contract_sha256,wrong_keyframe_spec_blocked:true,
     delivery_spec:deliveredSpec,external_paid_calls:0,javascript_errors:errors,
   },null,2)+'\n')
   console.log('Production spec Chrome: revision, restore, fresh app read, fixed candidate, director batch, QC and verified delivery passed.')

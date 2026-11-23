@@ -176,10 +176,11 @@ try {
     await wait(()=>evaluate(`document.querySelector('.workflow-checklist')?.start===${(phase-1)*4+1} && document.querySelectorAll('.workflow-checklist li').length===4`),'four steps in phase '+phase)
     auditedCapabilities.push(...await readCapabilities())
     if(phase===5) {
-      const pendingLinks=await evaluate(`Array.from(document.querySelectorAll('.workflow-checklist li')).filter(
-        item=>item.querySelector('[data-capability="pending"]')).map(item=>{const link=item.querySelector('a');
-        return [link.textContent.trim(),new URL(link.href).pathname,new URL(link.href).searchParams.get('flow')];})`)
-      assert.deepEqual(pendingLinks,[['打开本机工作区','/ai/candidates','17'],['打开本机工作区','/ai/candidates','19']])
+      const generationLinks=await evaluate(`Array.from(document.querySelectorAll('.workflow-checklist li')).map(item=>{
+        const link=item.querySelector('a'), url=new URL(link.href);
+        return [link.textContent.trim(),url.pathname,url.searchParams.get('flow')];
+      }).filter(([,path,step])=>path==='/ai/candidates' && ['17','19'].includes(step))`)
+      assert.deepEqual(generationLinks,[['打开工作区','/ai/candidates','17'],['打开本机工作区','/ai/candidates','19']])
       await screenshot('prism-workflow-capabilities.png')
       await size(390,844,true)
       assert(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'))
@@ -188,7 +189,7 @@ try {
   }
   assert.deepEqual(auditedCapabilities,[
     'local','local','partial','partial','local','simulated','manual','partial','local','partial','manual','local',
-    'manual','manual','partial','local','pending','manual','pending','local','manual','local','local','local',
+    'manual','manual','partial','local','partial','manual','pending','local','manual','local','local','local',
   ])
   await evaluate("document.querySelector('button[aria-label=\"切换主题\"]').click()")
   await wait(()=>evaluate("document.documentElement.dataset.theme==='dark'"),'global dark theme')

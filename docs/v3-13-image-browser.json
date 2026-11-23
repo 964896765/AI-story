@@ -1,0 +1,14 @@
+{
+  "mode": "mock",
+  "width": 1024,
+  "height": 1024,
+  "candidate_sha256": "68f36ebe8e0af5ea475aa40a56407abfe35ca830687dc45b6b4268d645b1ecef",
+  "reference_sha256": "2ca8f060efdb395d5736fa8078e74529d0e54532201d798b33436f0a324e9095",
+  "adoption_survives_reload": true,
+  "queue_link_opens_candidate": true,
+  "required_checklist_blocked_until_checked": true,
+  "real_execution_enabled": false,
+  "external_cost_micros": 0,
+  "mobile_no_horizontal_overflow": true,
+  "javascript_errors": []
+}

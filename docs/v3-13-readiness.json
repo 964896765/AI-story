@@ -1,0 +1,15 @@
+{
+  "ready": true,
+  "schema": "0018",
+  "worker_online": 1,
+  "projects": 7,
+  "generation_page_http": 200,
+  "image_history_http": 200,
+  "latest_frontend": true,
+  "mock_image_available": true,
+  "live_image_authorized": false,
+  "live_image_quote": null,
+  "live_image_requests_sent": 0,
+  "live_text_authorized": false,
+  "active_paid_budgets": 0
+}

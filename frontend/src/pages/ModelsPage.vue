@@ -8,7 +8,7 @@ import { api, post } from '../services/api'
 const { workbench, query, link, go } = useWorkspace()
 const catalog = [
   ['codex','Codex','工程维护','为后续官方 Codex 集成记录模型偏好，本机仅检查命令是否可发现。'],
-  ['openai-image','OpenAI 图片','角色与关键帧','保存图片适配器的预备配置。'],
+  ['openai-image','OpenAI 图片','角色与关键帧','配置单张 PNG 候选的 OpenAI Images 接口。'],
   ['tongyi-image','通义万相图片','角色与关键帧','保存图片适配器的预备配置。'],
   ['wan-video','通义万相视频','动态镜头','保存视频适配器的预备配置。'],
   ['hailuo-video','MiniMax 海螺','动态镜头','保存视频适配器的预备配置。'],
@@ -46,7 +46,7 @@ async function save() {
     const reply=await post<{settings:Draft}>('/models/connections/'+selected.value,{...form,model:form.model.trim()})
     if(registry.value) registry.value.drafts[selected.value]=reply.settings
     Object.assign(form,reply.settings)
-    notice.value='配置草稿已保存，等待执行适配器接入。'
+    notice.value=selected.value==='openai-image'?'配置已保存。图片工作区会检查项目授权和可用预算。':'配置草稿已保存，等待执行适配器接入。'
   } catch (error) { failure.value=String(error) }
   finally { saving.value=false }
 }
@@ -58,7 +58,7 @@ onMounted(load)
     <section class="model-summary">
       <div><ShieldCheck :size="20" aria-hidden="true" /><span><strong>{{textStatus ? (textStatus.live_authorized ? '文本调用开关已开启' : '真实文本调用关闭') : '文本开关状态待读取'}}</strong><small>文本额度和用量在下方单独管理</small></span></div>
       <div><Cpu :size="20" aria-hidden="true" /><span><strong>{{workbench.health==='ready' ? '本机服务就绪' : '本机服务待确认'}}</strong><small>FFmpeg 运镜、系统配音与技术质检</small></span></div>
-      <div><Cable :size="20" aria-hidden="true" /><span><strong>外部生成与 Codex 待接入</strong><small>可提前保存配置草稿</small></span></div>
+      <div><Cable :size="20" aria-hidden="true" /><span><strong>生成模型与 Codex</strong><small>可保存接入配置并查看使用条件</small></span></div>
       <a href="#text-model-settings">配置文本与额度 <ArrowRight :size="15" aria-hidden="true" /></a>
     </section>
     <section class="model-config">
@@ -78,6 +78,7 @@ onMounted(load)
         <p v-else-if="!registry" role="status">正在读取本机配置…</p>
         <template v-else>
           <p v-if="selected==='codex'" class="hint">本机命令{{registry.codex_cli_detected ? '已检测到' : '未检测到'}} · 账号能力未核验 · 生产创作 Agent 使用单独的模型与审批流程。</p>
+          <p v-else-if="selected==='openai-image'" class="hint">真实调用默认关闭，需本机项目授权、密钥和共享预算。无授权时可在 <RouterLink :to="link('generation')">图片候选工作区</RouterLink> 运行离线模拟。</p>
           <p v-else class="hint">执行适配器待接入 · 实际费率未知。适配后仍须完成授权、报价和预算检查。</p>
           <form class="create" @submit.prevent="save">
             <label>{{selected==='codex' ? 'Codex 首选模型 ID' : '供应商模型 ID'}}<input v-model.trim="form.model" required maxlength="160"></label>

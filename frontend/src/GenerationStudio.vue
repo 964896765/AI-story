@@ -170,7 +170,7 @@ onUnmounted(()=>clearInterval(timer))
     <details class="generation-setup" :open="selected?.status!=='succeeded'">
       <summary>制作本机运镜候选</summary>
       <div class="setup-content">
-        <p class="hint">本机 CPU 输出 24 fps 的无声 MP4，外部调用费用 ¥0。<span v-if="modeList.length">{{ modeList.filter(mode=>!mode.available).map(mode=>mode.label).join('、') }}待接入。</span></p>
+        <p class="hint">本机 CPU 输出 24 fps 的无声 MP4，外部调用费用 ¥0。<span v-if="modeList.length">{{ modeList.filter(mode=>!mode.available && mode.id!=='ai_image').map(mode=>mode.label).join('、') }}待接入。</span></p>
         <form class="create generation-form" @submit.prevent="submit">
           <label>参考图片<select v-model="assetId" required>
             <option value="">选择项目授权图片</option><option v-for="asset in images" :key="asset.id" :value="asset.id">{{ asset.name }}</option>

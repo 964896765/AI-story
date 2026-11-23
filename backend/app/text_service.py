@@ -31,7 +31,8 @@ def configure_budget(db,project_id,body):
     require(db,Project,project_id)
     db.scalar(select(Project).where(Project.id==project_id).with_for_update())
     if body.mode=='live' and (body.limit_micros>0 or body.authorization_id):
-        if not live_gate() or body.authorization_id!=os.getenv('AI_STORY_LIVE_AUTHORIZATION_ID'):
+        from .image_budget import authorized_project
+        if not (live_gate() or authorized_project(project_id)) or body.authorization_id!=os.getenv('AI_STORY_LIVE_AUTHORIZATION_ID'):
             raise HTTPException(403,'真实预算保持0：本机未启用且未获得后续明确调用授权')
     budget=db.scalar(select(ModelBudget).where(ModelBudget.project_id==project_id,ModelBudget.mode==body.mode,ModelBudget.currency==body.currency).with_for_update())
     if not budget:

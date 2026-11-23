@@ -1,0 +1,38 @@
+{
+  "tested_at": "2026-11-23T05:07:53.288Z",
+  "versions": [
+    1,
+    2,
+    3,
+    4
+  ],
+  "pinned_version": 2,
+  "stable_contract_sha256": "c689fe61a38bfdb314ceecfba74da695cfe530d501a76e2427148018155128cc",
+  "independent_app_reload": true,
+  "isolated_project": true,
+  "incomplete_approval_blocked": true,
+  "wrong_aspect_and_region_blocked": true,
+  "legacy_browser_note_preserved": true,
+  "approved_run_id": "0c3cbc35-f5b6-43aa-963d-c3001be35034",
+  "render_and_qc_passed": true,
+  "verified_zip_bytes": 227806,
+  "simulated_keyframe_fixed_contract": "c689fe61a38bfdb314ceecfba74da695cfe530d501a76e2427148018155128cc",
+  "wrong_keyframe_spec_blocked": true,
+  "delivery_spec": {
+    "delivery_settings": {
+      "episode_count": 1,
+      "episode_duration_ms": 1500,
+      "fps": 24,
+      "height": 720,
+      "platform": "local-test",
+      "profile": "square",
+      "region": "CN",
+      "width": 720
+    },
+    "id": "aa37c5f8-5521-4a21-afc2-5c13c3f6f16e",
+    "sha256": "a3edeee6eddae6ed22dd7909dcaa9a2301e590471569b1bf2517a06a5c09d9d2",
+    "version": 2
+  },
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

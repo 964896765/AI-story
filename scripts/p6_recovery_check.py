@@ -76,7 +76,7 @@ def manifest(connection, storage, revision, complete=False):
 
 def verify_restored_api(url,path,projects,assets,revision):
     env={**os.environ,'DATABASE_URL':url.render_as_string(hide_password=False),
-         'STORAGE_ROOT':str(path),'AI_STORY_ENABLE_PAID_TEXT':'0','AI_STORY_RESTORE_REVISION':revision}
+         'STORAGE_ROOT':str(path),'AI_STORY_ENABLE_PAID_TEXT':'0','AI_STORY_ENABLE_PAID_IMAGE':'0','AI_STORY_RESTORE_REVISION':revision}
     command = """
 from fastapi.testclient import TestClient
 from app.main import app
@@ -132,7 +132,8 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
                 if copied[key] != sha256(path) or (digest and copied[key] != digest):
                     raise RuntimeError('Referenced file hash differs: ' + key)
             (directory/'files.json').write_text(json.dumps(copied, indent=2)+'\n',encoding='utf-8')
-            for arguments in (('upgrade',target),('check',),('downgrade',before),('upgrade',target),('check',)):
+            checks = (('check',),) if before==target else (('upgrade',target),('check',),('downgrade',before),('upgrade',target),('check',))
+            for arguments in checks:
                 run_alembic(restored,*arguments)
             with TemporaryDirectory(prefix='upgrade-recovery-',dir=directory) as folder:
                 restored_store = Path(folder)
@@ -145,7 +146,7 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
                     'restored_separate_storage':True,'projects_verified':projects,'assets_verified':assets,
                     'files_verified':len(copied),'dump_sha256':sha256(dump),
                     'restored_api':api,'complete_production_storage':complete,
-                    'migration_roundtrip':[f'upgrade {target}','schema check',f'downgrade {before}',f'upgrade {target}','schema check']}
+                    'migration_roundtrip':[' '.join(item) if item!=('check',) else 'schema check' for item in checks]}
         finally:
             connection.execute(sql.SQL('DROP DATABASE {}').format(sql.Identifier(db_name)))
 
@@ -153,8 +154,10 @@ def snapshot_and_verify(source, storage, container, directory, before, target, c
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--upgrade', action='store_true', help='Upgrade the backed-up database after successful rehearsal')
-    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14','director','director-batches','model-connections','production-specs','agent-runs'], default='p6')
+    parser.add_argument('--stage', choices=['p6','p7','p10','p11','p12','p13','p14','director','director-batches','model-connections','production-specs','agent-runs','image-candidates'], default='p6')
     args = parser.parse_args()
+    if args.stage=='image-candidates' and args.upgrade:
+        parser.error('The current image stage uses the existing 0018 schema and does not require --upgrade.')
     if args.upgrade:
         for port in (18000, 15173):
             with socket.socket() as listener:
@@ -182,11 +185,12 @@ def main():
         'model-connections':('0015','0016'),
         'production-specs':('0016','0017'),
         'agent-runs':('0017','0018'),
+        'image-candidates':('0018','0018'),
     }[args.stage]
     directory = ROOT / 'data/backups' / (args.stage+'-before-' + uuid4().hex[:12])
     directory.mkdir(parents=True)
     report = snapshot_and_verify(source, storage, container, directory, before, target,
-                                 complete=args.stage in ('p14','director','director-batches','model-connections','production-specs','agent-runs'))
+                                 complete=args.stage in ('p14','director','director-batches','model-connections','production-specs','agent-runs','image-candidates'))
     report['backup_directory'] = directory.relative_to(ROOT).as_posix()
     if args.upgrade:
         run_alembic(source,'upgrade',target)

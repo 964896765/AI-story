@@ -38,6 +38,7 @@ from .overview import router as overview_router
 from .model_connections import router as model_connections_router
 from .production_specs import router as production_specs_router
 from .agent_runs import router as agent_runs_router
+from .image_candidates import KIND as IMAGE_TASK, router as image_candidates_router
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
@@ -60,6 +61,7 @@ app.include_router(overview_router)
 app.include_router(model_connections_router)
 app.include_router(production_specs_router)
 app.include_router(agent_runs_router)
+app.include_router(image_candidates_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -271,6 +273,8 @@ def retry(task_id: str, db: DBDep):
         raise HTTPException(404, '任务不存在')
     if task.kind=='adapt':raise HTTPException(409,'模型任务不得通过通用重试重发；请在模型调用记录中核对费用并显式创建新调用')
     if task.kind=='agent_step':raise HTTPException(409,'请在 AI 总导演中重试 Agent 运行')
+    if task.kind==IMAGE_TASK and task.parameters.get('mode')!='mock':
+        raise HTTPException(409,'真实图片任务不会自动重发，请先核对调用结果和账单')
     if task.status not in ('failed','cancelled'):
         raise HTTPException(409, '仅失败或已取消任务可重试')
     task.status, task.error, task.lease_until = 'queued', None, None
@@ -296,10 +300,14 @@ def cancel(task_id: str, db: DBDep):
         return task
     if task.status not in ('queued','running'):
         raise HTTPException(409,'任务已结束')
+    if task.kind==IMAGE_TASK:
+        from .image_budget import release_unsent
+        release_unsent(db,task,'发送前取消')
     task.cancel_requested = True
     if task.status == 'queued':
         task.status, task.stage, task.finished_at = 'cancelled','cancelled',now()
-    db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message='用户请求取消；已发布成片的并发完成结果优先'))
+    message = '图片取消已记录，已发送的调用保留预算等待账单' if task.kind==IMAGE_TASK else '用户请求取消；已发布成片的并发完成结果优先'
+    db.add(TaskEvent(task_id=task.id,attempt=task.attempt,message=message))
     db.commit()
     return task
 

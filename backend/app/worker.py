@@ -45,13 +45,18 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery', 'promotion', 'agent_step') and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery', 'promotion', 'agent_step', 'image_candidate') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
             task.status, task.stage = 'failed', 'failed'
             task.error = 'Worker lease expired; safe to retry local task'
             task.finished_at = now()
+            if task.kind=='image_candidate':
+                from .image_budget import release_unsent
+                release_unsent(db,task,'发送前 Worker 中断并达到尝试上限')
+                if task.output.get('billing',{}).get('sent_at'):
+                    task.error = '图片调用结果未知，预算继续占用，请核对账单'
         event(db, task, '检测到 Worker 中断；已安全恢复为 '+task.status)
 
 def _run_once(heartbeat):
@@ -129,6 +134,9 @@ def _run_once(heartbeat):
         elif kind=='agent_step':
             from .agent_runs import execute
             output=execute(task_id,project_id,inputs,parameters,update,Session)
+        elif kind=='image_candidate':
+            from .image_candidates import execute
+            output=execute(task_id,attempt,update,Session)
         elif kind == 'analyze':
             from .analysis_service import execute_analysis
             analysis_result = execute_analysis(task_id, attempt, parameters, inputs, update, Session)
@@ -168,6 +176,7 @@ def _run_once(heartbeat):
         error = str(exc)[-4000:]
         code,retryable=classify_error(exc)
         if kind=='adapt':code=getattr(exc,'code','MODEL_PROCESSING_INTERRUPTED');retryable=False
+        if kind=='image_candidate':code=getattr(exc,'code',code)
     with Session.begin() as db:
         task = db.scalar(select(Task).where(Task.id == task_id).with_for_update())
         if task.status != 'running' or task.worker_token != token:
@@ -181,10 +190,15 @@ def _run_once(heartbeat):
         # Publication wins a cancellation racing the final atomic publish.
         if task.cancel_requested and not (kind in ('render','still_motion','local_voice','timeline_render','delivery','promotion') and output):
             cancelled = True
-            if kind in ('analyze','agent_step'):
+            if kind in ('analyze','agent_step','image_candidate'):
                 output = {}
-            if kind=='agent_step':
+            if kind in ('agent_step','image_candidate'):
                 code = 'CANCELLED'
+        if kind=='image_candidate':
+            if (error or cancelled) and (cancelled or not retryable or task.attempt>=task.max_attempts):
+                from .image_budget import release_unsent
+                release_unsent(db,task,'发送前执行终止')
+            output = {**task.output,**output}
         task.status = 'cancelled' if cancelled else ('failed' if error else 'succeeded')
         task.stage = task.status
         task.output, task.error = output, error
@@ -216,6 +230,7 @@ def _run_once(heartbeat):
                          'delivery':'交付包与文件哈希已核验',
                          'promotion':'实际推广片段和封面已制作，等待人工审阅',
                          'agent_step':'已保存并校验 Agent 角色结果' if task.status=='succeeded' else 'Agent 步骤已取消',
+                         'image_candidate':'图片已解码验证，等待内容审核' if task.status=='succeeded' else '图片任务已取消',
                          'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
