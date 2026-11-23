@@ -21,7 +21,7 @@ BROWSER_PHASES = ('p5', 'p6', 'p6-ocr', *(f'p{number}' for number in range(7,15)
 V3_PHASES = ('v3-01', 'v3-asr', 'v3-long-asr', 'v3-guardian', 'v3-director', 'v3-spec', 'v3-agent', 'v3-image')
 LOAD_PHASE = 'v3-production-load'
 
-def run_browser(env, path, phases):
+def run_browser(env, path, phases, browser_dist=None):
     api_port, browser_port = 18006, 15179
     for port in (api_port, browser_port):
         with socket.socket() as listener:
@@ -35,10 +35,14 @@ def run_browser(env, path, phases):
     env = {**env, "AI_STORY_QA_API_PORT":str(api_port), "AI_STORY_QA_WEB_PORT":str(browser_port),
            "AI_STORY_QA_PYTHON":executable,
            "FRONTEND_ORIGIN":f"http://127.0.0.1:{browser_port}"}
+    preview = browser_dist is not None or bool({'p14','p6-ocr','p10','p11',LOAD_PHASE,*V3_PHASES}.intersection(phases))
+    vite_mode = ['preview'] if preview else []
+    if browser_dist is not None:
+        vite_mode.extend(['--outDir',str(browser_dist.resolve())])
     jobs = [
         ("api", [executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)], "backend"),
         ("worker", [executable, "-m", "app.worker"], "backend"),
-        ("vite", ["node", "node_modules/vite/bin/vite.js", *(["preview"] if {'p14','p6-ocr','p10','p11',LOAD_PHASE,*V3_PHASES}.intersection(phases) else []),
+        ("vite", ["node", "node_modules/vite/bin/vite.js", *vite_mode,
                   "--host", "127.0.0.1", "--strictPort", "--port", str(browser_port)], "frontend"),
     ]
     with ExitStack() as stack:
@@ -61,6 +65,7 @@ def main():
     parser.add_argument("--all-browsers", action="store_true", help="Run P5–P14 flows against the built frontend")
     parser.add_argument("--v3-browsers", action="store_true", help="Run V3 workflows, the eleven V2 flows and multi-episode production load")
     parser.add_argument("--browser-evidence", type=Path, default=ROOT / "data" / "tmp")
+    parser.add_argument("--browser-dist", type=Path, help="Preview a separately built frontend; leave the running workbench build intact")
     parser.add_argument("--test-file", help="Optional pytest path or node ID relative to backend")
     args = parser.parse_args()
     source = make_url(os.getenv("DATABASE_URL") or dotenv_values(ROOT / ".env")["DATABASE_URL"])
@@ -99,7 +104,7 @@ def main():
                     run_browser({**env, "STORAGE_ROOT": folder, "AI_STORY_QA_ROOT": folder,
                                  "AI_STORY_QA_EVIDENCE": str(evidence)}, Path(folder),
                                 (*V3_PHASES,*BROWSER_PHASES,LOAD_PHASE) if args.v3_browsers else
-                                BROWSER_PHASES if args.all_browsers else (args.browser_phase,))
+                                BROWSER_PHASES if args.all_browsers else (args.browser_phase,), args.browser_dist)
         finally:
             connection.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(db_name)))
 

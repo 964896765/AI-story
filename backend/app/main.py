@@ -39,6 +39,7 @@ from .model_connections import router as model_connections_router
 from .production_specs import router as production_specs_router
 from .agent_runs import router as agent_runs_router
 from .image_candidates import KIND as IMAGE_TASK, router as image_candidates_router
+from .workspace_context import router as workspace_context_router
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
@@ -62,6 +63,7 @@ app.include_router(model_connections_router)
 app.include_router(production_specs_router)
 app.include_router(agent_runs_router)
 app.include_router(image_candidates_router)
+app.include_router(workspace_context_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]

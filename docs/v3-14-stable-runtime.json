@@ -1,0 +1,10 @@
+{
+  "stable_local_build": true,
+  "isolated_frontend_build": true,
+  "branch_context_deployed_to_stable": false,
+  "service_ready": true,
+  "schema_ok": true,
+  "online_workers": 1,
+  "live_text_authorized": false,
+  "paid_budget_micros": 0
+}

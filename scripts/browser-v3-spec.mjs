@@ -244,6 +244,78 @@ try {
   await wait(()=>contains('质检与当前授权通过'),'delivery preflight reads the prior spec and actual rights')
   await wait(()=>contains('固定制作规格 v2'),'delivery displays the fixed version')
   await screenshot('production-spec-delivery.png')
+
+  const contextPath=root+'/workspace-context'
+  const context=await api(contextPath+'?'+new URLSearchParams({run:batch.id,shot:'pilot-shot'}))
+  assert.equal(context.plan.id,approved.version_id)
+  assert.equal(context.run_id,batch.id)
+  assert.equal(context.episode.storyboard_version_id,board.version_id)
+  assert.equal(context.production_spec.id,fixed.id)
+  assert.equal(context.shots[0].contract_sha256,firstHash)
+  const foreignContext=await fetch(base+'/api/projects/'+other.id+'/workspace-context?run='+batch.id)
+  assert.equal(foreignContext.status,404)
+  const conflict=await fetch(base+'/api'+contextPath+'?'+new URLSearchParams({run:batch.id,plan:incomplete.version_id}))
+  assert.equal(conflict.status,409)
+  const contextText=(text)=>evaluate(`document.querySelector('.workspace-focus')?.innerText.includes(${JSON.stringify(text)})`)
+  const hasContextShot=()=>evaluate("document.querySelector('.workspace-focus select option[value=pilot-shot]')!==null")
+  async function openLink(label,selector='a') {
+    await wait(()=>evaluate(`(() => {
+      const target=Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(item=>item.textContent.trim().startsWith(${JSON.stringify(label)}));
+      if (!target) return false;
+      target.click();return true;
+    })()`),'link '+label)
+  }
+  await command('Page.navigate',{url:link('/')})
+  await wait(()=>contextText('固定规格 v2'),'overview reads approved rather than latest spec')
+  await setField('制作分集','1')
+  await wait(hasContextShot,'focused episode lists its exact shot')
+  await setField('制作镜头','pilot-shot')
+  await wait(()=>contextText('继续当前镜头'),'overview can continue the saved location')
+  await command('Page.reload')
+  await wait(()=>contextText('继续当前镜头'),'focus restored from URL')
+  await openLink('打开本集固定分镜','.workspace-focus a')
+  await wait(()=>evaluate(`location.pathname==='/creative/storyboard' && new URLSearchParams(location.search).get('version')===${JSON.stringify(board.version_id)} && new URLSearchParams(location.search).get('shot')==='pilot-shot'`),'opens the fixed storyboard with its shot')
+  await openLink('项目总览','nav a[data-workspace]')
+  await wait(()=>contextText('继续当前镜头'),'overview retains the location after visiting storyboard')
+  await openLink('继续当前镜头','.workspace-focus a')
+  await wait(()=>evaluate("location.pathname==='/delivery/guardian' && new URLSearchParams(location.search).get('shot')==='pilot-shot'"),'legacy Guardian parameters still target exact shot')
+  await wait(()=>contextText('固定规格 v2'),'Guardian shows the fixed spec')
+  await openLink('AI 总导演','nav a[data-workspace]')
+  await wait(()=>evaluate("location.pathname==='/director' && new URLSearchParams(location.search).get('focusShot')==='pilot-shot'"),'sidebar navigation carries verified focus')
+  await wait(()=>contextText('固定规格 v2'),'same reference in director')
+  await setField('制作指令','本轮只测试未保存的导演指令')
+  await setField('制作镜头','')
+  await wait(()=>contextText('固定规格 v2'),'updated sidebar location on same view')
+  assert(await evaluate("Array.from(document.querySelectorAll('textarea')).some(field=>field.value==='本轮只测试未保存的导演指令')"))
+  await command('Page.navigate',{url:link('/production',{run:batch.id,episode:1})})
+  await wait(()=>contextText('固定规格 v2'),'historical run drives location on legacy link')
+  await click('打开本集镜头审核')
+  await wait(hasContextShot,'production episode handoff')
+  await setField('制作镜头','pilot-shot')
+  await wait(()=>contextText('打开镜头审核'),'explicit open for selected shot')
+  await openLink('打开镜头审核','.workspace-focus a')
+  await wait(()=>evaluate("new URLSearchParams(location.search).get('shot')==='pilot-shot'"),'exact episode and shot on review page')
+  await wait(()=>contextText('返回原批次'),'return action anchored to actual run')
+  await wait(()=>contains('打开生成与候选审核'),'Guardian content and shot actions loaded')
+  await evaluate("window.scrollTo(0,0)")
+  await screenshot('workspace-context-guardian.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  assert(await evaluate("document.querySelector('.workspace-focus').scrollWidth<=document.querySelector('.workspace-focus').clientWidth+1"))
+  await command('Emulation.clearDeviceMetricsOverride')
+  await openLink('打开生成与候选审核')
+  await wait(()=>evaluate("document.querySelector('video[aria-label=当前候选]')?.videoWidth===720"),'exact previously rendered candidate is playable')
+  await wait(()=>contextText('返回原批次'),'original batch context follows the candidate')
+  await openLink('返回原批次','.workspace-focus a')
+  await wait(()=>evaluate(`location.pathname==='/production' && new URLSearchParams(location.search).get('run')===${JSON.stringify(batch.id)} && document.querySelector('#production-episode-1.linked-episode')!==null`),'return restores exact run and episode')
+  await setField('当前项目',other.id)
+  await wait(()=>evaluate(`new URLSearchParams(location.search).get('project')===${JSON.stringify(other.id)} && !new URLSearchParams(location.search).has('focusPlan') && !document.querySelector('.workspace-focus')`),'project switch clears previous location')
+  await writeFile(join(evidenceDir,'workspace-context-browser.json'),JSON.stringify({
+    fixed_spec_version:fixed.version,latest_spec_version:restored.version,shot:context.shot,
+    fixed_contract_sha256:firstHash,scope_conflict_http:conflict.status,foreign_run_http:foreignContext.status,
+    overview_reload:true,nav_keeps_location:true,fixed_storyboard_opened:true,original_run_and_episode_reopened:true,candidate_video_width:720,
+    switched_project_cleared_location:true,unsaved_director_input_preserved:true,mobile_context_no_overflow:true,
+    external_paid_calls:0,javascript_errors:errors,
+  },null,2)+'\n')
   assert.deepEqual(errors,[])
   await writeFile(join(evidenceDir,'production-spec-browser.json'),JSON.stringify({
     tested_at:new Date().toISOString(),versions:[1,fixed.version,newer.version,restored.version],

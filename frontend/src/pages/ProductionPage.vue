@@ -32,6 +32,7 @@ const jobs=computed(()=>counts.value && Object.values(counts.value).reduce((sum,
     id="series-production"
     :initial-episode="query('episode')"
     @inspect-timeline="(version, run, episode, clip) => go('timeline', { timeline: version, run, episode: String(episode), clip })"
+    @inspect-shots="(version, run, episode) => go('guardian', { version, episode, focusPlan:version, focusRun:run, focusEpisode:episode, focusShot:undefined })"
     @open-delivery="run => go('library', { run })" />
 </template>
 <style scoped>

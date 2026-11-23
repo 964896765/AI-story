@@ -6,6 +6,7 @@ import { destinations, navigation, workspaces, type Destination } from '../route
 import { useWorkspace } from '../router/workspace'
 import { appearance, toggleAppearance } from '../stores/appearance'
 import WorkflowContext from '../components/ui/WorkflowContext.vue'
+import WorkspaceFocus from '../components/ui/WorkspaceFocus.vue'
 
 const { route, workbench, link } = useWorkspace()
 const router = useRouter()
@@ -183,6 +184,7 @@ onUnmounted(() => { window.removeEventListener('keydown',keyboard); clearInterva
         <p v-if="workbench.error" class="error" role="alert">{{ workbench.error }} <button @click="workbench.error = ''">关闭</button></p>
         <p v-else-if="workbench.initialized && route.query.project && !workbench.projectId" class="error" role="alert">链接中的项目不可用，请选择现有项目。</p>
         <WorkflowContext v-if="workbench.initialized" :page="name" />
+        <WorkspaceFocus v-if="workbench.initialized" />
         <slot v-if="workbench.initialized" />
         <p v-else-if="!workbench.error" class="empty" role="status">正在读取项目…</p>
       </main>

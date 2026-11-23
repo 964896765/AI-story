@@ -36,6 +36,7 @@ interface Run {
 const props=defineProps<{projectId:string;initialRun?:string;initialEpisode?:string}>()
 const emit=defineEmits<{
   inspectTimeline:[versionId:string,runId:string,episode:number,clipId?:string];
+  inspectShots:[planVersionId:string,runId:string,episode:number];
   openDelivery:[runId:string]
 }>()
 const plans=ref<Version[]>([]), timelines=ref<Version[]>([]), runs=ref<Run[]>([]), active=ref<Run|null>(null)
@@ -278,6 +279,7 @@ onUnmounted(()=>clearInterval(timer))
           <strong>第 {{ episode.number }} 集</strong><span>{{ states[episode.status] }}<template v-if="episode.reused"> · 已校验复用</template><template v-else-if="episode.render_reused"> · 成片复用</template></span>
           <button v-if="episode.render_status==='succeeded'" :aria-pressed="preview===episode.render_task_id" @click="previewEpisode(episode)">预览本集</button>
           <button @click="inspect(episode)">打开固定时间轴</button>
+          <button @click="emit('inspectShots',active.plan_version_id,active.id,episode.number)">打开本集镜头审核</button>
         </div>
         <p class="hint">渲染 {{ statusLabels[episode.render_status] || episode.render_status }} · 质检 {{ episode.qc_stage==='dependency_failed'?'上游失败未执行':statusLabels[episode.qc_stage] || statusLabels[episode.qc_status] || episode.qc_status }}</p>
         <p v-if="episode.render_error || episode.qc_error" class="error">{{ episode.render_error || episode.qc_error }}</p>

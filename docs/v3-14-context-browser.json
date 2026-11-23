@@ -1,0 +1,18 @@
+{
+  "fixed_spec_version": 2,
+  "latest_spec_version": 4,
+  "shot": "pilot-shot",
+  "fixed_contract_sha256": "488159bad245f434e656cbc3db756fb6881af537e9305d0c53cf3b35b1fb8090",
+  "scope_conflict_http": 409,
+  "foreign_run_http": 404,
+  "overview_reload": true,
+  "nav_keeps_location": true,
+  "fixed_storyboard_opened": true,
+  "original_run_and_episode_reopened": true,
+  "candidate_video_width": 720,
+  "switched_project_cleared_location": true,
+  "unsaved_director_input_preserved": true,
+  "mobile_context_no_overflow": true,
+  "external_paid_calls": 0,
+  "javascript_errors": []
+}

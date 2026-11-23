@@ -1,0 +1,20 @@
+{
+  "before_revision": "0018",
+  "tested_revision": "0018",
+  "restored_separate_database": true,
+  "restored_separate_storage": true,
+  "projects_verified": 7,
+  "assets_verified": 13,
+  "files_verified": 120,
+  "dump_sha256": "0dad522684802c542b2aab3ebe6439513e690f7e2c08ae608adfae4734bbc1ff",
+  "restored_api": {
+    "projects": 7,
+    "assets": 13,
+    "range": 206
+  },
+  "complete_production_storage": true,
+  "migration_roundtrip": [
+    "schema check"
+  ],
+  "backup_directory": "data/backups/image-candidates-before-ee3989eabf12"
+}

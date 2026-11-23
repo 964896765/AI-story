@@ -16,6 +16,8 @@ V3.12 增加 Agent 执行治理。原稿筹备与生产预检支持固定输入�
 
 V3.13 增加图片候选、人工对照审核和采纳入库。OpenAI 图片接口与 P5 预算共用额度账户，协议由模拟传输验收。真实接口待单独授权验收。 [图片候选验收](V3_13_IMAGE_CANDIDATES_ACCEPTANCE.md)
 
+V3.14 在独立分支验收项目总览、生产批次、Guardian、固定分镜与候选的跨页制作定位。 [制作定位验收](V3_14_WORKSPACE_CONTEXT_ACCEPTANCE.md)
+
 Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型仍待接入。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
 
 Guardian 成片对白质检已验证固定配音与字幕配对、字幕内容与时序、近静音与轨道静音阻断、本机听写告警和回听定位。 [对白质检、浏览器证据与回滚](V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)

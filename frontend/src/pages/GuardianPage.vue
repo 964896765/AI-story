@@ -56,6 +56,10 @@ const applicableCandidate=computed(()=>candidate.value?.story_version_id===versi
   candidate.value?.selected_asset_id && candidate.value.output.guardian_review?.request.decision==='approved' ? candidate.value.id : undefined)
 const activeApproval=computed(()=>history.value.find(item=>item.provenance.guardian_manifest)?.version_id===version.value?.version_id)
 const shotFrames=computed(()=>shot.value ? Math.round((shot.value.start_ms+shot.value.duration_ms)*24/1000)-Math.round(shot.value.start_ms*24/1000) : 0)
+const handoff=computed(()=>report.value?.approved && version.value && episode.value ? {
+  focusPlan:version.value.version_id,focusEpisode:episode.value.number,focusShot:shot.value?.shot_id,
+  focusRun:query('focusPlan')===version.value.version_id ? query('focusRun') || undefined : undefined,
+} : {})
 const shotSelect=ref<HTMLSelectElement|null>(null)
 const focusedFrame=ref('')
 const candidateFailure=ref('')
@@ -147,7 +151,8 @@ watch(()=>workbench.projectId,async(project)=>{
     version.value=current; report.value=result; history.value=versions
     const linkedShot=query('shot')
     const linkedEpisode=result.episodes.find(item=>item.shots.some(shot=>shot.shot_id===linkedShot))
-    pickEpisode(linkedEpisode?.number ?? result.issues[0]?.episode ?? result.episodes[0]?.number ?? 0)
+    const requestedEpisode=result.episodes.find(item=>item.number===Number(query('episode')))
+    pickEpisode(linkedEpisode?.number ?? requestedEpisode?.number ?? result.issues[0]?.episode ?? result.episodes[0]?.number ?? 0)
     if (linkedEpisode) { pickShot(linkedShot); candidateId.value=query('candidate') }
   }catch(error){if(token===loadToken)failure.value=String(error)}finally{if(token===loadToken)loading.value=false}
 },{immediate:true})
@@ -258,7 +263,7 @@ async function compare() {
               <p v-if="candidate?.rework">返工原因 · {{candidate.rework.reason}}</p>
               <p v-if="candidate?.error || candidateFailure" class="guardian-error" role="alert">{{candidate?.error || candidateFailure}}</p>
               <template v-if="report.approved && shot.guardian && shot.strategy==='still_motion'">
-                <RouterLink :to="link('generation',{plan:version.version_id,shot:shot.shot_id,asset:candidate?.asset_id || Object.keys(shot.guardian.source_images)[0],candidate:candidate?.id})">打开生成与候选审核</RouterLink>
+                <RouterLink :to="link('generation',{...handoff,plan:version.version_id,shot:shot.shot_id,asset:candidate?.asset_id || Object.keys(shot.guardian.source_images)[0],candidate:candidate?.id})">打开生成与候选审核</RouterLink>
                 <GuardianShotRework v-if="activeApproval" :key="shot.shot_id" :project-id="workbench.projectId" :series-version-id="version.version_id"
                   :shot-id="shot.shot_id" :frames="shotFrames" :source-ids="Object.keys(shot.guardian.source_images)"
                   :candidate-id="applicableCandidate" :candidate-aspect="candidate?.parameters.aspect" @queued="queuedRework" />
@@ -286,7 +291,7 @@ async function compare() {
                 <dt v-if="candidate">实际外部费用</dt><dd v-if="candidate">{{candidate.output.actual_external_cost_micros===0?'¥0':'未知'}}</dd>
               </template>
             </dl>
-            <RouterLink v-if="episode" :to="link('storyboard',{version:episode.storyboard_version_id,shot:shot?.shot_id})">打开固定分镜</RouterLink>
+            <RouterLink v-if="episode" :to="link('storyboard',{...handoff,version:episode.storyboard_version_id,shot:shot?.shot_id})">打开固定分镜</RouterLink>
           </aside>
         </div>
         <section v-if="history.length>1" class="guardian-panel impact-panel">
