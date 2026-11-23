@@ -152,6 +152,47 @@ try {
   await wait(()=>contains('固定制作规格 v2'),'director displays the fixed specification')
   await screenshot('production-spec-director.png')
 
+  const agents=root+'/agents/runs'
+  const hasOption=(id)=>evaluate(`document.querySelector('.agent-workspace option[value=${JSON.stringify(id)}]')!==null`)
+  await wait(()=>hasOption(fixed.id),'Agent fixed spec options')
+  await setField('Agent 工作流','preflight')
+  await wait(()=>hasOption(approved.version_id),'Agent fixed approved plan')
+  await setField('固定制作规格',fixed.id)
+  await setField('固定批准计划',approved.version_id)
+  await wait(()=>hasOption(timeline.version_id),'Agent timeline for approved plan')
+  await setField('固定预检时间轴',timeline.version_id)
+  await setField('Agent 制作目标','核对港灯试制的实际镜头和本机时间轴')
+  await click('保存 Agent 运行草稿')
+  const agentText=text=>evaluate(`document.querySelector('.agent-workspace')?.innerText.includes(${JSON.stringify(text)})`)
+  await wait(()=>agentText('待审批'),'preflight pending approval')
+  await setField('Agent 审批或审核意见','检查规格 v2 的已批准分镜和时间轴。')
+  await click('批准并排队')
+  const [preflightDraft]=await api(agents)
+  let agentPreflight
+  await wait(async()=>{
+    agentPreflight=await api(agents+'/'+preflightDraft.id)
+    if (agentPreflight.status==='failed') throw new Error(JSON.stringify(agentPreflight.steps))
+    return agentPreflight.status==='awaiting_review' && await agentText('待审核')
+  },'five preflight Agent roles')
+  assert.deepEqual(agentPreflight.steps.map(step=>step.id),['director','art','storyboard','shot_review','postproduction'])
+  assert(agentPreflight.steps.every(step=>step.status==='succeeded'))
+  assert.equal(agentPreflight.inputs.production_spec.id,fixed.id)
+  assert.equal(agentPreflight.inputs.timeline.id,timeline.version_id)
+  const preflightResult=agentPreflight.steps.at(-1).result.result
+  assert(preflightResult.verified_asset_count>0 && preflightResult.profile==='square')
+  await setField('Agent 审批或审核意见','审核通过，已核对本机素材哈希。')
+  await click('确认 Agent 输出')
+  await wait(()=>agentText('审核通过'),'preflight results reviewed')
+  await evaluate("document.querySelector('#director-agent-runs').scrollIntoView({block:'start'})")
+  await screenshot('agent-preflight.png')
+  await writeFile(join(evidenceDir,'agent-preflight-browser.json'),JSON.stringify({
+    roles:agentPreflight.steps.map(step=>step.id),production_spec_version:fixed.version,
+    checked_shots:agentPreflight.steps[3].result.result.shot_count,verified_assets:preflightResult.verified_asset_count,
+    frame_count:preflightResult.frames,profile:preflightResult.profile,
+    output_sha256:agentPreflight.output_sha256,external_cost_cents:agentPreflight.external_cost_cents,
+    review:(await api(agents+'/'+preflightDraft.id)).review.decision,
+  },null,2)+'\n')
+
   const packageRoute='/delivery'+root+'/packages'
   const packaging={run_id:batch.id,title:'固定制作规格交付',platform:'local-test',region:'CN',idempotency_key:'delivery'}
   await blocked(packageRoute,{...packaging,region:'US'},422,'交付平台或地域')

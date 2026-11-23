@@ -1,0 +1,21 @@
+{
+  "ready": true,
+  "schema": "0018",
+  "worker_online": 1,
+  "projects": 7,
+  "director_http": 200,
+  "agent_capabilities_http": 200,
+  "agent_history_http": 200,
+  "latest_build": true,
+  "agent_roles": 7,
+  "agent_workflows": [
+    "preflight",
+    "story"
+  ],
+  "active_tasks": 0,
+  "live_text_authorized": false,
+  "external_model_execution": false,
+  "real_text_budget_micros": 0,
+  "active_live_budget_rows": 0,
+  "sent_live_model_calls": 0
+}

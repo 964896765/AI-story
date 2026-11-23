@@ -1,0 +1,35 @@
+{
+  "navigation": {
+    "checked_at": "2026-11-23T04:38:37.617Z",
+    "primary_navigation_entries": 12,
+    "six_phases": true,
+    "step_count": 24,
+    "deep_link_reload": true,
+    "model_calls": {
+      "simulated": 1,
+      "live": 0,
+      "paid_micros": 0
+    },
+    "javascript_errors": []
+  },
+  "guardian": {
+    "checked_at": "2026-11-23T04:36:48.981Z",
+    "episodes": 2,
+    "shots": 10,
+    "regenerated": 1,
+    "reused": 9,
+    "delivery_evidence": {
+      "shots": 10,
+      "frames": 30,
+      "missing_blocked": true,
+      "same_size_tampering_blocked": true,
+      "verified_extracted_jpegs": true,
+      "checklist_and_comparison_resolved": true,
+      "retried_in_browser": true,
+      "single_delivery": true
+    },
+    "delivery_sha256": "424a06e003e8f26945af1ce860b23c1187d2e32eb2ae28583a8e6fae8927315d",
+    "external_paid_calls": 0,
+    "javascript_errors": []
+  }
+}

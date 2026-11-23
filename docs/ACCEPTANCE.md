@@ -12,6 +12,8 @@
 
 V3.11 增加数据库规格版本、差异、影响与恢复。批准分镜、导演、候选、配音、时间轴、质检和 ZIP 按固定规格读取。 [项目制作规格](V3_11_PRODUCTION_SPECS_ACCEPTANCE.md)
 
+V3.12 增加 Agent 执行治理。原稿筹备与生产预检支持固定输入、人工批准、Worker 接力、失败重试和结果复核。PostgreSQL 为 `0018`，本机规则执行的外部费用为 0。 [Agent 执行治理验收](V3_12_AGENT_RUNS_ACCEPTANCE.md)
+
 Production Guardian 本机链路支持正史与镜头合同批准、连续性校验、候选证据与人工审核、局部返工和授权交付。真实视觉模型仍待接入。 [使用、验收和回滚](V3_GUARDIAN_ACCEPTANCE.md)
 
 Guardian 成片对白质检已验证固定配音与字幕配对、字幕内容与时序、近静音与轨道静音阻断、本机听写告警和回听定位。 [对白质检、浏览器证据与回滚](V3_GUARDIAN_DIALOGUE_ACCEPTANCE.md)

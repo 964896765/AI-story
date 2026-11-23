@@ -1,0 +1,29 @@
+{
+  "steps": [
+    {
+      "role": "director",
+      "status": "succeeded",
+      "attempt": 1,
+      "sha256": "bb496b169e8096b919488070f838f29f15bfcbf32b372d8e3b12fa04b70eb532"
+    },
+    {
+      "role": "analysis",
+      "status": "succeeded",
+      "attempt": 1,
+      "sha256": "d725acd490ab83db479e0a48b55d84d76673246fb1f47c3f53f0d5896ee2dc71"
+    },
+    {
+      "role": "writer",
+      "status": "succeeded",
+      "attempt": 1,
+      "sha256": "d9fa145b77cd8e4ee1d674aebe6556c2473438a2defe0ce3c2e9d37b1ec5235b"
+    }
+  ],
+  "tasks_before_approval": 0,
+  "browser_reload_preserved_review": true,
+  "review": "accepted",
+  "input_sha256": "f6d2b261b0e5edda64950022756a80bcf272d65d925a2a62bef96e549bc4d40a",
+  "output_sha256": "4f356f31028a3f53452b9cfa14e4690a8480788377677884904a75e2e10437e6",
+  "external_cost_cents": 0,
+  "javascript_errors": []
+}

@@ -1,0 +1,17 @@
+{
+  "roles": [
+    "director",
+    "art",
+    "storyboard",
+    "shot_review",
+    "postproduction"
+  ],
+  "production_spec_version": 2,
+  "checked_shots": 1,
+  "verified_assets": 1,
+  "frame_count": 36,
+  "profile": "square",
+  "output_sha256": "b5f66a64b45bac35da891993edc1a8a0bfbcb0e2965473777c17a575bd2a0edb",
+  "external_cost_cents": 0,
+  "review": "accepted"
+}

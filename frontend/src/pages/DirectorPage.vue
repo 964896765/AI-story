@@ -4,6 +4,7 @@ import { ArrowRight, Check, ClipboardCheck } from 'lucide-vue-next'
 import WorkspacePanel from '../components/ui/WorkspacePanel.vue'
 import DirectorBatchFields, { type BatchOperation, type RunOption } from '../components/production/DirectorBatchFields.vue'
 import DirectorAdvice from '../components/production/DirectorAdvice.vue'
+import AgentRuns from '../components/production/AgentRuns.vue'
 import SpecReference from '../components/production/SpecReference.vue'
 import { useWorkspace } from '../router/workspace'
 import type { Destination } from '../router/navigation'
@@ -337,7 +338,11 @@ onBeforeUnmount(()=>abort.abort())
       </dl>
       <RouterLink :to="link('models',{flow:3})">配置 Codex、模型与预算</RouterLink>
       <a class="advice-anchor" href="#director-model-planning">打开模型规划</a>
+      <a class="advice-anchor" href="#director-agent-runs">打开 Agent 执行</a>
       <p class="director-note director-mode">渲染和交付由本机 Worker 执行。剧情改编与镜头返工在对应工作区审核。</p>
+    </WorkspacePanel>
+    <WorkspacePanel id="director-agent-runs" class="director-advice" title="Agent 执行治理">
+      <AgentRuns :key="workbench.projectId" :project-id="workbench.projectId" />
     </WorkspacePanel>
     <WorkspacePanel id="director-model-planning" class="director-advice" title="模型规划（离线模拟）">
       <DirectorAdvice :key="workbench.projectId" :project-id="workbench.projectId" :options="adviceOptions" @inspect="inspectAdvicePlan" />

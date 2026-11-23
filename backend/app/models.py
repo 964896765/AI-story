@@ -116,6 +116,22 @@ class Task(Base):
 Index('ix_tasks_project_recent',Task.project_id,Task.created_at.desc(),Task.id)
 Index('ix_tasks_dispatch_ready',Task.status,Task.next_run_at,Task.created_at,Task.id)
 
+class AgentRun(Base):
+    __tablename__ = 'agent_runs'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('projects.id'))
+    production_spec_version_id: Mapped[str] = mapped_column(ForeignKey('production_specs.id'))
+    request_key: Mapped[str] = mapped_column(String(64))
+    request: Mapped[dict] = mapped_column(JSONB)
+    inputs: Mapped[dict] = mapped_column(JSONB)
+    input_sha256: Mapped[str] = mapped_column(String(64))
+    task_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    approval: Mapped[dict | None] = mapped_column(JSONB)
+    review: Mapped[dict | None] = mapped_column(JSONB)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('project_id','request_key'),)
+
 class DirectorPlan(Base):
     __tablename__ = 'director_plans'
     production_spec_version_id: Mapped[str | None] = mapped_column(

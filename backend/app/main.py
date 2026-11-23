@@ -37,6 +37,7 @@ from .system_console import router as system_router
 from .overview import router as overview_router
 from .model_connections import router as model_connections_router
 from .production_specs import router as production_specs_router
+from .agent_runs import router as agent_runs_router
 from fastapi.exceptions import RequestValidationError
 
 app = FastAPI(title='AI 漫剧工厂', version='2.0.0')
@@ -58,6 +59,7 @@ app.include_router(system_router)
 app.include_router(overview_router)
 app.include_router(model_connections_router)
 app.include_router(production_specs_router)
+app.include_router(agent_runs_router)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
 app.add_middleware(CORSMiddleware, allow_origins=[ORIGIN], allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
 DBDep = Annotated[DB, Depends(session)]
@@ -134,7 +136,7 @@ def health(db: DBDep):
     try:
         db.execute(text('SELECT 1'))
         checks['database'] = True
-        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0017'
+        checks['schema'] = db.execute(text('SELECT version_num FROM alembic_version')).scalar() == '0018'
     except SQLAlchemyError:
         db.rollback()
     return JSONResponse(status_code=200 if all(checks.values()) else 503, content={'ready': all(checks.values()), 'checks': checks, 'ai_enabled': False})
@@ -268,6 +270,7 @@ def retry(task_id: str, db: DBDep):
     if not task:
         raise HTTPException(404, '任务不存在')
     if task.kind=='adapt':raise HTTPException(409,'模型任务不得通过通用重试重发；请在模型调用记录中核对费用并显式创建新调用')
+    if task.kind=='agent_step':raise HTTPException(409,'请在 AI 总导演中重试 Agent 运行')
     if task.status not in ('failed','cancelled'):
         raise HTTPException(409, '仅失败或已取消任务可重试')
     task.status, task.error, task.lease_until = 'queued', None, None
@@ -284,6 +287,8 @@ def cancel(task_id: str, db: DBDep):
     task = db.scalar(select(Task).where(Task.id==task_id).with_for_update())
     if not task:
         raise HTTPException(404,'任务不存在')
+    if task.kind=='agent_step':
+        raise HTTPException(409,'请在 AI 总导演中取消 Agent 运行')
     if task.kind=='adapt':
         from .text_service import cancel_locked
         result=cancel_locked(db,task);db.commit();return task

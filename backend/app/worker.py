@@ -45,7 +45,7 @@ def recover_expired(db):
         if task.cancel_requested:
             task.status, task.stage = 'cancelled', 'cancelled'
             task.finished_at = now()
-        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery', 'promotion') and task.attempt < task.max_attempts:
+        elif task.kind in ('render', 'analyze', 'still_motion', 'local_voice', 'timeline_render', 'qc_review', 'delivery', 'promotion', 'agent_step') and task.attempt < task.max_attempts:
             task.status, task.stage, task.progress = 'queued', 'recovered', 0
             task.next_run_at=now()
         else:
@@ -83,6 +83,7 @@ def _run_once(heartbeat):
             task.input_snapshot = {'video':{'id':asset.id,'storage_key':asset.storage_key,'sha256':asset.sha256}}
         event(db, task, '开始执行 '+task.kind)
         task_id, attempt, token, kind = task.id, task.attempt, task.worker_token, task.kind
+        project_id = task.project_id
         inputs, parameters = task.input_snapshot, task.parameters
         db.add(TaskAttempt(task_id=task_id,number=attempt,worker_id=heartbeat.id,status='running',stage='inspecting',inputs=inputs,parameters=parameters,checkpoints=[{'stage':'inspecting','at':now().isoformat()}]))
     heartbeat.bind(task_id,token)
@@ -125,6 +126,9 @@ def _run_once(heartbeat):
         elif kind=='adapt':
             from .text_service import execute_text_task
             output=execute_text_task(task_id,Session)
+        elif kind=='agent_step':
+            from .agent_runs import execute
+            output=execute(task_id,project_id,inputs,parameters,update,Session)
         elif kind == 'analyze':
             from .analysis_service import execute_analysis
             analysis_result = execute_analysis(task_id, attempt, parameters, inputs, update, Session)
@@ -177,8 +181,10 @@ def _run_once(heartbeat):
         # Publication wins a cancellation racing the final atomic publish.
         if task.cancel_requested and not (kind in ('render','still_motion','local_voice','timeline_render','delivery','promotion') and output):
             cancelled = True
-            if kind == 'analyze':
+            if kind in ('analyze','agent_step'):
                 output = {}
+            if kind=='agent_step':
+                code = 'CANCELLED'
         task.status = 'cancelled' if cancelled else ('failed' if error else 'succeeded')
         task.stage = task.status
         task.output, task.error = output, error
@@ -209,6 +215,7 @@ def _run_once(heartbeat):
                          'qc_review':'已保存真实技术质检结果',
                          'delivery':'交付包与文件哈希已核验',
                          'promotion':'实际推广片段和封面已制作，等待人工审阅',
+                         'agent_step':'已保存并校验 Agent 角色结果' if task.status=='succeeded' else 'Agent 步骤已取消',
                          'analyze':'解析结果已持久化' if task.status == 'succeeded' else '解析步骤已取消'}
         event(db,task,error or success_message[kind])
     return True
